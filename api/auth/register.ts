@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { AuthService } from '../../src/lib/auth-service';
-import { rateLimit } from '../../src/lib/rate-limit';
+import { AuthService } from '../../src/lib/auth-service.js';
+import { rateLimit } from '../../src/lib/rate-limit.js';
 import { ZodError } from 'zod';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
