@@ -224,6 +224,22 @@
       "twoFactor": "Two-Factor Authentication",
       "apiKeys": "API Keys",
       "whitelist": "Withdrawal Whitelist"
+    },
+    "lending": {
+      "applyTitle": "Lend Assets",
+      "applyDescription": "Choose an asset and duration to start earning institutional yields.",
+      "asset": "Asset",
+      "amount": "Amount",
+      "duration": "Duration (Days)",
+      "estimatedApy": "Estimated APY",
+      "estimatedYield": "Estimated Yield",
+      "riskLevel": "Risk Level",
+      "submit": "Confirm Lending",
+      "success": "Lending application successful",
+      "riskWarning": "Risk Disclosure: Digital asset lending involves market risks and operational risks. Please ensure you understand our terms of service.",
+      "terminate": "Terminate",
+      "activePositions": "Active Positions",
+      "history": "Lending History"
     }
   }
 }
