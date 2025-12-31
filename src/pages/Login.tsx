@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,16 @@ export default function Login() {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
+  useEffect(() => {
+    if (localStorage.getItem("token")) {
+      navigate("/");
+    }
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    console.log("Attempting login for:", email);
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -25,17 +32,33 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response received:", text);
+        throw new Error(t("auth.errors.loginFailed"));
+      }
 
       if (!res.ok) {
         throw new Error(data.error || t("auth.errors.loginFailed"));
       }
 
+      console.log("Login successful, storing token and user info");
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       toast.success(t("auth.login.successMessage"));
-      navigate("/");
+      
+      // Delay navigation slightly to ensure toast is visible and storage is set
+      setTimeout(() => {
+        navigate("/");
+        // Force a small reload or state update might be needed if Header doesn't update
+        // but since we are navigating to a new route (/), Header should re-mount.
+      }, 500);
     } catch (error: any) {
+      console.error("Login error:", error);
       toast.error(error.message);
     } finally {
       setIsLoading(false);

@@ -18,7 +18,8 @@
     "subheadline": "Transparent, secure, and sophisticated financial services for high-net-worth individuals. Unlock premium yields through institutional-grade structured products.",
     "buttons": {
       "startEarning": "Start Earning",
-      "exploreProducts": "Explore Products"
+      "exploreProducts": "Explore Products",
+      "dashboard": "Go to Dashboard"
     },
     "trustIndicators": {
       "coldStorage": "Cold Storage Security",
@@ -158,7 +159,8 @@
       "loggingIn": "Logging in...",
       "noAccount": "Don't have an account?",
       "register": "Register",
-      "successMessage": "Logged in successfully"
+      "successMessage": "Logged in successfully",
+      "logout": "Logout"
     },
     "register": {
       "title": "Register",

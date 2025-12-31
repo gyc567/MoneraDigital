@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,9 +14,16 @@ export default function Register() {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
+  useEffect(() => {
+    if (localStorage.getItem("token")) {
+      navigate("/");
+    }
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    console.log("Attempting registration for:", email);
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -25,15 +32,28 @@ export default function Register() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response received:", text);
+        throw new Error(t("auth.errors.registrationFailed"));
+      }
 
       if (!res.ok) {
         throw new Error(data.error || t("auth.errors.registrationFailed"));
       }
 
+      console.log("Registration successful");
       toast.success(t("auth.register.successMessage"));
-      navigate("/login");
+      
+      setTimeout(() => {
+        navigate("/login");
+      }, 1000);
     } catch (error: any) {
+      console.error("Registration error:", error);
       toast.error(error.message);
     } finally {
       setIsLoading(false);

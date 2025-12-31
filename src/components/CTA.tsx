@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
 const CTA = () => {
   const { t } = useTranslation();
@@ -22,12 +23,16 @@ const CTA = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button variant="hero" size="xl">
-              {t("cta.buttons.consultation")}
-              <ArrowRight className="ml-2" />
+            <Button variant="hero" size="xl" asChild>
+              <Link to="/register">
+                {t("cta.buttons.consultation")}
+                <ArrowRight className="ml-2" />
+              </Link>
             </Button>
-            <Button variant="heroOutline" size="xl">
-              {t("cta.buttons.documentation")}
+            <Button variant="heroOutline" size="xl" asChild>
+              <a href="#docs">
+                {t("cta.buttons.documentation")}
+              </a>
             </Button>
           </div>
 

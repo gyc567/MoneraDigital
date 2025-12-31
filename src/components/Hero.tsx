@@ -1,9 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Shield, TrendingUp, Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const Hero = () => {
   const { t } = useTranslation();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem("token"));
+  }, []);
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
@@ -36,12 +43,16 @@ const Hero = () => {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 animate-fade-in-delay-2">
-            <Button variant="hero" size="xl">
-              {t("hero.buttons.startEarning")}
-              <ArrowRight className="ml-2" />
+            <Button variant="hero" size="xl" asChild>
+              <Link to={isLoggedIn ? "/dashboard" : "/register"}>
+                {isLoggedIn ? (t("hero.buttons.dashboard") || "Go to Dashboard") : t("hero.buttons.startEarning")}
+                <ArrowRight className="ml-2" />
+              </Link>
             </Button>
-            <Button variant="heroOutline" size="xl">
-              {t("hero.buttons.exploreProducts")}
+            <Button variant="heroOutline" size="xl" asChild>
+              <a href="#products">
+                {t("hero.buttons.exploreProducts")}
+              </a>
             </Button>
           </div>
 

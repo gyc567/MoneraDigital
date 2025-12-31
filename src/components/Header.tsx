@@ -1,12 +1,33 @@
 import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { Menu, X, LogOut, User } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { Link, useNavigate } from "react-router-dom";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [user, setUser] = useState<{ email: string } | null>(null);
   const { t } = useTranslation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Failed to parse user from localStorage", e);
+      }
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+    navigate("/");
+  };
 
   const navItems = [
     { label: t("header.nav.products"), href: "#products" },
@@ -20,14 +41,14 @@ const Header = () => {
       <div className="container mx-auto px-6">
         <div className="flex items-center justify-between h-16 lg:h-20">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-lg">M</span>
             </div>
             <span className="text-foreground font-semibold text-xl tracking-tight">
               Monera<span className="text-primary">Digital</span>
             </span>
-          </a>
+          </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-8">
@@ -45,12 +66,27 @@ const Header = () => {
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center gap-4">
             <LanguageSwitcher />
-            <Button variant="ghost" size="sm">
-              {t("header.auth.signIn")}
-            </Button>
-            <Button variant="default" size="sm">
-              {t("header.auth.getStarted")}
-            </Button>
+            {user ? (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <User size={16} className="text-primary" />
+                  <span>{user.email}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2">
+                  <LogOut size={16} />
+                  {t("auth.logout") || "Logout"}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/login">{t("header.auth.signIn")}</Link>
+                </Button>
+                <Button variant="default" size="sm" asChild>
+                  <Link to="/register">{t("header.auth.getStarted")}</Link>
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -80,12 +116,27 @@ const Header = () => {
                 <div className="px-2">
                   <LanguageSwitcher />
                 </div>
-                <Button variant="ghost" size="sm" className="justify-start">
-                  {t("header.auth.signIn")}
-                </Button>
-                <Button variant="default" size="sm">
-                  {t("header.auth.getStarted")}
-                </Button>
+                {user ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground px-2 py-2">
+                      <User size={16} className="text-primary" />
+                      <span>{user.email}</span>
+                    </div>
+                    <Button variant="ghost" size="sm" className="justify-start gap-2" onClick={() => { handleLogout(); setIsMenuOpen(false); }}>
+                      <LogOut size={16} />
+                      {t("auth.logout") || "Logout"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="sm" className="justify-start" asChild onClick={() => setIsMenuOpen(false)}>
+                      <Link to="/login">{t("header.auth.signIn")}</Link>
+                    </Button>
+                    <Button variant="default" size="sm" asChild onClick={() => setIsMenuOpen(false)}>
+                      <Link to="/register">{t("header.auth.getStarted")}</Link>
+                    </Button>
+                  </>
+                )}
               </div>
             </nav>
           </div>

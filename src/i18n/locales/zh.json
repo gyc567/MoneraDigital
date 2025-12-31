@@ -18,7 +18,8 @@
     "subheadline": "为高净值个人提供透明、安全和精密的金融服务。通过机构级结构化产品解锁高收益。",
     "buttons": {
       "startEarning": "开始赚取",
-      "exploreProducts": "探索产品"
+      "exploreProducts": "探索产品",
+      "dashboard": "进入控制台"
     },
     "trustIndicators": {
       "coldStorage": "冷存储安全",
@@ -158,7 +159,8 @@
       "loggingIn": "登录中...",
       "noAccount": "还没有账户？",
       "register": "注册",
-      "successMessage": "登录成功"
+      "successMessage": "登录成功",
+      "logout": "退出登录"
     },
     "register": {
       "title": "注册",
