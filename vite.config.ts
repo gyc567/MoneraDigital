@@ -15,4 +15,15 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-slot', 'lucide-react'],
+          'vendor-charts': ['recharts'],
+          'vendor-utils': ['i18next', 'zod', 'clsx', 'tailwind-merge'],
+        }
+      }
+    }
+  }
 }));

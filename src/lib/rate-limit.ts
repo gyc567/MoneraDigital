@@ -19,7 +19,7 @@ export async function rateLimit(ip: string, limit: number, windowMs: number): Pr
       
       return count <= limit;
     } catch (error) {
-      logger.error('Redis rate limiting error, falling back to memory:', error);
+      logger.error(error, 'Redis rate limiting error, falling back to memory');
     }
   }
 
