@@ -4,8 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Lock, Smartphone, Globe, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Lock, Smartphone, Globe, CheckCircle2, ShieldAlert, Info, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 const Security = () => {
@@ -16,6 +16,7 @@ const Security = () => {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [token, setToken] = useState("");
   const [isSettingUp, setIsSettingUp] = useState(false);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [step, setStep] = useState(1); // 1: QR, 2: Backup Codes
   const [open, setOpen] = useState(false);
 
@@ -31,14 +32,20 @@ const Security = () => {
       }
     } catch (error) {
       console.error("Security fetchStatus error:", error);
+    } finally {
+      setIsLoadingStatus(false);
     }
   };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
 
   const handleSetup = async () => {
     setIsSettingUp(true);
     try {
       const authToken = localStorage.getItem("token");
-      const res = await await fetch("/api/auth/2fa/setup", {
+      const res = await fetch("/api/auth/2fa/setup", {
         method: "POST",
         headers: { Authorization: `Bearer ${authToken}` }
       });
@@ -243,5 +250,7 @@ const Security = () => {
     </div>
   );
 };
+
+import { Dialog } from "@/components/ui/dialog";
 
 export default Security;
