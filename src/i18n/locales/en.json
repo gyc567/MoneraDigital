@@ -223,7 +223,15 @@
       "password": "Password",
       "twoFactor": "Two-Factor Authentication",
       "apiKeys": "API Keys",
-      "whitelist": "Withdrawal Whitelist"
+      "whitelist": "Withdrawal Whitelist",
+      "enable2FA": "Enable 2FA",
+      "disable2FA": "Disable 2FA",
+      "setup2FA": "Setup 2FA",
+      "scanQR": "Scan this QR code with your authenticator app (Google Authenticator, Duo, etc.)",
+      "enterCode": "Enter the 6-digit code from your app",
+      "verify": "Verify & Enable",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
     },
     "lending": {
       "applyTitle": "Lend Assets",

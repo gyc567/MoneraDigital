@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, numeric, integer, pgEnum, boolean } from 'drizzle-orm/pg-core';
 
 export const lendingStatusEnum = pgEnum('lending_status', ['ACTIVE', 'COMPLETED', 'TERMINATED']);
 
@@ -6,6 +6,8 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   email: text('email').notNull().unique(),
   password: text('password').notNull(),
+  twoFactorSecret: text('two_factor_secret'),
+  twoFactorEnabled: boolean('two_factor_enabled').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

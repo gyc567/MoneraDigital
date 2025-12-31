@@ -74,6 +74,14 @@ export class AuthService {
       throw new Error('Invalid email or password');
     }
 
+    if (user.twoFactorEnabled) {
+      logger.info({ userId: user.id }, 'Login requires 2FA');
+      return {
+        requires2FA: true,
+        userId: user.id,
+      };
+    }
+
     const token = jwt.sign({ userId: user.id, email: user.email }, getJwtSecret(), {
       expiresIn: '24h',
     });
@@ -83,6 +91,31 @@ export class AuthService {
     return {
       user: { id: user.id, email: user.email },
       token,
+    };
+  }
+
+  /**
+   * 验证 2FA 代码并完成登录
+   */
+  static async verify2FAAndLogin(userId: number, token: string) {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      throw new Error('2FA not enabled');
+    }
+
+    const { authenticator } = await import('otplib');
+    const isValid = authenticator.check(token, user.twoFactorSecret);
+    if (!isValid) {
+      throw new Error('Invalid verification code');
+    }
+
+    const jwtToken = jwt.sign({ userId: user.id, email: user.email }, getJwtSecret(), {
+      expiresIn: '24h',
+    });
+
+    return {
+      user: { id: user.id, email: user.email },
+      token: jwtToken,
     };
   }
 }

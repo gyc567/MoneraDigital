@@ -223,7 +223,15 @@
       "password": "登录密码",
       "twoFactor": "双因素认证 (2FA)",
       "apiKeys": "API 密钥",
-      "whitelist": "提币地址白名单"
+      "whitelist": "提币地址白名单",
+      "enable2FA": "开启 2FA",
+      "disable2FA": "关闭 2FA",
+      "setup2FA": "设置 2FA",
+      "scanQR": "使用您的身份验证器应用（如 Google Authenticator）扫描此二维码",
+      "enterCode": "输入应用中的 6 位验证码",
+      "verify": "验证并开启",
+      "enabled": "已开启",
+      "disabled": "未开启"
     },
     "lending": {
       "applyTitle": "借出资产",
