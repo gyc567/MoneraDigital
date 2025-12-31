@@ -1,15 +1,22 @@
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import * as schema from '../db/schema.js';
+import logger from './logger.js';
 
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  console.error('DATABASE_URL is missing! Database connection will fail.');
+  logger.error('DATABASE_URL is missing!');
 }
 
-const sql = postgres(connectionString || '', {
+// 原始连接，用于 Drizzle
+export const client = postgres(connectionString || '', { 
   ssl: 'require',
-  // Max number of connections
-  max: 1,
+  max: 1 
 });
 
-export default sql;
+// Drizzle 实例
+export const db = drizzle(client, { schema });
+
+// 默认导出旧版 sql 以保持兼容性
+export default client;

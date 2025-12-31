@@ -1,12 +1,15 @@
-import bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import sql from './db.js';
+import { db } from './db.js';
+import { users } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
+import logger from './logger.js';
 
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    console.error('JWT_SECRET environment variable is missing');
+    logger.error('JWT_SECRET environment variable is missing');
     return 'fallback-secret-for-dev-only';
   }
   return secret;
@@ -19,50 +22,63 @@ export const authSchema = z.object({
 
 export class AuthService {
   /**
-   * 注册新用户
+   * 注册新用户 (使用 Drizzle ORM)
    */
   static async register(email: string, password: string) {
     const validated = authSchema.parse({ email, password });
     
-    const hashedPassword = await bcrypt.hash(validated.password, 10);
+    logger.info({ email: validated.email }, 'Attempting to register new user');
+    
+    const hashedPassword = await (bcrypt.default || bcrypt).hash(validated.password, 10);
 
     try {
-      const [user] = await sql`
-        INSERT INTO users (email, password)
-        VALUES (${email}, ${hashedPassword})
-        RETURNING id, email
-      `;
+      const [user] = await db.insert(users).values({
+        email: validated.email,
+        password: hashedPassword,
+      }).returning({
+        id: users.id,
+        email: users.email,
+      });
+
+      logger.info({ userId: user.id, email: user.email }, 'User registered successfully');
       return user;
     } catch (error: any) {
-      if (error.code === '23505') {
+      // Postgres unique violation code is 23505
+      if (error.code === '23505' || error.message?.includes('unique constraint')) {
+        logger.warn({ email: validated.email }, 'Registration failed: user already exists');
         throw new Error('User already exists');
       }
+      logger.error({ error, email: validated.email }, 'Unexpected error during registration');
       throw error;
     }
   }
 
   /**
-   * 用户登录并生成 JWT
+   * 用户登录并生成 JWT (使用 Drizzle ORM)
    */
   static async login(email: string, password: string) {
     const validated = authSchema.parse({ email, password });
 
-    const [user] = await sql`
-      SELECT id, email, password FROM users WHERE email = ${validated.email}
-    `;
+    logger.info({ email: validated.email }, 'Login attempt');
+
+    const [user] = await db.select().from(users).where(eq(users.email, validated.email));
 
     if (!user) {
+      logger.warn({ email: validated.email }, 'Login failed: user not found');
       throw new Error('Invalid email or password');
     }
 
-    const isValid = await bcrypt.compare(password, user.password);
+    const isValid = await (bcrypt.default || bcrypt).compare(password, user.password);
     if (!isValid) {
+      logger.warn({ email: validated.email, userId: user.id }, 'Login failed: incorrect password');
       throw new Error('Invalid email or password');
     }
 
     const token = jwt.sign({ userId: user.id, email: user.email }, getJwtSecret(), {
       expiresIn: '24h',
     });
+
+    logger.info({ userId: user.id, email: user.email }, 'Login successful, token issued');
 
     return {
       user: { id: user.id, email: user.email },
