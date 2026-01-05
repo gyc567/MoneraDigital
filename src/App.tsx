@@ -14,6 +14,8 @@ import Overview from "./pages/dashboard/Overview";
 import Assets from "./pages/dashboard/Assets";
 import Security from "./pages/dashboard/Security";
 import Lending from "./pages/dashboard/Lending";
+import Addresses from "./pages/dashboard/Addresses";
+import Withdraw from "./pages/dashboard/Withdraw";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +35,8 @@ const App = () => (
               <Route index element={<Overview />} />
               <Route path="assets" element={<Assets />} />
               <Route path="lending" element={<Lending />} />
+              <Route path="addresses" element={<Addresses />} />
+              <Route path="withdraw" element={<Withdraw />} />
               <Route path="investments" element={<div>Investments Page (Coming Soon)</div>} />
               <Route path="security" element={<Security />} />
               <Route path="statements" element={<div>Statements Page (Coming Soon)</div>} />

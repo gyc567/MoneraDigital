@@ -1,0 +1,613 @@
+openapi: 3.0.0
+info:
+  title: MoneraDigital Withdrawal Address Whitelist API
+  description: |
+    API specification for managing withdrawal addresses and processing withdrawals in MoneraDigital.
+    This API allows users to add, verify, and manage cryptocurrency withdrawal addresses with email verification.
+  version: 1.0.0
+  contact:
+    name: MoneraDigital Support
+    email: support@monera-digital.app
+  license:
+    name: MIT
+
+servers:
+  - url: https://monera-digital.vercel.app/api
+    description: Production API
+  - url: http://localhost:3000/api
+    description: Development API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    WithdrawalAddress:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        userId:
+          type: integer
+          example: 5
+        address:
+          type: string
+          example: '0x1234567890abcdef1234567890abcdef12345678'
+        addressType:
+          type: string
+          enum: [BTC, ETH, USDC, USDT]
+          example: ETH
+        label:
+          type: string
+          example: 'My Ethereum Wallet'
+        isVerified:
+          type: boolean
+          example: true
+        isPrimary:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          example: '2024-01-05T10:00:00Z'
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2024-01-05T10:30:00Z'
+        deactivatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+
+    Withdrawal:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        userId:
+          type: integer
+          example: 5
+        fromAddressId:
+          type: integer
+          example: 1
+        amount:
+          type: string
+          description: Amount in decimal format
+          example: '10.50'
+        asset:
+          type: string
+          enum: [BTC, ETH, USDC, USDT]
+          example: ETH
+        toAddress:
+          type: string
+          example: '0x1234567890abcdef1234567890abcdef12345678'
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+          example: COMPLETED
+        txHash:
+          type: string
+          nullable: true
+          example: '0xabc123def456...'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2024-01-05T10:00:00Z'
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2024-01-05T10:02:00Z'
+        failureReason:
+          type: string
+          nullable: true
+          example: null
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: 'Unauthorized'
+
+paths:
+  /addresses:
+    get:
+      summary: Get all withdrawal addresses
+      description: Retrieve all withdrawal addresses for the authenticated user
+      operationId: getAddresses
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of withdrawal addresses retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  addresses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WithdrawalAddress'
+        '401':
+          description: Unauthorized - invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Add a new withdrawal address
+      description: Add a new withdrawal address. A verification email will be sent.
+      operationId: addAddress
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - address
+                - addressType
+                - label
+              properties:
+                address:
+                  type: string
+                  description: Cryptocurrency wallet address
+                  example: '0x1234567890abcdef1234567890abcdef12345678'
+                addressType:
+                  type: string
+                  enum: [BTC, ETH, USDC, USDT]
+                  example: ETH
+                label:
+                  type: string
+                  description: User-friendly name for the address
+                  example: 'My Ethereum Wallet'
+      responses:
+        '201':
+          description: Address added successfully and verification email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  address:
+                    type: string
+                  addressType:
+                    type: string
+                  label:
+                    type: string
+                  isVerified:
+                    type: boolean
+                  message:
+                    type: string
+                    example: 'Address added successfully. Verification email sent.'
+        '400':
+          description: Bad request - invalid address format or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /addresses/{id}/verify:
+    post:
+      summary: Verify a withdrawal address
+      description: Verify a withdrawal address using the verification token sent via email
+      operationId: verifyAddress
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Address ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: Verification token from email
+                  example: 'abc123def456...'
+      responses:
+        '200':
+          description: Address verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  address:
+                    type: string
+                  addressType:
+                    type: string
+                  label:
+                    type: string
+                  isVerified:
+                    type: boolean
+                  verifiedAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+        '400':
+          description: Bad request - invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /addresses/{id}/primary:
+    post:
+      summary: Set address as primary
+      description: Set a verified address as the primary withdrawal address
+      operationId: setPrimaryAddress
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Address ID
+      responses:
+        '200':
+          description: Primary address set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  address:
+                    type: string
+                  addressType:
+                    type: string
+                  label:
+                    type: string
+                  isPrimary:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Bad request - address not found or not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /addresses/{id}:
+    delete:
+      summary: Deactivate an address
+      description: Deactivate a withdrawal address (cannot be reactivated)
+      operationId: deactivateAddress
+      tags:
+        - Addresses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Address ID
+      responses:
+        '200':
+          description: Address deactivated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  address:
+                    type: string
+                  deactivatedAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+        '404':
+          description: Address not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /withdrawals:
+    get:
+      summary: Get withdrawal history
+      description: Retrieve withdrawal history for the authenticated user with optional filters
+      operationId: getWithdrawals
+      tags:
+        - Withdrawals
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+          description: Filter by withdrawal status
+        - name: asset
+          in: query
+          schema:
+            type: string
+            enum: [BTC, ETH, USDC, USDT]
+          description: Filter by asset type
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Number of results to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip
+      responses:
+        '200':
+          description: Withdrawal history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Withdrawal'
+                  total:
+                    type: integer
+                  hasMore:
+                    type: boolean
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Initiate a withdrawal
+      description: Create a new withdrawal request from a verified address
+      operationId: initiateWithdrawal
+      tags:
+        - Withdrawals
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - addressId
+                - amount
+                - asset
+              properties:
+                addressId:
+                  type: integer
+                  description: ID of the verified withdrawal address
+                  example: 1
+                amount:
+                  type: string
+                  description: Amount to withdraw
+                  example: '10.50'
+                asset:
+                  type: string
+                  enum: [BTC, ETH, USDC, USDT]
+                  example: ETH
+      responses:
+        '201':
+          description: Withdrawal initiated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                  amount:
+                    type: string
+                  asset:
+                    type: string
+                  toAddress:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+        '400':
+          description: Bad request - invalid address or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /withdrawals/{id}:
+    get:
+      summary: Get withdrawal details
+      description: Retrieve detailed information about a specific withdrawal
+      operationId: getWithdrawalDetails
+      tags:
+        - Withdrawals
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Withdrawal ID
+      responses:
+        '200':
+          description: Withdrawal details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                  amount:
+                    type: string
+                  asset:
+                    type: string
+                  toAddress:
+                    type: string
+                  txHash:
+                    type: string
+                    nullable: true
+                  fromAddress:
+                    $ref: '#/components/schemas/WithdrawalAddress'
+                  createdAt:
+                    type: string
+                    format: date-time
+                  completedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  failureReason:
+                    type: string
+                    nullable: true
+        '404':
+          description: Withdrawal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+tags:
+  - name: Addresses
+    description: Withdrawal address management endpoints
+  - name: Withdrawals
+    description: Withdrawal processing and history endpoints

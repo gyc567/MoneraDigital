@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { toast } from "sonner";
 
 const Security = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isEnabled, setIsEnabled] = useState(false);
   const [qrCode, setQrCode] = useState("");
   const [secret, setSecret] = useState("");
@@ -242,7 +244,9 @@ const Security = () => {
               <p className="text-sm text-muted-foreground mb-4">
                 Restrict withdrawals to only pre-approved wallet addresses.
               </p>
-              <Button variant="outline" size="sm">Manage Addresses</Button>
+              <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/addresses")}>
+                Manage Addresses
+              </Button>
             </CardContent>
           </Card>
         </div>

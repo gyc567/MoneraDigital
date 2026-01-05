@@ -1,6 +1,8 @@
 import { pgTable, serial, text, timestamp, numeric, integer, pgEnum, boolean } from 'drizzle-orm/pg-core';
 
 export const lendingStatusEnum = pgEnum('lending_status', ['ACTIVE', 'COMPLETED', 'TERMINATED']);
+export const addressTypeEnum = pgEnum('address_type', ['BTC', 'ETH', 'USDC', 'USDT']);
+export const withdrawalStatusEnum = pgEnum('withdrawal_status', ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']);
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -25,6 +27,47 @@ export const lendingPositions = pgTable('lending_positions', {
   endDate: timestamp('end_date').notNull(),
 });
 
+export const withdrawalAddresses = pgTable('withdrawal_addresses', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  address: text('address').notNull(),
+  addressType: addressTypeEnum('address_type').notNull(),
+  label: text('label').notNull(),
+  isVerified: boolean('is_verified').default(false).notNull(),
+  isPrimary: boolean('is_primary').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  verifiedAt: timestamp('verified_at'),
+  deactivatedAt: timestamp('deactivated_at'),
+});
+
+export const addressVerifications = pgTable('address_verifications', {
+  id: serial('id').primaryKey(),
+  addressId: integer('address_id').references(() => withdrawalAddresses.id).notNull(),
+  token: text('token').notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  verifiedAt: timestamp('verified_at'),
+});
+
+export const withdrawals = pgTable('withdrawals', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  fromAddressId: integer('from_address_id').references(() => withdrawalAddresses.id).notNull(),
+  amount: numeric('amount', { precision: 20, scale: 8 }).notNull(),
+  asset: text('asset').notNull(),
+  toAddress: text('to_address').notNull(),
+  status: withdrawalStatusEnum('status').default('PENDING').notNull(),
+  txHash: text('tx_hash'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
+  failureReason: text('failure_reason'),
+});
+
 export type User = typeof users.$inferSelect;
 export type LendingPosition = typeof lendingPositions.$inferSelect;
 export type NewLendingPosition = typeof lendingPositions.$inferInsert;
+export type WithdrawalAddress = typeof withdrawalAddresses.$inferSelect;
+export type NewWithdrawalAddress = typeof withdrawalAddresses.$inferInsert;
+export type AddressVerification = typeof addressVerifications.$inferSelect;
+export type NewAddressVerification = typeof addressVerifications.$inferInsert;
+export type Withdrawal = typeof withdrawals.$inferSelect;
+export type NewWithdrawal = typeof withdrawals.$inferInsert;

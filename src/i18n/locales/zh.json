@@ -198,6 +198,8 @@
       "overview": "概览",
       "assets": "资产总览",
       "lending": "借贷管理",
+      "addresses": "地址管理",
+      "withdraw": "提币",
       "investments": "投资产品",
       "security": "安全设置",
       "statements": "账户对账单"
@@ -248,6 +250,48 @@
       "terminate": "提前终止",
       "activePositions": "活跃头寸",
       "history": "借贷历史"
+    },
+    "addresses": {
+      "title": "提币地址管理",
+      "description": "管理您的提币地址并设置地址白名单",
+      "addAddress": "添加地址",
+      "label": "地址标签",
+      "assetType": "资产类型",
+      "address": "钱包地址",
+      "verified": "已验证",
+      "pending": "待验证",
+      "primary": "主要地址",
+      "deactivated": "已停用",
+      "verify": "验证",
+      "setPrimary": "设为主地址",
+      "deactivate": "停用",
+      "addDialog": "添加提币地址",
+      "addDescription": "添加新的加密货币地址用于提币。您将收到验证邮件。",
+      "verifyDialog": "验证地址",
+      "verifyDescription": "输入邮件中的验证码来确认此地址。",
+      "verificationCode": "验证码",
+      "deactivateConfirm": "停用地址",
+      "deactivateWarning": "这将永久停用该地址，您将无法使用它进行提币。此操作无法撤销。",
+      "noAddresses": "尚未添加任何地址。点击\"添加地址\"开始。"
+    },
+    "withdraw": {
+      "title": "提币",
+      "newWithdrawal": "新建提币",
+      "history": "提币历史",
+      "selectAddress": "选择提币地址",
+      "selectDescription": "选择一个已验证的地址进行提币",
+      "addressDetails": "地址详情",
+      "withdrawAmount": "提币金额",
+      "enterAmount": "输入您要提币的金额",
+      "review": "审查并确认",
+      "confirmTitle": "确认提币",
+      "confirmDescription": "请在下方审查详情后确认此提币请求。",
+      "to": "目标地址",
+      "disclaimer": "此提币将发送到您的已验证地址。确认邮件将发送到您的账户。",
+      "confirmButton": "确认提币",
+      "noAddresses": "没有可用的已验证地址。请先添加并验证地址。",
+      "noHistory": "还没有提币记录",
+      "loading": "加载中..."
     }
   }
 }

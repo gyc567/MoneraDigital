@@ -198,6 +198,8 @@
       "overview": "Overview",
       "assets": "Assets",
       "lending": "Lending",
+      "addresses": "Addresses",
+      "withdraw": "Withdraw",
       "investments": "Investments",
       "security": "Security",
       "statements": "Statements"
@@ -248,6 +250,48 @@
       "terminate": "Terminate",
       "activePositions": "Active Positions",
       "history": "Lending History"
+    },
+    "addresses": {
+      "title": "Withdrawal Addresses",
+      "description": "Manage your withdrawal addresses and set up address whitelist",
+      "addAddress": "Add Address",
+      "label": "Address Label",
+      "assetType": "Asset Type",
+      "address": "Wallet Address",
+      "verified": "Verified",
+      "pending": "Pending",
+      "primary": "Primary",
+      "deactivated": "Deactivated",
+      "verify": "Verify",
+      "setPrimary": "Set Primary",
+      "deactivate": "Deactivate",
+      "addDialog": "Add Withdrawal Address",
+      "addDescription": "Add a new cryptocurrency address for withdrawals. You'll receive a verification email.",
+      "verifyDialog": "Verify Address",
+      "verifyDescription": "Enter the verification code from your email to confirm this address.",
+      "verificationCode": "Verification Code",
+      "deactivateConfirm": "Deactivate Address",
+      "deactivateWarning": "This will permanently deactivate the address and you won't be able to use it for withdrawals. This action cannot be undone.",
+      "noAddresses": "No addresses added yet. Click \"Add Address\" to get started."
+    },
+    "withdraw": {
+      "title": "Withdraw Funds",
+      "newWithdrawal": "New Withdrawal",
+      "history": "History",
+      "selectAddress": "Select Withdrawal Address",
+      "selectDescription": "Choose a verified address to withdraw funds to",
+      "addressDetails": "Address Details",
+      "withdrawAmount": "Withdrawal Amount",
+      "enterAmount": "Enter the amount you wish to withdraw",
+      "review": "Review & Confirm",
+      "confirmTitle": "Confirm Withdrawal",
+      "confirmDescription": "Please review the details below before confirming this withdrawal.",
+      "to": "To Address",
+      "disclaimer": "This withdrawal will be processed to your verified address. A confirmation email will be sent to your account.",
+      "confirmButton": "Confirm Withdrawal",
+      "noAddresses": "No verified addresses available. Please add and verify an address first.",
+      "noHistory": "No withdrawal history yet",
+      "loading": "Loading..."
     }
   }
 }
