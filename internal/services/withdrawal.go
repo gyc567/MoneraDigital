@@ -1,11 +1,17 @@
 package services
 
 import (
-	"monera-digital/internal/db"
+	"database/sql"
 	"monera-digital/internal/models"
 )
 
-type WithdrawalService struct{}
+type WithdrawalService struct {
+	DB *sql.DB
+}
+
+func NewWithdrawalService(db *sql.DB) *WithdrawalService {
+	return &WithdrawalService{DB: db}
+}
 
 func (s *WithdrawalService) GetWithdrawals(userID int, limit, offset int) ([]models.Withdrawal, error) {
 	query := `
@@ -16,7 +22,7 @@ func (s *WithdrawalService) GetWithdrawals(userID int, limit, offset int) ([]mod
 		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := db.DB.Query(query, userID, limit, offset)
+	rows, err := s.DB.Query(query, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +53,7 @@ func (s *WithdrawalService) CreateWithdrawal(userID int, req models.CreateWithdr
 	`
 
 	var withdrawal models.Withdrawal
-	err := db.DB.QueryRow(query, userID, req.AddressID, req.Amount, req.Asset, req.AddressID).Scan(
+	err := s.DB.QueryRow(query, userID, req.AddressID, req.Amount, req.Asset, req.AddressID).Scan(
 		&withdrawal.ID, &withdrawal.UserID, &withdrawal.FromAddressID, &withdrawal.Amount,
 		&withdrawal.Asset, &withdrawal.ToAddress, &withdrawal.Status, &withdrawal.CreatedAt,
 	)
@@ -66,7 +72,7 @@ func (s *WithdrawalService) GetWithdrawalByID(userID int, withdrawalID int) (*mo
 	`
 
 	var withdrawal models.Withdrawal
-	err := db.DB.QueryRow(query, withdrawalID, userID).Scan(
+	err := s.DB.QueryRow(query, withdrawalID, userID).Scan(
 		&withdrawal.ID, &withdrawal.UserID, &withdrawal.FromAddressID, &withdrawal.Amount,
 		&withdrawal.Asset, &withdrawal.ToAddress, &withdrawal.Status, &withdrawal.TxHash,
 		&withdrawal.CreatedAt, &withdrawal.CompletedAt, &withdrawal.FailureReason,

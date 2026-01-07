@@ -1,8 +1,6 @@
 package config
 
 import (
-	"monera-digital/internal/db"
-
 	"github.com/spf13/viper"
 )
 
@@ -27,9 +25,6 @@ func Load() *Config {
 		RedisURL:    viper.GetString("REDIS_URL"),
 		JWTSecret:   viper.GetString("JWT_SECRET"),
 	}
-
-	// Initialize database
-	db.InitDB(cfg.DatabaseURL)
 
 	return cfg
 }

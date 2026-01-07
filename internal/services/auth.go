@@ -1,10 +1,17 @@
 package services
 
 import (
+	"database/sql"
 	"monera-digital/internal/models"
 )
 
-type AuthService struct{}
+type AuthService struct{
+	DB *sql.DB
+}
+
+func NewAuthService(db *sql.DB) *AuthService {
+	return &AuthService{DB: db}
+}
 
 type LoginResponse struct {
 	User        *models.User `json:"user,omitempty"`

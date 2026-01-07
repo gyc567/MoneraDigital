@@ -1,14 +1,20 @@
 package services
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
-	"monera-digital/internal/db"
 	"monera-digital/internal/models"
 )
 
-type LendingService struct{}
+type LendingService struct{
+	DB *sql.DB
+}
+
+func NewLendingService(db *sql.DB) *LendingService {
+	return &LendingService{DB: db}
+}
 
 func (s *LendingService) CalculateAPY(asset string, durationDays int) string {
 	baseRates := map[string]float64{
@@ -49,7 +55,7 @@ func (s *LendingService) ApplyForLending(userID int, req models.ApplyLendingRequ
 	`
 
 	var position models.LendingPosition
-	err := db.DB.QueryRow(query, userID, req.Asset, req.Amount, req.DurationDays, apy, "ACTIVE", endDate).Scan(
+	err := s.DB.QueryRow(query, userID, req.Asset, req.Amount, req.DurationDays, apy, "ACTIVE", endDate).Scan(
 		&position.ID, &position.UserID, &position.Asset, &position.Amount,
 		&position.DurationDays, &position.Apy, &position.Status, &position.AccruedYield,
 		&position.StartDate, &position.EndDate,
@@ -70,7 +76,7 @@ func (s *LendingService) GetUserPositions(userID int) ([]models.LendingPosition,
 		ORDER BY start_date
 	`
 
-	rows, err := db.DB.Query(query, userID)
+	rows, err := s.DB.Query(query, userID)
 	if err != nil {
 		return nil, err
 	}

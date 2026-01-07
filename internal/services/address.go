@@ -2,15 +2,21 @@ package services
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"time"
 
-	"monera-digital/internal/db"
 	"monera-digital/internal/models"
 )
 
-type AddressService struct{}
+type AddressService struct {
+	DB *sql.DB
+}
+
+func NewAddressService(db *sql.DB) *AddressService {
+	return &AddressService{DB: db}
+}
 
 func (s *AddressService) GetAddresses(userID int) ([]models.WithdrawalAddress, error) {
 	query := `
@@ -20,7 +26,7 @@ func (s *AddressService) GetAddresses(userID int) ([]models.WithdrawalAddress, e
 		ORDER BY created_at DESC
 	`
 
-	rows, err := db.DB.Query(query, userID)
+	rows, err := s.DB.Query(query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +56,7 @@ func (s *AddressService) AddAddress(userID int, req models.AddAddressRequest) (*
 	`
 
 	var addr models.WithdrawalAddress
-	err := db.DB.QueryRow(query, userID, req.Address, req.AddressType, req.Label).Scan(
+	err := s.DB.QueryRow(query, userID, req.Address, req.AddressType, req.Label).Scan(
 		&addr.ID, &addr.UserID, &addr.Address, &addr.AddressType, &addr.Label,
 		&addr.IsVerified, &addr.IsPrimary, &addr.CreatedAt,
 	)
@@ -71,7 +77,7 @@ func (s *AddressService) VerifyAddress(userID int, addressID int, token string) 
 	`
 
 	var expiresAt time.Time
-	err := db.DB.QueryRow(query, addressID, token).Scan(&expiresAt)
+	err := s.DB.QueryRow(query, addressID, token).Scan(&expiresAt)
 	if err != nil {
 		return err
 	}
@@ -82,27 +88,27 @@ func (s *AddressService) VerifyAddress(userID int, addressID int, token string) 
 
 	// Update address as verified
 	query = `UPDATE withdrawal_addresses SET is_verified = true, verified_at = NOW() WHERE id = $1 AND user_id = $2`
-	_, err = db.DB.Exec(query, addressID, userID)
+	_, err = s.DB.Exec(query, addressID, userID)
 	return err
 }
 
 func (s *AddressService) SetPrimaryAddress(userID int, addressID int) error {
 	// First, unset all primary addresses for this user
 	query := `UPDATE withdrawal_addresses SET is_primary = false WHERE user_id = $1`
-	_, err := db.DB.Exec(query, userID)
+	_, err := s.DB.Exec(query, userID)
 	if err != nil {
 		return err
 	}
 
 	// Set this address as primary
 	query = `UPDATE withdrawal_addresses SET is_primary = true WHERE id = $1 AND user_id = $2`
-	_, err = db.DB.Exec(query, addressID, userID)
+	_, err = s.DB.Exec(query, addressID, userID)
 	return err
 }
 
 func (s *AddressService) DeactivateAddress(userID int, addressID int) error {
 	query := `UPDATE withdrawal_addresses SET deactivated_at = NOW() WHERE id = $1 AND user_id = $2`
-	_, err := db.DB.Exec(query, addressID, userID)
+	_, err := s.DB.Exec(query, addressID, userID)
 	return err
 }
 

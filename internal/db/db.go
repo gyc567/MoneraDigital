@@ -7,24 +7,17 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var DB *sql.DB
-
-func InitDB(databaseURL string) {
-	var err error
-	DB, err = sql.Open("postgres", databaseURL)
+func InitDB(databaseURL string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
-		log.Fatal("Failed to open database:", err)
+		return nil, err
 	}
 
-	if err = DB.Ping(); err != nil {
-		log.Fatal("Failed to connect to database:", err)
+	if err = db.Ping(); err != nil {
+		db.Close()
+		return nil, err
 	}
 
 	log.Println("Database connected successfully")
-}
-
-func CloseDB() {
-	if DB != nil {
-		DB.Close()
-	}
+	return db, nil
 }
