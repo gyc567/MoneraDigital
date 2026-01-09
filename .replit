@@ -1,38 +1,9 @@
-modules = ["nodejs-20", "go-1.21", "web", "go-1.24"]
-[agent]
-expertMode = true
+modules = ["nodejs-20", "go-1.21", "web"]
+
+run = "bash scripts/start-replit.sh"
 
 [nix]
 channel = "stable-25_05"
-
-[deployment]
-deploymentTarget = "static"
-build = ["npm", "run", "build"]
-publicDir = "dist"
-
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Frontend"
-
-[[workflows.workflow]]
-name = "Frontend"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[ports]]
 localPort = 8080
