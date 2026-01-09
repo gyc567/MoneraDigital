@@ -77,10 +77,74 @@
 
 ## 六、 功能详细说明
 
-### 1. 业务流程图
+### 1. 业务流程图（冻结机制简化方案）
 
-> **主流程**：
-> 用户进入资产页面 -> 查看可提现余额 -> 点击"提现"按钮 -> **进入提现申请页** -> 选择提币链 & 地址 -> 输入提现金额 -> **计算手续费** -> 确认订单 -> **身份验证** (如需) -> 提交提现请求 -> **调用 Safeheron API** -> **订单创建成功** -> 前端展示提现处理中 -> **轮询查询订单状态** -> 交易上链 -> **提现完成** -> 用户邮件/APP 通知。
+> **简化主流程**：
+> 用户进入资产页面 -> 查看可提现余额 -> 点击"提现"按钮 -> **冻结金额** -> **身份验证（如需）** -> **调用 Safeheron API** -> 扣款创建订单 -> 前端展示提现处理中 -> **轮询查询订单状态** -> 交易上链 -> **提现完成** -> 用户邮件/APP 通知。
+>
+> **异常处理流程**：
+> - Safeheron 调用失败 → **立即解冻** → 用户可重试（不需要等待，本金恢复立即可用）
+> - 超时 > 1 小时 → **定时任务自动解冻** → 用户重新申请
+> - 地址错误/不可用 → 提示用户重新选择地址并重试
+
+**流程图（ASCII）**：
+```
+┌─────────────────┐
+│ 用户点击提现    │
+└────────┬────────┘
+         ↓
+    ┌─────────────────────────────┐
+    │ 冻结金额                    │
+    │ frozen_balance += amount     │
+    │ 用户看到"冻结中..."          │
+    └────────┬────────────────────┘
+             ↓
+    ┌─────────────────────────────┐
+    │ 身份验证（如需）             │
+    │ 首次新地址需二次验证         │
+    └────────┬────────────────────┘
+             ↓
+    ┌─────────────────────────────┐
+    │ 调用 Safeheron API          │
+    │ (30秒超时)                  │
+    └────────┬────────────────────┘
+             ↓
+      ┌──────┴──────┐
+      ↓             ↓
+  ┌─成功─┐    ┌─失败─┐
+  │      │    │      │
+  ↓      ↓    ↓      ↓
+┌──────────────┐  ┌──────────────────┐
+│ 扣款 + 创建  │  │ 立即解冻          │
+│ 订单（事务） │  │ 用户可立即重试    │
+│ 清除冻结     │  │ (无需等待)        │
+└───────┬──────┘  └──────┬───────────┘
+        ↓                ↓
+    用户看到订单      显示失败原因
+    号和hash           提供重试按钮
+        ↓
+    轮询Safeheron
+    查询订单状态
+        ↓
+    交易上链确认
+        ↓
+    提现完成
+        ↓
+    邮件通知用户
+```
+
+**超时处理（> 1 小时未完成）**：
+```
+定时任务每小时执行一次
+  ↓
+发现未完成订单 > 1 小时
+  ↓
+自动解冻金额
+  ↓
+标记订单为 TIMEOUT
+  ↓
+用户可重新申请提现
+```
 
 ### 2. 功能模块详述
 
@@ -123,15 +187,16 @@
 | 4.4 | **验证成功后的处理** | 验证码正确后：<br>1. 在 `withdrawal_address_whitelist` 表中标记该地址为**已验证**（verified = 1）<br>2. 记录验证时间<br>3. 关闭验证弹窗，自动进行下一步（调用提币接口）<br>4. 后续 24 小时内相同地址无需再验证 | 一经验证，后续快速操作。 |
 | 4.5 | **验证超时处理** | 如用户 10 分钟内未输入验证码：<br>1. 验证码失效<br>2. 提示"验证码已失效，请重新申请"<br>3. 用户需点击"重新申请"，重新开始流程 | 安全考量，限制验证有效期。 |
 
-#### 模块五：Safeheron 提币接口对接 - **P0 修复：幂等性与异常处理**
+#### 模块五：Safeheron 提币接口对接 - **冻结机制 + 数据库事务简化方案**
 
 | 序号 | 功能点 | 详细说明 | 交互逻辑 |
 | :--- | :--- | :--- | :--- |
-| 5.1 | **幂等性保护** | **前端生成 request_id (UUID)**，每次提现请求携带。<br><br>**后端逻辑**：<br>1. 检查 `withdrawal_request` 表，查询是否已有相同 request_id 的记录<br>2. **如已存在**：<br>   - 状态为 SUCCESS：直接返回已有订单信息（交易哈希等）<br>   - 状态为 PROCESSING：返回"提现处理中，请稍候"<br>   - 状态为 FAILED：允许用户重新提交（新 request_id）<br>3. **如不存在**：创建新的 PROCESSING 记录，继续流程<br><br>**目的**：防止网络中断或用户重复点击导致的重复提币 | 必须保证幂等性，避免重复转账。 |
-| 5.2 | **调用 Safeheron 提币 API** | **请求信息**：<br>- `wallet_id`：用户的 Safeheron 钱包 ID（来自账户开户）<br>- `to_address`：目标提币地址<br>- `amount`：提现金额<br>- `coin_type`：币种（USDT）<br>- `chain`：区块链（TRC20/ERC20 等）<br>- `request_id`：幂等性 ID<br><br>**响应信息**：<br>- `transaction_hash`：区块链交易哈希<br>- `safeheron_order_id`：Safeheron 内部订单 ID<br>- `status`：状态（SENT/CONFIRMED/FAILED）<br>- `network_fee`：矿工费实际值<br>- `created_at`：交易创建时间 | 与 Safeheron 服务端签名，前端无法直接调用。 |
-| 5.3 | **订单创建与存储** | 提币 API 返回成功后，在本地数据库创建订单记录：<br><br>```sql\nINSERT INTO withdrawal_order (\n  user_id, amount, fee_amount, actual_amount,\n  to_address, chain, coin_type,\n  safeheron_order_id, transaction_hash,\n  status = 'SENT',  -- 已发送至链\n  created_at, updated_at\n)\n```<br><br>同时：<br>- 从用户理财账户扣款（需要二阶段提交）<br>- 更新 `withdrawal_request` 表为 SUCCESS<br>- 记录账务流水（biz_type = WITHDRAWAL_SUCCESS） | 双重记录，确保数据完整性。 |
-| 5.4 | **提币失败处理** | 若 Safeheron API 返回失败或超时：<br><br>1. **记录失败日志**：<br>   - 更新 `withdrawal_request` 表为 FAILED<br>   - 记录错误信息和错误代码<br><br>2. **恢复用户余额**：<br>   - 撤销扣款操作（回滚）<br>   - 用户账户余额恢复<br><br>3. **用户反馈**：<br>   - 关闭 Loading，弹窗提示具体失败原因（如 "钱包暂停提币"、"金额超出限额"）<br>   - 提供【重试】按钮（可使用新 request_id 重试，或原 request_id）<br>   - 如重试 3 次失败，提示"请联系客服处理" | 失败不应导致资金丢失，必须可追踪。 |
-| 5.5 | **提币成功反馈** | API 返回成功后：<br>1. 关闭 Loading 遮罩<br>2. Toast 提示"提现请求已提交，请稍候确认"<br>3. 自动进入"提现详情页"，显示订单信息和区块链确认进度<br>4. 发送邮件通知用户 | 用户需要看到确切的订单号和交易哈希。 |
+| 5.1 | **冻结机制详解** | **核心流程**：冻结 → 调用 Safeheron → 确认 → 解冻<br><br>**冻结的三个保护作用**：<br>1. **防止重复提现**：用户多次点击同一提现按钮时，已冻结的金额无法再冻结<br>2. **防止余额被其他操作扣除**：冻结期间，该金额对其他操作（申购等）不可见<br>3. **自动恢复机制**：Safeheron 调用失败时立即解冻，无需人工干预<br><br>**冻结逻辑**：<br>```sql\n-- 第一步：冻结金额\nUPDATE account\nSET frozen_balance = frozen_balance + amount,\n    version = version + 1\nWHERE user_id = :uid AND type = 'WEALTH'\nAND balance >= amount  -- 验证可用余额足够\n```<br><br>**可用余额定义**：`available_balance = balance - frozen_balance`<br>用户在 UI 看到的"可用余额"已扣除冻结金额。 | 冻结在用户点击"确认提现"后立即执行，防止并发操作。 |
+| 5.2 | **调用 Safeheron 提币 API** | **请求信息**：<br>- `wallet_id`：用户的 Safeheron 钱包 ID<br>- `to_address`：目标提币地址<br>- `amount`：提现金额（不含冻结金额标记）<br>- `coin_type`：币种（USDT）<br>- `chain`：区块链（TRC20/ERC20 等）<br>- `request_id`：幂等性 ID（UUID）<br><br>**响应信息**：<br>- `transaction_hash`：区块链交易哈希<br>- `safeheron_order_id`：Safeheron 内部订单 ID<br>- `status`：状态（SENT/CONFIRMED/FAILED）<br>- `network_fee`：矿工费实际值<br>- `created_at`：交易创建时间<br><br>**超时处理**：<br>- Safeheron API 超时或 HTTP 5xx：自动回退，保留冻结状态（1小时后定时任务自动解冻）<br>- 用户可重试提现（使用原 request_id 进行幂等检查） | 后端同步调用，30 秒超时。Safeheron 本身也支持幂等性检查。 |
+| 5.3 | **提币成功 - 扣款与订单创建（事务）** | 当 Safeheron 返回 SENT 或 CONFIRMED 状态时：<br><br>```sql\n-- 事务开始 (REPEATABLE_READ 隔离级别)\nBEGIN TRANSACTION\n\n-- 1. 从账户扣款（从冻结金额转移到已扣款）\nUPDATE account\nSET frozen_balance = frozen_balance - amount,\n    balance = balance - amount,\n    version = version + 1\nWHERE user_id = :uid AND type = 'WEALTH'\nAND frozen_balance >= amount\n\n-- 2. 创建提现订单\nINSERT INTO withdrawal_order (\n  user_id, amount, network_fee, platform_fee, actual_amount,\n  to_address, chain, coin_type,\n  safeheron_order_id, transaction_hash,\n  status = 'SENT',  -- 已发送至链\n  created_at, updated_at\n) VALUES (...)\n\n-- 3. 记录账务流水\nINSERT INTO account_journal (\n  serial_no, user_id, account_id, amount, balance_snapshot,\n  biz_type = 'WITHDRAWAL_SUCCESS', ref_id = order_id, created_at\n) VALUES (...)\n\n-- 4. 更新提现请求状态\nUPDATE withdrawal_request\nSET status = 'SUCCESS', updated_at = NOW()\nWHERE request_id = :request_id\n\nCOMMIT TRANSACTION\n```<br><br>**关键保证**：<br>- 扣款和订单创建原子性，确保账户一致<br>- 幂等性：相同 request_id 再次调用时跳过，直接返回已有 order_id | 事务保证账户一致，无需分布式锁。 |
+| 5.4 | **提币失败 - 立即解冻** | 若 Safeheron API 返回失败：<br><br>```sql\n-- 立即解冻（不需要事务，直接恢复）\nUPDATE account\nSET frozen_balance = frozen_balance - amount,\n    version = version + 1\nWHERE user_id = :uid AND type = 'WEALTH'\n\n-- 更新提现请求为失败\nUPDATE withdrawal_request\nSET status = 'FAILED', error_code = :error_code,\n    error_message = :error_msg, updated_at = NOW()\nWHERE request_id = :request_id\n```<br><br>**用户反馈**：<br>- 关闭 Loading，弹窗提示具体失败原因（如"钱包暂停提币"、"地址被冻结"）<br>- 提供【重试】按钮（使用原 request_id，后端会检查是否需要重新冻结）<br>- 如重试 3 次失败，提示"请联系客服处理"<br><br>**幂等性处理**：同一 request_id 失败后，用户可重新提交（后端会重新冻结） | 失败立即恢复，无需等待定时任务，用户体验最优。 |
+| 5.5 | **提币超时 - 自动解冻（定时任务）** | 若冻结超过 1 小时仍未完成（可能是 Safeheron 故障或网络中断）：<br><br>```sql\n-- 每小时执行一次（CRON: 0 * * * * *）\nUPDATE account\nSET frozen_balance = frozen_balance - amount,\n    version = version + 1\nWHERE id IN (\n  SELECT account_id FROM withdrawal_order\n  WHERE status IN ('PENDING', 'VERIFYING')\n  AND created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)\n)\n\n-- 标记订单为超时（用户可重试）\nUPDATE withdrawal_order\nSET status = 'TIMEOUT'\nWHERE status IN ('PENDING', 'VERIFYING')\nAND created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)\n\n-- 发送用户通知\nSEND_NOTIFICATION(user_id, '您的提现申请已超时，本金已恢复，请重新申请')\n```<br><br>**用户体验**：<br>- 用户可在提现历史中看到"已超时"状态<br>- 点击"重试"按钮会重新发起申请（新 request_id）<br>- 本金自动回到账户，无需客服干预 | 全自动处理，无需人工干预，用户友好。 |
+| 5.6 | **提币成功反馈** | API 返回成功后（扣款完成）：<br>1. 关闭 Loading 遮罩<br>2. Toast 提示"提现请求已提交，请稍候确认"<br>3. 自动进入"提现详情页"，显示订单信息和区块链确认进度<br>4. 发送邮件通知用户 | 用户需要看到确切的订单号和交易哈希。 |
 
 #### 模块六：提现订单追踪与进度查看
 
@@ -207,7 +272,26 @@
 
 ## 九、 数据库设计
 
-### 9.1 新增表结构
+### 9.1 账户表更新（新增冻结余额字段）
+
+在现有的 `account` 表中添加冻结余额相关字段：
+
+```sql
+-- 更新现有 account 表（理财账户系统设计中的账户表）
+ALTER TABLE account ADD COLUMN (
+  frozen_balance DECIMAL(32,16) DEFAULT 0 COMMENT '冻结余额（提现等待中）'
+);
+
+-- 添加生成列计算可用余额（可选，用于快速查询）
+ALTER TABLE account ADD COLUMN (
+  available_balance GENERATED ALWAYS AS (balance - frozen_balance) STORED COMMENT '可用余额 = 余额 - 冻结金额'
+);
+
+-- 添加索引以支持快速查询冻结信息
+ALTER TABLE account ADD INDEX idx_frozen_balance (user_id, frozen_balance);
+```
+
+### 9.2 新增表结构
 
 ```sql
 -- 1. 提币地址白名单表
@@ -274,7 +358,8 @@ CREATE TABLE withdrawal_order (
     'CONFIRMED',    -- 已确认
     'COMPLETED',    -- 已完成
     'FAILED',       -- 失败
-    'CANCELLED'     -- 已取消
+    'CANCELLED',    -- 已取消
+    'TIMEOUT'       -- 已超时（冻结已解冻）
   ) DEFAULT 'PENDING',
 
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -311,44 +396,195 @@ CREATE TABLE withdrawal_verification (
   INDEX idx_user_id (user_id),
   INDEX idx_order_id (withdrawal_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. 冻结日志表（监控冻结/解冻过程）
+CREATE TABLE withdrawal_freeze_log (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  order_id BIGINT NOT NULL,
+
+  amount DECIMAL(32,16) NOT NULL,         -- 冻结金额
+  frozen_at DATETIME,                     -- 冻结时间
+  released_at DATETIME,                   -- 解冻时间
+  reason VARCHAR(64),                     -- 解冻原因：SUCCESS / FAILED / TIMEOUT
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_order_id (order_id),
+  INDEX idx_reason (reason),
+  INDEX idx_frozen_at (frozen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### 9.2 字段加密说明
+### 9.3 字段加密说明
 - `wallet_address`：存储时需用对称加密（AES-256），查询时解密对比
 - `verification_code`：短期高强度加密或 Hash，比对时需要额外安全校验
 - `transaction_hash`：可明文存储（区块链公开数据）
 
----
-
 ## 十、 定时任务配置
 
 ```
+-- 每小时执行一次：自动解冻超时订单（>1小时未完成）
+CRON: 0 * * * * *
+CALL auto_release_frozen_balance();
+
 -- 每小时执行一次：同步 Safeheron 订单状态
 CRON: 0 * * * * *
 CALL sync_withdrawal_order_status();
 
--- 每日凌晨 2 点：检查超时订单（未完成超过 24 小时）
-CRON: 0 2 * * * *
-CALL check_withdrawal_timeout_orders();
-
--- 每日生成对账单
+-- 每日凌晨 1 点：日对账（本地订单 vs Safeheron 订单）
 CRON: 0 1 * * * *
-CALL generate_withdrawal_reconciliation_report();
+CALL daily_withdrawal_reconciliation();
 
--- 定期清理过期验证码（每 10 分钟）
-CRON: */10 * * * * *
-CALL cleanup_expired_verification_codes();
+-- 每小时执行一次：冻结余额健康检查（告警）
+CRON: 0 * * * * *
+CALL check_frozen_balance_health();
+
+-- 每日凌晨 3 点：清理过期的幂等性记录（7天前的已完成请求）
+CRON: 0 3 * * * *
+DELETE FROM withdrawal_request
+WHERE status IN ('SUCCESS', 'FAILED')
+AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY);
+```
+
+### 10.1 冻结解冻定时任务详解
+
+```sql
+-- 自动解冻超时订单（>1小时未完成）
+CREATE PROCEDURE auto_release_frozen_balance()
+BEGIN
+  DECLARE done INT DEFAULT FALSE;
+  DECLARE order_id_var BIGINT;
+  DECLARE user_id_var BIGINT;
+  DECLARE amount_var DECIMAL(32,16);
+
+  DECLARE order_cursor CURSOR FOR
+    SELECT id, user_id, amount FROM withdrawal_order
+    WHERE status IN ('PENDING', 'VERIFYING', 'SENT')
+    AND created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR);
+
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+  OPEN order_cursor;
+
+  release_loop: LOOP
+    FETCH order_cursor INTO order_id_var, user_id_var, amount_var;
+    IF done THEN LEAVE release_loop; END IF;
+
+    -- 1. 更新账户，解冻金额
+    UPDATE account
+    SET frozen_balance = frozen_balance - amount_var,
+        version = version + 1
+    WHERE user_id = user_id_var AND type = 'WEALTH';
+
+    -- 2. 标记订单为超时
+    UPDATE withdrawal_order
+    SET status = 'TIMEOUT', updated_at = NOW()
+    WHERE id = order_id_var;
+
+    -- 3. 记录冻结日志
+    INSERT INTO withdrawal_freeze_log
+    (user_id, order_id, amount, frozen_at, released_at, reason, created_at)
+    VALUES (user_id_var, order_id_var, amount_var,
+            (SELECT created_at FROM withdrawal_order WHERE id = order_id_var),
+            NOW(), 'TIMEOUT', NOW());
+
+    -- 4. 发送用户通知
+    INSERT INTO user_notification (user_id, title, message, type)
+    VALUES (user_id_var, '提现超时',
+            '您的提现申请已超时，本金已恢复到账户，请重新申请',
+            'WITHDRAWAL_TIMEOUT');
+  END LOOP;
+
+  CLOSE order_cursor;
+END;
+```
+
+### 10.2 冻结余额健康检查
+
+```sql
+-- 监控冻结余额是否异常
+CREATE PROCEDURE check_frozen_balance_health()
+BEGIN
+  DECLARE total_balance DECIMAL(32,16);
+  DECLARE total_frozen DECIMAL(32,16);
+  DECLARE frozen_ratio DECIMAL(5,2);
+
+  -- 计算冻结率
+  SELECT COALESCE(SUM(frozen_balance), 0) INTO total_frozen
+  FROM account WHERE type = 'WEALTH';
+
+  SELECT COALESCE(SUM(balance), 0) INTO total_balance
+  FROM account WHERE type = 'WEALTH';
+
+  IF total_balance > 0 THEN
+    SET frozen_ratio = (total_frozen / total_balance) * 100;
+  ELSE
+    SET frozen_ratio = 0;
+  END IF;
+
+  -- 告警：冻结余额 > 总余额的 10%（说明解冻有问题）
+  IF frozen_ratio > 10 THEN
+    INSERT INTO system_alert_log
+    (alert_type, severity, message, alert_data)
+    VALUES ('FROZEN_BALANCE_HIGH', 'WARNING',
+            CONCAT('冻结余额过高，比例: ', frozen_ratio, '%'),
+            JSON_OBJECT('total_frozen', total_frozen, 'total_balance', total_balance));
+  END IF;
+END;
+```
+
+### 10.3 对账任务简化（无需两阶段提交）
+
+```sql
+-- 日对账：对比本地订单与 Safeheron 订单
+CREATE PROCEDURE daily_withdrawal_reconciliation()
+BEGIN
+  -- 1. 检查所有已发送但未确认的订单
+  SELECT * FROM withdrawal_order
+  WHERE status IN ('SENT', 'CONFIRMING')
+  AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+  INTO @stale_orders;
+
+  -- 2. 对于每笔订单，查询 Safeheron 确认状态
+  -- （使用 safeheron_order_id 查询 Safeheron API）
+
+  -- 3. 如果发现不一致（本地 SENT，但 Safeheron 已 FAILED）
+  --    则更新本地订单状态，并解冻金额（如需）
+
+  -- 4. 如果发现差异，记录告警供人工审查
+  INSERT INTO reconciliation_alert_log
+  (alert_type, order_id, description, created_at)
+  VALUES ('WITHDRAWAL_STATUS_MISMATCH', @order_id, @description, NOW());
+END;
 ```
 
 ---
 
-## 十一、 项目规划
+## 十一、 项目规划（简化方案）
 
-*   **阶段一（2 天）**：数据库设计、Safeheron API 调试、UI 原型设计。
-*   **阶段二（3 天）**：后端实现（地址管理、订单创建、幂等性、安全验证）。
-*   **阶段三（2 天）**：前端实现（提现表单、地址管理、订单追踪）。
-*   **阶段四（2 天）**：联调测试、异常场景覆盖、安全审查。
-*   **阶段五（1 天）**：灰度上线、监控告警配置。
+基于**冻结机制 + 数据库事务**的简化方案，开发时间从"2天"改为"5天"，更加现实可控。
+
+*   **阶段一（1 天）**：数据库设计、Safeheron API 调试、冻结机制数据流设计。
+*   **阶段二（2 天）**：后端实现（地址管理、冻结/解冻逻辑、幂等性、二次验证）。
+*   **阶段三（1.5 天）**：前端实现（提现表单、地址管理、订单追踪、实时进度更新）。
+*   **阶段四（1.5 天）**：联调测试、冻结机制验证、异常场景覆盖、对账测试。
+*   **阶段五（1 天）**：灰度上线、监控告警配置、冻结余额健康检查。
+
+**总计：5 天（40小时），相比原来的 10 天大幅简化**
+
+### 关键改进说明
+
+**从"复杂分布式事务"改为"简单冻结机制"的优势**：
+
+| 维度 | 原方案（两阶段提交） | 新方案（冻结机制） |
+|-----|------------------|------------------|
+| **复杂度** | 极高（需分布式框架） | 低（单数据库事务） |
+| **开发时间** | 2 周 | 5 天 |
+| **可靠性** | 较高但实现复杂 | 高（无外部依赖） |
+| **运维成本** | 高（需监控分布式锁） | 低（冻结自动解冻） |
+| **用户体验** | 好（提币快） | 好（冻结快速反馈） |
+| **容错能力** | 中（需手动处理） | 高（自动解冻超时） |
 
 ---
 
