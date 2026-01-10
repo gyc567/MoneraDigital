@@ -1,0 +1,82 @@
+// internal/routes/routes.go
+package routes
+
+import (
+	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	"monera-digital/internal/container"
+	"monera-digital/internal/handlers"
+	"monera-digital/internal/middleware"
+)
+
+// SetupRoutes configures all API routes with middleware
+func SetupRoutes(router *gin.Engine, cont *container.Container) {
+	// Add global middleware
+	router.Use(middleware.RecoveryHandler())
+	router.Use(middleware.ErrorHandler())
+	router.Use(middleware.RateLimitMiddleware(cont.RateLimiter))
+
+	// Swagger documentation
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Create handler
+	h := handlers.NewHandler(
+		cont.AuthService,
+		cont.LendingService,
+		cont.AddressService,
+		cont.WithdrawalService,
+	)
+
+	// Public routes
+	public := router.Group("/api")
+	{
+		auth := public.Group("/auth")
+		{
+			auth.POST("/register", h.Register)
+			auth.POST("/login", h.Login)
+			auth.POST("/refresh", h.RefreshToken)
+			auth.POST("/logout", h.Logout)
+			auth.POST("/2fa/setup", h.Setup2FA)
+			auth.POST("/2fa/enable", h.Enable2FA)
+			auth.POST("/2fa/verify-login", h.Verify2FALogin)
+		}
+	}
+
+	// Protected routes
+	protected := router.Group("/api")
+	protected.Use(middleware.AuthMiddleware())
+	{
+		auth := protected.Group("/auth")
+		{
+			auth.GET("/me", h.GetMe)
+		}
+
+		lending := protected.Group("/lending")
+		{
+			lending.POST("/apply", h.ApplyForLending)
+			lending.GET("/positions", h.GetUserPositions)
+		}
+
+		addresses := protected.Group("/addresses")
+		{
+			addresses.GET("", h.GetAddresses)
+			addresses.POST("", h.AddAddress)
+			addresses.POST("/:id/verify", h.VerifyAddress)
+			addresses.POST("/:id/set-primary", h.SetPrimaryAddress)
+			addresses.POST("/:id/deactivate", h.DeactivateAddress)
+		}
+
+		withdrawals := protected.Group("/withdrawals")
+		{
+			withdrawals.GET("", h.GetWithdrawals)
+			withdrawals.POST("", h.CreateWithdrawal)
+			withdrawals.GET("/:id", h.GetWithdrawalByID)
+		}
+	}
+
+	// Health check endpoint
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+}
