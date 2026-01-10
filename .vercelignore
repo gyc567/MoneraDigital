@@ -1,8 +1,6 @@
 api/
 .git/
-.gitignore
 node_modules/
-src/
 tests/
 docs/
 scripts/
@@ -13,10 +11,5 @@ internal/
 .env
 .env.local
 .env.*.local
-vercel.json
-vite.config.ts
-tsconfig.json
-eslint.config.js
-vitest.setup.ts
 playwright.config.ts
-components.json
+
