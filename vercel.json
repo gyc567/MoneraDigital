@@ -4,6 +4,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://monera-digital--gyc567.replit.app/api/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
