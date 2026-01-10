@@ -48,4 +48,4 @@ waitForPort = 5000
 deploymentTarget = "autoscale"
 build = ["bash", "scripts/build.sh"]
 publicDir = "dist"
-run = ["bash", "-c", "PORT=5000 GIN_MODE=release ./server"]
+run = ["bash", "-c", "PORT=5001 GIN_MODE=release ./server"]
