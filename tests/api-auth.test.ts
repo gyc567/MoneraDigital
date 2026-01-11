@@ -6,18 +6,50 @@ import { db } from '../src/lib/db';
 import { verifyToken } from '../src/lib/auth-middleware';
 import { ZodError } from 'zod';
 
-vi.mock('../src/lib/auth-service');
-vi.mock('../src/lib/two-factor-service');
+// Mutable state for mock
+const mockDbState = {
+  queryResult: [] as any[],
+};
+
+// Reset mock state before each test
+beforeEach(() => {
+  mockDbState.queryResult = [];
+});
+
+vi.mock('../src/lib/auth-service', () => ({
+  AuthService: {
+    login: vi.fn(),
+    register: vi.fn(),
+    verify2FAAndLogin: vi.fn(),
+  },
+}));
+
+vi.mock('../src/lib/two-factor-service', () => ({
+  TwoFactorService: {
+    setup: vi.fn(),
+    enable: vi.fn(),
+  },
+}));
+
 vi.mock('../src/lib/db', () => ({
   db: {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-  }
+    select: vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockImplementation(() => ({
+        where: vi.fn().mockResolvedValue(mockDbState.queryResult),
+      })),
+    })),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockReturnThis(),
+    returning: vi.fn().mockResolvedValue([]),
+  },
 }));
-vi.mock('../src/lib/auth-middleware');
+
+vi.mock('../src/lib/auth-middleware', () => ({
+  verifyToken: vi.fn(),
+}));
+
 vi.mock('../src/lib/rate-limit', () => ({
-  rateLimit: vi.fn().mockResolvedValue(true)
+  rateLimit: vi.fn().mockResolvedValue(true),
 }));
 
 describe('Auth Unified Handler', () => {
@@ -26,6 +58,7 @@ describe('Auth Unified Handler', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDbState.queryResult = [];
     res = {
       status: vi.fn().mockReturnThis(),
       json: vi.fn().mockReturnThis(),
@@ -45,7 +78,7 @@ describe('Auth Unified Handler', () => {
       body: { email: 'test@example.com', password: 'password' },
       headers: {}
     };
-    const mockResult = { token: 'jwt', user: { id: 1 } };
+    const mockResult = { access_token: 'jwt', user: { id: 1 } };
     (AuthService.login as any).mockResolvedValue(mockResult);
 
     await handler(req, res);
@@ -57,7 +90,7 @@ describe('Auth Unified Handler', () => {
     req = { 
       query: { route: ['register'] }, 
       method: 'POST', 
-      body: { email: 'test@example.com', password: 'password' },
+      body: { email: 'test@example.com', password: 'Password123' },
       headers: {}
     };
     const mockUser = { id: 1, email: 'test@example.com' };
@@ -71,7 +104,7 @@ describe('Auth Unified Handler', () => {
   it('should handle /me', async () => {
     req = { query: { route: ['me'] }, method: 'GET', headers: {} };
     (verifyToken as any).mockReturnValue({ userId: 1 });
-    (db.select().from().where as any).mockResolvedValue([{ id: 1, email: 't@e.com', twoFactorEnabled: false }]);
+    mockDbState.queryResult = [{ id: 1, email: 't@e.com', twoFactorEnabled: false }];
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
@@ -101,19 +134,103 @@ describe('Auth Unified Handler', () => {
     expect(res.json).toHaveBeenCalledWith({ message: '2FA enabled successfully' });
   });
 
-  it('should handle 2fa/verify-login', async () => {
-    req = { 
-      query: { route: ['2fa', 'verify-login'] }, 
-      method: 'POST', 
-      body: { userId: 1, token: '123456' },
-      headers: {} 
-    };
-    const mockResult = { token: 'jwt', user: { id: 1 } };
-    (AuthService.verify2FAAndLogin as any).mockResolvedValue(mockResult);
+  describe('2fa/verify-login', () => {
+    it('should succeed with valid userId and token', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { userId: 1, token: '123456' },
+        headers: {} 
+      };
+      mockDbState.queryResult = [{ id: 1 }];
+      const mockResult = { access_token: 'jwt', user: { id: 1 } };
+      (AuthService.verify2FAAndLogin as any).mockResolvedValue(mockResult);
 
-    await handler(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(mockResult);
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(mockResult);
+    });
+
+    it('should return 400 for missing all fields', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: {},
+        headers: {} 
+      };
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Missing required fields: userId and token' });
+    });
+
+    it('should return 400 when only userId is provided', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { userId: 1 },
+        headers: {} 
+      };
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should return 400 when only token is provided', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { token: '123456' },
+        headers: {} 
+      };
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should return 401 for user not found', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { userId: 999, token: '123456' },
+        headers: {} 
+      };
+      mockDbState.queryResult = [];
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ code: 'INVALID_CREDENTIALS', message: 'Invalid user or token' });
+    });
+
+    it('should return 401 for invalid 2FA token', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { userId: 1, token: 'wrong' },
+        headers: {} 
+      };
+      mockDbState.queryResult = [{ id: 1 }];
+      (AuthService.verify2FAAndLogin as any).mockRejectedValue(new Error('Invalid verification code'));
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ code: 'INVALID_2FA_TOKEN', message: 'Invalid or expired 2FA token' });
+    });
+
+    it('should return 401 when 2FA not enabled for user', async () => {
+      req = { 
+        query: { route: ['2fa', 'verify-login'] }, 
+        method: 'POST', 
+        body: { userId: 1, token: '123456' },
+        headers: {} 
+      };
+      mockDbState.queryResult = [{ id: 1 }];
+      (AuthService.verify2FAAndLogin as any).mockRejectedValue(new Error('2FA not enabled'));
+
+      await handler(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ code: 'INVALID_2FA_TOKEN', message: 'Invalid or expired 2FA token' });
+    });
   });
 
   it('should handle ZodError', async () => {

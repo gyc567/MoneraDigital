@@ -1,0 +1,339 @@
+openapi: 3.0.0
+info:
+  title: MoneraDigital Wallet Account Opening API
+  description: |
+    API specification for Safeheron wallet automatic account opening feature.
+    This API enables automatic assignment of blockchain deposit addresses to users for deposit functionality.
+  version: 1.0.0
+  contact:
+    name: MoneraDigital Support
+    email: support@monera-digital.app
+  license:
+    name: MIT
+
+servers:
+  - url: https://monera-digital.vercel.app/api
+    description: Production API
+  - url: http://localhost:3000/api
+    description: Development API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    WalletCreationRequest:
+      type: object
+      required:
+        - request_id
+        - user_id
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the wallet creation request
+          example: '550e8400-e29b-41d4-a716-446655440000'
+        user_id:
+          type: integer
+          description: User ID for whom the wallet is being created
+          example: 5
+
+    WalletCreationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates if the wallet creation request was successful
+          example: true
+        wallet_id:
+          type: string
+          description: Safeheron wallet ID (only present on success)
+          example: 'wallet_sfh_abc123def456'
+        address:
+          type: string
+          description: Blockchain deposit address (only present on success)
+          example: '0x1234567890abcdef1234567890abcdef12345678'
+        status:
+          type: string
+          enum: [success, creating, failed]
+          description: Current status of the wallet creation
+          example: 'success'
+        message:
+          type: string
+          description: Human-readable status message
+          example: 'Wallet created successfully'
+
+    WalletStatusResponse:
+      type: object
+      properties:
+        is_opened:
+          type: boolean
+          description: Indicates if the user has an active wallet account
+          example: true
+        wallet_id:
+          type: string
+          nullable: true
+          description: Safeheron wallet ID (only if wallet exists)
+          example: 'wallet_sfh_abc123def456'
+        address:
+          type: string
+          nullable: true
+          description: Primary blockchain deposit address (only if wallet exists)
+          example: '0x1234567890abcdef1234567890abcdef12345678'
+        status:
+          type: string
+          enum: [success, creating, failed, none]
+          nullable: true
+          description: Current wallet creation status
+          example: 'success'
+
+    DepositAddress:
+      type: object
+      properties:
+        chain:
+          type: string
+          description: Blockchain network identifier
+          example: 'ETH'
+        address:
+          type: string
+          description: Blockchain deposit address
+          example: '0x1234567890abcdef1234567890abcdef12345678'
+        memo:
+          type: string
+          nullable: true
+          description: Optional memo/tag for chains that require it
+          example: null
+
+    DepositAddressResponse:
+      type: object
+      properties:
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepositAddress'
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: 'Bad Request'
+        message:
+          type: string
+          description: Detailed error description
+          example: 'Invalid request_id format'
+
+paths:
+  /wallet/create:
+    post:
+      summary: Create or activate wallet account
+      description: |
+        Initiates wallet account creation process with Safeheron.
+        Implements idempotency using request_id to prevent duplicate creation.
+      operationId: createWallet
+      tags:
+        - Wallet
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalletCreationRequest'
+            example:
+              request_id: '550e8400-e29b-41d4-a716-446655440000'
+              user_id: 5
+      responses:
+        '200':
+          description: Wallet creation request processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletCreationResponse'
+              example:
+                success: true
+                wallet_id: 'wallet_sfh_abc123def456'
+                address: '0x1234567890abcdef1234567890abcdef12345678'
+                status: 'success'
+                message: 'Wallet created successfully'
+        '201':
+          description: Wallet creation initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletCreationResponse'
+              example:
+                success: false
+                wallet_id: null
+                address: null
+                status: 'creating'
+                message: 'Wallet creation in progress'
+        '400':
+          description: Bad request - invalid request_id or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Bad Request'
+                message: 'Invalid request_id format'
+        '409':
+          description: Conflict - wallet creation already in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Conflict'
+                message: 'Wallet creation already in progress for this request_id'
+        '500':
+          description: Internal server error - Safeheron API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Internal Server Error'
+                message: 'Failed to communicate with Safeheron API'
+
+  /wallet/status:
+    get:
+      summary: Check wallet opening status
+      description: Retrieves the current wallet account status for the authenticated user
+      operationId: getWalletStatus
+      tags:
+        - Wallet
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: User ID to check wallet status for
+          example: 5
+      responses:
+        '200':
+          description: Wallet status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletStatusResponse'
+              example:
+                is_opened: true
+                wallet_id: 'wallet_sfh_abc123def456'
+                address: '0x1234567890abcdef1234567890abcdef12345678'
+                status: 'success'
+        '400':
+          description: Bad request - missing or invalid user_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Bad Request'
+                message: 'user_id is required'
+        '401':
+          description: Unauthorized - invalid or missing token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Unauthorized'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Internal Server Error'
+
+  /wallet/deposit-address:
+    get:
+      summary: Get deposit addresses
+      description: Retrieves available blockchain deposit addresses for the user
+      operationId: getDepositAddresses
+      tags:
+        - Wallet
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: User ID to get deposit addresses for
+          example: 5
+        - name: chain
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by blockchain network (e.g., ETH, BSC, POLYGON)
+          example: 'ETH'
+      responses:
+        '200':
+          description: Deposit addresses retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositAddressResponse'
+              example:
+                addresses:
+                  - chain: 'ETH'
+                    address: '0x1234567890abcdef1234567890abcdef12345678'
+                    memo: null
+                  - chain: 'BSC'
+                    address: '0xabcdef1234567890abcdef1234567890abcdef12'
+                    memo: null
+                  - chain: 'POLYGON'
+                    address: '0x56789abcdef0123456789abcdef0123456789ab'
+                    memo: null
+        '400':
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Bad Request'
+                message: 'Invalid chain parameter'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Unauthorized'
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Not Found'
+                message: 'No wallet account found for this user'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Internal Server Error'
+
+tags:
+  - name: Wallet
+    description: Safeheron wallet account management and deposit address endpoints

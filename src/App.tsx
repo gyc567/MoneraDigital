@@ -16,6 +16,7 @@ import Security from "./pages/dashboard/Security";
 import Lending from "./pages/dashboard/Lending";
 import Addresses from "./pages/dashboard/Addresses";
 import Withdraw from "./pages/dashboard/Withdraw";
+import AccountOpening from "./pages/dashboard/AccountOpening";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
             
             <Route path="/dashboard" element={<DashboardLayout />}>
               <Route index element={<Overview />} />
+              <Route path="account-opening" element={<AccountOpening />} />
               <Route path="assets" element={<Assets />} />
               <Route path="lending" element={<Lending />} />
               <Route path="addresses" element={<Addresses />} />

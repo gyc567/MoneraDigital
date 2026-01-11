@@ -1,14 +1,15 @@
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  Wallet, 
-  ArrowLeftRight, 
-  TrendingUp, 
-  ShieldCheck, 
+import {
+  LayoutDashboard,
+  Wallet,
+  ArrowLeftRight,
+  TrendingUp,
+  ShieldCheck,
   FileText,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  UserPlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -20,6 +21,7 @@ const DashboardSidebar = () => {
 
   const menuItems = [
     { icon: LayoutDashboard, label: t("dashboard.nav.overview"), href: "/dashboard" },
+    { icon: UserPlus, label: t("dashboard.nav.accountOpening"), href: "/dashboard/account-opening" },
     { icon: Wallet, label: t("dashboard.nav.assets"), href: "/dashboard/assets" },
     { icon: ArrowLeftRight, label: t("dashboard.nav.lending"), href: "/dashboard/lending" },
     { icon: TrendingUp, label: t("dashboard.nav.investments"), href: "/dashboard/investments" },

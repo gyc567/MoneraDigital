@@ -79,13 +79,32 @@ const handlers: Record<string, (req: VercelRequest, res: VercelResponse, log: an
     return res.status(200).json({ message: '2FA enabled successfully' });
   },
 
-  '2fa/verify-login': async (req, res) => {
+  '2fa/verify-login': async (req, res, log) => {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    const { userId, token } = req.body;
-    if (!userId || !token) return res.status(400).json({ error: 'Missing required fields' });
+    if (!(await checkRateLimit(req, res, log))) return;
 
-    const result = await AuthService.verify2FAAndLogin(Number(userId), token);
-    return res.status(200).json(result);
+    const { userId, token } = req.body;
+    if (!userId || !token) {
+      return res.status(400).json({ error: 'Missing required fields: userId and token' });
+    }
+
+    // Pre-check user existence
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, Number(userId)));
+    if (!user) {
+      log.warn({ userId }, '2FA verify failed: user not found');
+      return res.status(401).json({ code: 'INVALID_CREDENTIALS', message: 'Invalid user or token' });
+    }
+
+    try {
+      const result = await AuthService.verify2FAAndLogin(Number(userId), token);
+      return res.status(200).json(result);
+    } catch (error: any) {
+      if (error.message === '2FA not enabled' || error.message === 'Invalid verification code') {
+        log.warn({ userId }, '2FA verification failed');
+        return res.status(401).json({ code: 'INVALID_2FA_TOKEN', message: 'Invalid or expired 2FA token' });
+      }
+      throw error;
+    }
   }
 };
 

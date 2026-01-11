@@ -196,6 +196,7 @@
   "dashboard": {
     "nav": {
       "overview": "Overview",
+      "accountOpening": "Account Opening",
       "assets": "Assets",
       "lending": "Lending",
       "addresses": "Addresses",
@@ -292,6 +293,33 @@
       "noAddresses": "No verified addresses available. Please add and verify an address first.",
       "noHistory": "No withdrawal history yet",
       "loading": "Loading..."
+    }
+  },
+  "wallet": {
+    "opening": {
+      "title": "Activate Your Wallet",
+      "description": "Create your secure digital asset wallet account with Safeheron custody service.",
+      "cardTitle": "Safeheron Custody Account",
+      "cardDescription": "To deposit funds and use our financial services, you need to activate your dedicated Safeheron custody account first.",
+      "securityInfo": "Your assets are protected by institutional-grade multi-signature custody technology. Safeheron is a leading digital asset custodian trusted by institutions worldwide.",
+      "activateButton": "Activate Now",
+      "creating": "Creating your wallet account...",
+      "activated": "Account Activated Successfully",
+      "addressLabel": "Your Primary Deposit Address",
+      "walletId": "Wallet ID",
+      "depositHint": "You can now use this address to deposit supported assets.",
+      "feature1Title": "Bank-Level Security",
+      "feature1Description": "Multi-signature custody technology with institutional-grade security standards.",
+      "feature2Title": "Instant Setup",
+      "feature2Description": "Get your wallet address instantly with just one click.",
+      "feature3Title": "Full Transparency",
+      "feature3Description": "All transactions are verifiable on-chain with complete audit trail.",
+      "successTitle": "Wallet Activated",
+      "successDescription": "Your Safeheron custody account has been created successfully.",
+      "errorTitle": "Activation Failed",
+      "errorDescription": "Unable to create wallet account. Please try again later.",
+      "error": "Failed to create wallet account",
+      "retry": "Try Again"
     }
   }
 }

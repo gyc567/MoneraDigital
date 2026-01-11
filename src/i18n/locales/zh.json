@@ -196,6 +196,7 @@
   "dashboard": {
     "nav": {
       "overview": "概览",
+      "accountOpening": "用户开户",
       "assets": "资产总览",
       "lending": "借贷管理",
       "addresses": "地址管理",
@@ -292,6 +293,33 @@
       "noAddresses": "没有可用的已验证地址。请先添加并验证地址。",
       "noHistory": "还没有提币记录",
       "loading": "加载中..."
+    }
+  },
+  "wallet": {
+    "opening": {
+      "title": "开通资金账户",
+      "description": "使用 Safeheron 托管服务创建您的安全数字资产钱包账户。",
+      "cardTitle": "Safeheron 托管账户",
+      "cardDescription": "要充值并使用我们的金融服务，您需要先激活您的专属 Safeheron 托管账户。",
+      "securityInfo": "您的资产受到机构级多重签名托管技术的保护。Safeheron 是全球机构信赖的领先数字资产托管服务商。",
+      "activateButton": "立即开通",
+      "creating": "正在为您创建钱包账户...",
+      "activated": "账户开通成功",
+      "addressLabel": "您的首选充值地址",
+      "walletId": "钱包 ID",
+      "depositHint": "您现在可以使用此地址充值支持的资产。",
+      "feature1Title": "银行级安全",
+      "feature1Description": "采用机构级安全标准的多重签名托管技术。",
+      "feature2Title": "即时开通",
+      "feature2Description": "一键即可获取您的钱包地址。",
+      "feature3Title": "完全透明",
+      "feature3Description": "所有交易均可通过链上验证，完整的审计追踪。",
+      "successTitle": "钱包已开通",
+      "successDescription": "您的 Safeheron 托管账户已成功创建。",
+      "errorTitle": "开通失败",
+      "errorDescription": "无法创建钱包账户，请稍后重试。",
+      "error": "钱包账户创建失败",
+      "retry": "重试"
     }
   }
 }

@@ -3,6 +3,7 @@ import { pgTable, serial, text, timestamp, numeric, integer, pgEnum, boolean } f
 export const lendingStatusEnum = pgEnum('lending_status', ['ACTIVE', 'COMPLETED', 'TERMINATED']);
 export const addressTypeEnum = pgEnum('address_type', ['BTC', 'ETH', 'USDC', 'USDT']);
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']);
+export const walletCreationStatusEnum = pgEnum('wallet_creation_status', ['CREATING', 'SUCCESS', 'FAILED']);
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -62,6 +63,19 @@ export const withdrawals = pgTable('withdrawals', {
   failureReason: text('failure_reason'),
 });
 
+export const walletCreationRequests = pgTable('wallet_creation_requests', {
+  id: serial('id').primaryKey(),
+  requestId: text('request_id').notNull().unique(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  status: walletCreationStatusEnum('status').default('CREATING').notNull(),
+  walletId: text('wallet_id'),
+  address: text('address'),
+  addresses: text('addresses'), // JSON array of chain-address pairs
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type LendingPosition = typeof lendingPositions.$inferSelect;
 export type NewLendingPosition = typeof lendingPositions.$inferInsert;
@@ -71,3 +85,5 @@ export type AddressVerification = typeof addressVerifications.$inferSelect;
 export type NewAddressVerification = typeof addressVerifications.$inferInsert;
 export type Withdrawal = typeof withdrawals.$inferSelect;
 export type NewWithdrawal = typeof withdrawals.$inferInsert;
+export type WalletCreationRequest = typeof walletCreationRequests.$inferSelect;
+export type NewWalletCreationRequest = typeof walletCreationRequests.$inferInsert;
