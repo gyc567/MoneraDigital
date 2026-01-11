@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Favicon Test - Monera Digital</title>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #fafafa;
+      padding: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 2rem;
+    }
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+      margin-top: 2rem;
+    }
+    .test-item {
+      background: #0f0f0f;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .test-label {
+      font-size: 0.875rem;
+      color: #888;
+      margin-bottom: 12px;
+    }
+    .favicon-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .favicon-size {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .favicon-size span {
+      font-size: 0.75rem;
+      color: #666;
+    }
+    img, svg {
+      display: block;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .color-palette {
+      display: flex;
+      gap: 16px;
+      margin-top: 2rem;
+    }
+    .color-swatch {
+      flex: 1;
+      height: 80px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 12px;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎨 Monera Digital Favicon</h1>
+  <p class="subtitle">Professional M-letter favicon for institutional-grade digital asset platform</p>
+
+  <div class="test-grid">
+    <div class="test-item">
+      <div class="test-label">SVG Vector Source</div>
+      <div class="favicon-display">
+        <img src="/m-logo.svg" width="64" height="64" alt="M Logo SVG">
+        <img src="/m-logo.svg" width="32" height="32" alt="M Logo SVG">
+        <img src="/m-logo.svg" width="16" height="16" alt="M Logo SVG">
+      </div>
+    </div>
+
+    <div class="test-item">
+      <div class="test-label">PNG Raster (32x32)</div>
+      <div class="favicon-display">
+        <img src="/favicon-32x32.png" width="64" height="64" alt="M Logo PNG">
+        <img src="/favicon-32x32.png" width="32" height="32" alt="M Logo PNG">
+      </div>
+    </div>
+
+    <div class="test-item">
+      <div class="test-label">Browser Tab Preview</div>
+      <div class="favicon-display">
+        <div style="background: #1a1a1a; padding: 8px 16px; border-radius: 4px; display: flex; align-items: center; gap: 8px;">
+          <img src="/favicon-32x32.png" width="16" height="16" alt="">
+          <span style="font-size: 12px; color: #888;">Monera Digital</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 3rem; margin-bottom: 1rem;">🎨 Color Palette</h2>
+  <div class="color-palette">
+    <div class="color-swatch" style="background: #2CA69D; color: #0a0a0a;">
+      <strong>Primary</strong>
+      <span>#2CA69D</span>
+      <span>hsl(174 72% 46%)</span>
+    </div>
+    <div class="color-swatch" style="background: #2FBAB1; color: #0a0a0a;">
+      <strong>Secondary</strong>
+      <span>#2FBAB1</span>
+      <span>hsl(186 76% 52%)</span>
+    </div>
+    <div class="color-swatch" style="background: #0A0A0A; color: #fafafa;">
+      <strong>Foreground</strong>
+      <span>#0A0A0A</span>
+      <span>hsl(0 0% 4%)</span>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 3rem; margin-bottom: 1rem;">📐 Design Specifications</h2>
+  <div style="background: #0f0f0f; border: 1px solid #222; border-radius: 8px; padding: 20px;">
+    <ul style="line-height: 1.8; color: #888;">
+      <li><strong>Canvas:</strong> 32×32px rounded square</li>
+      <li><strong>Corner Radius:</strong> 6px (0.75rem)</li>
+      <li><strong>Typography:</strong> Inter, Bold (700), 19px</li>
+      <li><strong>Letter Spacing:</strong> -0.5px (optimized for M)</li>
+      <li><strong>Gradient:</strong> Linear 135°, #2CA69D → #2FBAB1</li>
+      <li><strong>Formats:</strong> SVG (vector), PNG 32×32 (raster)</li>
+    </ul>
+  </div>
+
+  <script>
+    console.log('✅ Favicon test page loaded');
+    console.log('🎨 Testing Monera Digital favicon implementation');
+  </script>
+</body>
+</html>
