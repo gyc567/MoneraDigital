@@ -47,7 +47,8 @@ func TestRegisterAndLogin(t *testing.T) {
 	testEmail := fmt.Sprintf("test_%d@example.com", time.Now().UnixNano())
 	defer db.Exec("DELETE FROM users WHERE email = $1", testEmail)
 
-	authService := services.NewAuthService(db)
+	jwtSecret := "test-jwt-secret-for-integration-tests"
+	authService := services.NewAuthService(db, jwtSecret)
 
 	// 1. Test Register
 	req := models.RegisterRequest{
