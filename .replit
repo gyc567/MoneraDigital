@@ -49,7 +49,7 @@ args = "bash scripts/start.sh"
 waitForPort = 5000
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "autoscale"
 build = ["bash", "scripts/build.sh"]
 publicDir = "dist"
 run = ["./server"]

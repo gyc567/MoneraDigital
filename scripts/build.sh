@@ -19,7 +19,6 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/
 
 echo "Verifying server binary..."
 ls -la server
-file server
 chmod +x server
 
 echo "Build complete!"
