@@ -1,15 +1,18 @@
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { cn } from "@/lib/utils";
+import { ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const assetData = [
   { name: 'BTC', value: 2450000, color: '#F7931A' },
@@ -74,30 +77,41 @@ const Assets = () => {
             <CardTitle className="text-base font-semibold">Asset Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-border/50">
-                  <TableHead className="text-muted-foreground">{t("dashboard.assets.currency")}</TableHead>
-                  <TableHead className="text-muted-foreground">{t("dashboard.assets.total")}</TableHead>
-                  <TableHead className="text-muted-foreground">{t("dashboard.assets.available")}</TableHead>
-                  <TableHead className="text-muted-foreground text-right">Value (USD)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {assets.map((asset) => (
-                  <TableRow key={asset.currency} className="border-border/50 hover:bg-secondary/30 transition-colors">
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: assetData.find(d => d.name === asset.currency)?.color }} />
-                        {asset.currency}
-                      </div>
-                    </TableCell>
-                    <TableCell>{asset.total}</TableCell>
-                    <TableCell>{asset.available}</TableCell>
-                    <TableCell className="text-right font-semibold">{asset.value}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+             <Table>
+               <TableHeader>
+                 <TableRow className="hover:bg-transparent border-border/50">
+                   <TableHead className="text-muted-foreground">{t("dashboard.assets.currency")}</TableHead>
+                   <TableHead className="text-muted-foreground">{t("dashboard.assets.total")}</TableHead>
+                   <TableHead className="text-muted-foreground">{t("dashboard.assets.available")}</TableHead>
+                   <TableHead className="text-muted-foreground text-right">Value (USD)</TableHead>
+                   <TableHead className="text-muted-foreground text-right">Actions</TableHead>
+                 </TableRow>
+               </TableHeader>
+               <TableBody>
+                 {assets.map((asset) => (
+                   <TableRow key={asset.currency} className="border-border/50 hover:bg-secondary/30 transition-colors">
+                     <TableCell className="font-medium">
+                       <div className="flex items-center gap-2">
+                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: assetData.find(d => d.name === asset.currency)?.color }} />
+                         {asset.currency}
+                       </div>
+                     </TableCell>
+                     <TableCell>{asset.total}</TableCell>
+                     <TableCell>{asset.available}</TableCell>
+                     <TableCell className="text-right font-semibold">{asset.value}</TableCell>
+                     <TableCell className="text-right">
+                       {parseFloat(asset.available.replace(/,/g, '')) > 0 && (
+                         <Button asChild size="sm" variant="outline" className="gap-1">
+                           <Link to={`/dashboard/withdraw?asset=${asset.currency}`}>
+                             <ArrowRight size={14} />
+                             Withdraw
+                           </Link>
+                         </Button>
+                       )}
+                     </TableCell>
+                   </TableRow>
+                 ))}
+               </TableBody>
             </Table>
           </CardContent>
         </Card>

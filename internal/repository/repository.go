@@ -3,7 +3,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 )
 
@@ -135,16 +134,6 @@ type Repository struct {
 	Lending    Lending
 	Address    Address
 	Withdrawal Withdrawal
-}
-
-// NewRepository 创建仓储容器
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{
-		User:       NewUserRepository(db),
-		Lending:    NewLendingRepository(db),
-		Address:    NewAddressRepository(db),
-		Withdrawal: NewWithdrawalRepository(db),
-	}
 }
 
 // Common errors

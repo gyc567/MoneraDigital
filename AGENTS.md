@@ -15,147 +15,305 @@
 - **Testing**: Vitest (Unit/Integration), Playwright (E2E)
 - **Language**: TypeScript (Primary), Go (Legacy/Parallel backend in `internal/`)
 
-## Developer Environment Tips
+---
 
-- **Package Manager**: Use `npm`.
-- **Setup**:
-    - Copy `.env.example` to `.env`.
-    - `npm install` to install dependencies.
-- **Development Server**:
-    - `npm run dev`: Starts the Vite development server (default port 8080).
-- **Building**:
-    - `npm run build`: Production build to `dist/`.
+## Build, Lint & Test Commands
 
-## Testing Instructions
+### Core Commands
 
-- **Unit/Integration Tests**:
-    - `npm test`: Runs Vitest.
-    - `npm run test -- <file>`: Run specific test file.
-- **E2E Tests**:
-    - `npm run test:e2e` (Check `package.json` if script exists, otherwise check `playwright.config.ts`).
-- **Linting**:
-    - `npm run lint`: Run ESLint.
+```bash
+# Install dependencies
+npm install
 
-## Directory Structure & Architecture
+# Development server (port 8080)
+npm run dev
 
-- **`src/lib/`**: **Core Service Layer**. Business logic lives here. Reused by both frontend and API.
-- **`api/`**: Vercel Serverless Functions. Each file is an endpoint.
-- **`src/components/ui/`**: Reusable UI components (Shadcn/Radix).
-- **`src/db/`**: Drizzle schema definitions.
+# Production build
+npm run build
 
-## Conventions
+# Linting
+npm run lint
+npm run lint -- --fix  # Auto-fix issues
+```
 
-- **Naming**:
-    - "Lending" features are displayed as **"Fixed Deposit"** in the UI (Sidebar, Hero), but internal code still uses `lending` naming.
-- **State Management**:
-    - `React Query` for server state.
-    - `useState` for local UI state.
-    - `localStorage` for JWT tokens (no cookies currently).
-- **Styling**:
-    - Tailwind CSS for styling.
-    - `cn()` utility for class merging.
+### Testing
 
-## Key Files
+```bash
+# Run all tests
+npm test
 
-- `GEMINI.md`: Comprehensive AI context (read this for deep dive).
-- `CLAUDE.md`: Similar context file.
-- `src/db/schema.ts`: Database schema.
-- `vite.config.ts`: Build configuration.
+# Run specific test file (most common pattern)
+npm test -- src/lib/auth-service.test.ts
+
+# Run tests with coverage
+npm test -- --coverage
+
+# Run tests in watch mode (development)
+npm test
+
+# Run tests matching pattern
+npm test -- --testNamePattern="login"
+
+# E2E tests with Playwright
+npm run test:e2e
+```
 
 ---
 
-## Go Code Conventions (Backend in `internal/`)
+## Code Style Guidelines
 
-> Target: Readable, maintainable, consistent Go code. Go 1.20+, Gin framework.
+### Imports
 
-### 1. Project Structure
+- Use **absolute imports** with `@/` prefix for internal modules
+- Use **relative imports** (`./*`) only for same-directory co-located files
+- Group imports in this order:
+  1. Built-in/Node imports (`node:*`, `path`, `fs`)
+  2. Third-party packages (alphabetically)
+  3. Absolute imports from `@/` (alphabetically)
+  4. Relative imports (alphabetically)
 
-```
-cmd/server/         # Entry point
-internal/           # Business logic
-  ├── handlers/     # HTTP handlers
-  ├── services/     # Business logic
-  ├── models/       # Data models
-  └── middleware/   # HTTP middleware
-```
+```typescript
+// ✅ Correct
+import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { Card, CardContent } from "@/components/ui/card";
+import { db } from "./db.js";
+import { users } from "../db/schema.js";
 
-- All business code in `internal/`
-- `cmd` only for dependency assembly and startup
-
-### 2. Naming
-
-- **Package**: lowercase, no underscore, no plural
-  ```go
-  package user    // ✅
-  package users   // ❌
-  package user_service  // ❌
-  ```
-- **Variables/Functions**: camelCase, short but readable
-  ```go
-  userID, ctx, httpReq  // ✅
-  ```
-- **Exported identifiers**: MUST have doc comments
-
-### 3. Files & Code Style
-
-- Filename: lowercase + underscore
-  `user_service.go`, `auth_handler.go`
-- Single file ≤ **300 lines**
-- One function = one responsibility
-
-### 4. Error Handling
-
-- **Errors MUST be handled**
-- No `panic` for business errors
-- Use error wrapping:
-  ```go
-  return fmt.Errorf("create user failed: %w", err)
-  ```
-
-### 5. Context规范
-
-- **All I/O/DB/RPC MUST pass `context.Context`**
-- `context` is ALWAYS the first parameter
-- Don't store in struct, don't abuse `context.Background()`
-
-### 6. Logging
-
-- Use structured logging ( zap or zerolog )
-- **Log only at boundary layer** (handler / job)
-- Don't log in底层 libraries
-
-### 7. Interface & Struct
-
-- **Small interfaces**
-- Define interface at the consumer side
-- Struct only cares about its own responsibilities
-
-### 8. Concurrency
-
-- Goroutine MUST be cancellable
-- Prefer `errgroup` when possible
-- Never leak goroutines
-
-### 9. Testing
-
-- Test file: `*_test.go`
-- Prefer table-driven tests
-- Don't depend on real external services
-
-### 10. Required Tools (Mandatory)
-
-```bash
-gofmt -w .
-go vet ./...
+// ❌ Avoid
+import { db } from './db.js';
+import { useState } from "react";
+import { Card } from '@/components/ui/card';
 ```
 
-Recommended: `golangci-lint`
+### Formatting
 
-### 11. Prohibited (Must Follow)
+- **Line length**: Soft limit at 100 characters
+- **Indentation**: 2 spaces (not tabs)
+- **Semicolons**: Always use semicolons
+- **Quotes**: Double quotes for strings, single quotes for JSX
+- **Trailing commas**: Use in multi-line objects/arrays
 
-- ❌ No `init()` in business code
-- ❌ No global variables for business state
-- ❌ No "utils" catch-all packages
+```typescript
+// ✅ Correct
+const user = {
+  id: 1,
+  email: "user@example.com",
+};
+
+// ❌ Avoid
+const user = { id: 1, email: "user@example.com" };
+```
+
+### TypeScript
+
+- **Explicit types** for function parameters and return types
+- **No `any`** - use `unknown` or proper types instead
+- **Use interfaces** for object shapes, types for unions/primitives
+- **Avoid type assertions** (`as any`, `as const`) - use proper typing
+- **Use `zod`** for runtime validation of external inputs
+
+```typescript
+// ✅ Correct
+interface User {
+  id: number;
+  email: string;
+}
+
+async function getUser(id: number): Promise<User | null> {
+  // implementation
+}
+
+// ❌ Avoid
+function getUser(id: any): any {
+  // implementation
+}
+```
+
+### Naming Conventions
+
+| Type | Convention | Examples |
+|------|------------|----------|
+| Variables | camelCase | `userId`, `isLoading` |
+| Constants | UPPER_SNAKE_CASE | `JWT_SECRET`, `MAX_RETRY_COUNT` |
+| Functions | camelCase (verb-first) | `getUser()`, `fetchWithdrawalHistory()` |
+| Classes/PInterfaces | PascalCase | `AuthService`, `WithdrawalAddress` |
+| Components | PascalCase | `DashboardLayout`, `WithdrawPage` |
+| Files | kebab-case | `auth-service.ts`, `withdrawal-history.tsx` |
+| Database tables | snake_case | `withdrawal_addresses`, `lending_positions` |
+
+### Error Handling
+
+- **Never leave errors uncaught** - always handle or rethrow
+- **No empty catch blocks** (`catch(e) {}` is forbidden)
+- **Use descriptive error messages** with context
+- **Log errors** with structured context using logger
+- **Throw Error instances**, not strings
+
+```typescript
+// ✅ Correct
+try {
+  await db.insert(users).values({ email, password });
+} catch (error: any) {
+  logger.error({ error: error.message, email }, 'Registration failed');
+  throw new Error('User registration failed');
+}
+
+// ❌ Avoid
+try {
+  // ...
+} catch (e) {}  // Never empty!
+```
+
+### Component Patterns
+
+- **File naming**: PascalCase for components (`DashboardLayout.tsx`)
+- **Props interface**: `ComponentNameProps` suffix
+- **Default export** for page components
+- **Named exports** for reusable components
+- **Use Shadcn UI** components from `@/components/ui/*`
+- **Use `lucide-react`** for icons
+- **Use `sonner`** for toasts (not alert())
+
+```typescript
+// ✅ Correct
+interface WithdrawPageProps {
+  userId: number;
+  asset?: string;
+}
+
+export const WithdrawPage = ({ userId, asset }: WithdrawPageProps) => {
+  return <div>...</div>;
+};
+
+// Default export for pages
+export default WithdrawPage;
+```
+
+### Service Layer Patterns
+
+- **Location**: `src/lib/` for shared business logic
+- **File naming**: kebab-case with `-service` suffix
+- **Class-based** with static methods for stateless services
+- **Zod schema** for input validation
+- **Logger** for structured logging
+- **Named exports** for services
+
+```typescript
+// ✅ Correct
+import { z } from 'zod';
+import { db } from './db.js';
+import logger from './logger.js';
+
+export const withdrawalSchema = z.object({
+  addressId: z.number().int().positive(),
+  amount: z.string(),
+});
+
+export class WithdrawalService {
+  static async initiateWithdrawal(userId: number, data: z.infer<typeof withdrawalSchema>) {
+    // implementation
+  }
+}
+```
+
+### Database (Drizzle ORM)
+
+- **Table naming**: snake_case, plural (`users`, `withdrawal_addresses`)
+- **Column naming**: snake_case (`created_at`, `user_id`)
+- **Foreign keys**: `tableName_id` suffix (`user_id`, `withdrawal_id`)
+- **Enums**: snake_case values (`'PENDING'`, `'COMPLETED'`)
+- **Types**: Use `$inferSelect` and `$inferInsert`
+
+```typescript
+// ✅ Correct
+export const withdrawals = pgTable('withdrawals', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  status: withdrawalStatusEnum('status').default('PENDING').notNull(),
+});
+
+export type Withdrawal = typeof withdrawals.$inferSelect;
+export type NewWithdrawal = typeof withdrawals.$inferInsert;
+```
+
+---
+
+## Directory Structure
+
+```
+src/
+├── api/                    # Vercel Serverless Functions (endpoints)
+├── components/
+│   ├── ui/                 # Shadcn/Radix UI components
+│   └── DashboardLayout.tsx # Layout components
+├── db/
+│   ├── schema.ts           # Drizzle schema definitions
+│   └── migrations/         # Database migrations
+├── lib/                    # Core service layer (business logic)
+├── pages/                  # Route pages (React Router)
+│   └── dashboard/          # Dashboard pages
+├── hooks/                  # Custom React hooks
+└── i18n/                   # Internationalization
+```
+
+---
+
+## State Management
+
+| Type | When to Use | Implementation |
+|------|-------------|----------------|
+| Server state | API data, caching | React Query (`@tanstack/react-query`) |
+| UI state | Form inputs, dialogs | `useState` / `useReducer` |
+| Auth state | JWT tokens, user info | `localStorage` + React Context |
+| Navigation | Route params, URL state | React Router (`useSearchParams`) |
+
+---
+
+## API Routes
+
+- **Location**: `api/` directory
+- **Naming**: File-based routing (`api/auth/login.ts` → `/api/auth/login`)
+- **Method handlers**: Check `req.method` in handler
+- **Auth**: Use `verifyToken()` from auth middleware
+- **Response**: Return JSON with `res.status().json()`
+
+```typescript
+// ✅ Correct
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifyToken } from '../../src/lib/auth-middleware.js';
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === 'GET') {
+    const user = verifyToken(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    // handle GET
+  }
+}
+```
+
+---
+
+## Developer Environment Tips
+
+- **Setup**: Copy `.env.example` to `.env`, then run `npm install`
+- **Port**: Vite dev server runs on port 8080 by default
+- **Database**: Use `npm run db:push` to sync schema changes
+- **Tests**: Run `npm test` before committing
+
+---
+
+## Key Files to Know
+
+| File | Purpose |
+|------|---------|
+| `src/db/schema.ts` | Database schema definitions |
+| `src/lib/auth-service.ts` | Authentication business logic |
+| `src/lib/withdrawal-service.ts` | Withdrawal business logic |
+| `api/` | API route handlers |
+| `vite.config.ts` | Build configuration |
+| `eslint.config.js` | Linting rules |
+| `tailwind.config.ts` | Tailwind CSS configuration |
 
 ---
 
@@ -163,9 +321,21 @@ Recommended: `golangci-lint`
 
 | Category | Rule |
 |----------|------|
-| Package name | lowercase, no plural |
-| File size | ≤ 300 lines |
-| Error handling | Never ignore errors |
-| Context | First param, for I/O only |
-| Logging | Handler layer only |
-| Interface | Small, defined at consumer |
+| Imports | Absolute `@/` for internal, relative for co-located |
+| Types | Explicit, no `any`, use Zod for validation |
+| Errors | Always handle, never empty catch, log with context |
+| Components | Props interface, default export pages |
+| Services | Static methods, Zod schema, structured logging |
+| Files | kebab-case for non-components, PascalCase for components |
+| Tests | Run single file with `npm test -- <path>` |
+
+---
+
+## Go Code Conventions (Legacy Backend in `internal/`)
+
+- **Package**: lowercase, no underscore, no plural
+- **Files**: lowercase + underscore, ≤ 300 lines
+- **Context**: First param, for I/O only
+- **Errors**: Always handle, no panic for business errors
+- **Logging**: Handler layer only, structured logging
+- **Tools**: Run `gofmt -w .` and `go vet ./...` before committing

@@ -17,12 +17,15 @@ type LoginRequest struct {
 
 // LoginResponse DTO for login response
 type LoginResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	User         UserInfo  `json:"user"`
+	AccessToken  string    `json:"access_token,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	TokenType    string    `json:"token_type,omitempty"`
+	ExpiresIn    int       `json:"expires_in,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	User         *UserInfo `json:"user,omitempty"`
+	Token        string    `json:"token,omitempty"`
+	Requires2FA  bool      `json:"requires2FA,omitempty"`
+	UserID       int       `json:"userId,omitempty"`
 }
 
 // UserInfo DTO for user information

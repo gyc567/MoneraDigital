@@ -4,7 +4,6 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"monera-digital/internal/repository"

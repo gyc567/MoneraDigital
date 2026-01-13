@@ -93,6 +93,14 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		return nil, errors.New("invalid credentials")
 	}
 
+	// 2.5 Check 2FA
+	if user.TwoFactorEnabled {
+		return &LoginResponse{
+			Requires2FA: true,
+			UserID:      user.ID,
+		}, nil
+	}
+
 	// 3. Generate Token
 	cfg := config.Load()
 	token, err := utils.GenerateJWT(user.ID, user.Email, cfg.JWTSecret)

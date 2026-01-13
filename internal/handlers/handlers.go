@@ -62,10 +62,16 @@ func (h *Handler) Login(c *gin.Context) {
 		TokenType:    resp.TokenType,
 		ExpiresIn:    resp.ExpiresIn,
 		ExpiresAt:    resp.ExpiresAt,
-		User: dto.UserInfo{
+		Token:        resp.Token,
+		Requires2FA:  resp.Requires2FA,
+		UserID:       resp.UserID,
+	}
+
+	if resp.User != nil {
+		dtoResp.User = &dto.UserInfo{
 			ID:    resp.User.ID,
 			Email: resp.User.Email,
-		},
+		}
 	}
 
 	c.JSON(http.StatusOK, dtoResp)

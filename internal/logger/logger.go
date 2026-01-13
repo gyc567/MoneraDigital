@@ -31,7 +31,7 @@ func Init(environment string) error {
 	}
 
 	Logger = zapLogger.Sugar()
-	return Logger.Sync()
+	return nil
 }
 
 // GetLogger returns the global logger instance

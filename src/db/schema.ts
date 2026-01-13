@@ -61,6 +61,11 @@ export const withdrawals = pgTable('withdrawals', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at'),
   failureReason: text('failure_reason'),
+  // New fields for enhanced withdrawal tracking
+  feeAmount: numeric('fee_amount', { precision: 20, scale: 8 }),
+  receivedAmount: numeric('received_amount', { precision: 20, scale: 8 }),
+  safeheronTxId: text('safeheron_tx_id'),
+  chain: text('chain'),
 });
 
 export const walletCreationRequests = pgTable('wallet_creation_requests', {

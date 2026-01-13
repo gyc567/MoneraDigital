@@ -8,6 +8,7 @@ import (
 	"monera-digital/internal/cache"
 	"monera-digital/internal/middleware"
 	"monera-digital/internal/repository"
+	"monera-digital/internal/repository/postgres"
 	"monera-digital/internal/services"
 )
 
@@ -40,7 +41,13 @@ func NewContainer(db *sql.DB, jwtSecret string) *Container {
 	rateLimiter := middleware.NewRateLimiter(5, 60) // 5 请求/分钟
 
 	// 初始化仓储
-	repo := repository.NewRepository(db)
+	repo := &repository.Repository{
+		User: postgres.NewUserRepository(db),
+		// Other repositories are not implemented yet in postgres package
+		// Lending:    postgres.NewLendingRepository(db),
+		// Address:    postgres.NewAddressRepository(db),
+		// Withdrawal: postgres.NewWithdrawalRepository(db),
+	}
 
 	// 初始化服务
 	authService := services.NewAuthService(db, jwtSecret)
