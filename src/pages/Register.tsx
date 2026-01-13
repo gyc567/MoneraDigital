@@ -6,10 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils";
 
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -20,8 +23,23 @@ export default function Register() {
     }
   }, [navigate]);
 
+  const clearErrors = () => {
+    setEmailError("");
+    setPasswordError("");
+  };
+
+  const validatePassword = (pwd: string) => {
+    // Basic client-side check to give immediate feedback if desired,
+    // but primarily we rely on server response.
+    // Here we just clear error if it looks okay-ish to avoid sticky errors.
+    if (pwd.length >= 8) {
+       // Ideally check regex too, but server is authority.
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearErrors();
     setIsLoading(true);
     console.log("Attempting registration for:", email);
 
@@ -43,6 +61,13 @@ export default function Register() {
       }
 
       if (!res.ok) {
+        // Handle specific field errors
+        if (data.details === "email") {
+            setEmailError(data.message);
+        } else if (data.details === "password") {
+            setPasswordError(data.message);
+        }
+        
         throw new Error(data.error || data.message || t("auth.errors.registrationFailed"));
       }
 
@@ -54,6 +79,8 @@ export default function Register() {
       }, 1000);
     } catch (error: any) {
       console.error("Registration error:", error);
+      // We already set specific field errors above if applicable.
+      // Show generic toast as well for visibility.
       toast.error(error.message);
     } finally {
       setIsLoading(false);
@@ -70,27 +97,48 @@ export default function Register() {
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">{t("auth.register.email")}</Label>
+              <Label htmlFor="email" className={cn(emailError && "text-red-500")}>
+                {t("auth.register.email")}
+              </Label>
               <Input
                 id="email"
                 type="email"
                 placeholder={t("auth.register.emailPlaceholder")}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError) setEmailError("");
+                }}
+                className={cn(emailError && "border-red-500 focus-visible:ring-red-500")}
                 required
               />
+              {emailError && (
+                  <p className="text-xs text-red-500 animate-in fade-in-0 slide-in-from-top-1">
+                      {emailError}
+                  </p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">{t("auth.register.password")}</Label>
+              <Label htmlFor="password" className={cn(passwordError && "text-red-500")}>
+                {t("auth.register.password")}
+              </Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (passwordError) setPasswordError("");
+                    validatePassword(e.target.value);
+                }}
+                className={cn(passwordError && "border-red-500 focus-visible:ring-red-500")}
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                {t("auth.register.passwordRequirements")}
+              <p className={cn(
+                  "text-xs transition-colors duration-200",
+                  passwordError ? "text-red-500 font-medium" : "text-muted-foreground"
+              )}>
+                {passwordError || t("auth.register.passwordRequirements")}
               </p>
             </div>
           </CardContent>
