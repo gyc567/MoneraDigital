@@ -22,7 +22,7 @@ test.describe('Local Authentication Flow', () => {
     // Note: Sonner toast might be tricky to catch with exact text depending on timing, 
     // but we expect the backend to return an error which the frontend shows.
     // The validator says "password must be at least 8 characters" for length < 8.
-    await expect(page.getByText(/password must be at least 8 characters/)).toBeVisible();
+    await expect(page.getByText('Password must be at least 8 characters').first()).toBeVisible();
   });
 
   test('should register and login successfully', async ({ page }) => {
