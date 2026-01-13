@@ -89,6 +89,9 @@ export default function Register() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                {t("auth.register.passwordRequirements")}
+              </p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">

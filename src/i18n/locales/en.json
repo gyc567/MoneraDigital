@@ -168,6 +168,7 @@
       "email": "Email",
       "emailPlaceholder": "m@example.com",
       "password": "Password",
+      "passwordRequirements": "8-128 characters, including uppercase, lowercase, and a number.",
       "button": "Register",
       "registering": "Registering...",
       "hasAccount": "Already have an account?",
