@@ -59,7 +59,7 @@ export default function Login() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("auth.errors.loginFailed"));
+      if (!res.ok) throw new Error(data.error || data.message || t("auth.errors.loginFailed"));
 
       if (data.requires2FA) {
         setRequires2FA(true);

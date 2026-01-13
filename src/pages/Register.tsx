@@ -43,7 +43,7 @@ export default function Register() {
       }
 
       if (!res.ok) {
-        throw new Error(data.error || t("auth.errors.registrationFailed"));
+        throw new Error(data.error || data.message || t("auth.errors.registrationFailed"));
       }
 
       console.log("Registration successful");
