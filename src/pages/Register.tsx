@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils";
 
 interface RegisterError {
   code: string;
@@ -16,9 +17,9 @@ interface RegisterError {
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -33,10 +34,24 @@ export default function Register() {
     setPasswordError("");
   };
 
+  const getLocalizedError = (message: string) => {
+    if (!message) return "";
+    const msg = message.toLowerCase();
+    
+    if (msg.includes("email is required")) return t("auth.errors.emailRequired");
+    if (msg.includes("invalid email")) return t("auth.errors.invalidEmail");
+    if (msg.includes("password is required")) return t("auth.errors.passwordRequired");
+    if (msg.includes("at least 8 characters")) return t("auth.errors.passwordTooShort");
+    if (msg.includes("uppercase, lowercase, and digit")) return t("auth.errors.passwordComplexity");
+    if (msg.includes("email is already registered") || msg.includes("user already exists") || msg.includes("email already exists")) return t("auth.errors.userAlreadyExists");
+    
+    return message;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     clearErrors();
+    setIsLoading(true);
     console.log("Attempting registration for:", email);
 
     try {
@@ -81,6 +96,7 @@ export default function Register() {
     const errorCode = data.code || "";
     const errorMessage = data.message || "";
     const errorDetails = data.details || "";
+    const localizedMessage = getLocalizedError(errorMessage);
 
     switch (errorCode) {
       case "VALIDATION_ERROR":
@@ -100,7 +116,13 @@ export default function Register() {
         toast.error(t("auth.errors.serverError"));
         break;
       default:
-        toast.error(errorMessage || t("auth.errors.registrationFailed"));
+        if (errorDetails === "email") {
+          setEmailError(localizedMessage);
+        } else if (errorDetails === "password") {
+          setPasswordError(localizedMessage);
+        } else {
+          toast.error(localizedMessage || t("auth.errors.registrationFailed"));
+        }
     }
   };
 
@@ -114,7 +136,9 @@ export default function Register() {
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">{t("auth.register.email")}</Label>
+              <Label htmlFor="email" className={cn(emailError && "text-red-500")}>
+                {t("auth.register.email")}
+              </Label>
               <Input
                 id="email"
                 type="email"
@@ -124,13 +148,19 @@ export default function Register() {
                   setEmail(e.target.value);
                   if (emailError) setEmailError("");
                 }}
+                className={cn(emailError && "border-red-500 focus-visible:ring-red-500")}
                 required
-                className={emailError ? "border-red-500 focus:ring-red-500" : ""}
               />
-              {emailError && <p className="text-sm text-red-500">{emailError}</p>}
+              {emailError && (
+                <p className="text-xs text-red-500 animate-in fade-in-0 slide-in-from-top-1">
+                  {emailError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">{t("auth.register.password")}</Label>
+              <Label htmlFor="password" className={cn(passwordError && "text-red-500")}>
+                {t("auth.register.password")}
+              </Label>
               <Input
                 id="password"
                 type="password"
@@ -139,10 +169,15 @@ export default function Register() {
                   setPassword(e.target.value);
                   if (passwordError) setPasswordError("");
                 }}
+                className={cn(passwordError && "border-red-500 focus-visible:ring-red-500")}
                 required
-                className={passwordError ? "border-red-500 focus:ring-red-500" : ""}
               />
-              {passwordError && <p className="text-sm text-red-500">{passwordError}</p>}
+              <p className={cn(
+                  "text-xs transition-colors duration-200",
+                  passwordError ? "text-red-500 font-medium" : "text-muted-foreground"
+              )}>
+                {passwordError || t("auth.register.passwordRequirements")}
+              </p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">

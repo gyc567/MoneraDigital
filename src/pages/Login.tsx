@@ -40,7 +40,7 @@ export default function Login() {
           body: JSON.stringify({ userId: tempUserId, token: twoFactorToken }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        if (!res.ok) throw new Error(data.error || data.message);
 
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
@@ -59,7 +59,7 @@ export default function Login() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("auth.errors.loginFailed"));
+      if (!res.ok) throw new Error(data.error || data.message || t("auth.errors.loginFailed"));
 
       if (data.requires2FA) {
         setRequires2FA(true);
@@ -75,7 +75,12 @@ export default function Login() {
       const returnTo = validateRedirectPath((location.state as any)?.returnTo);
       navigate(returnTo);
     } catch (error: any) {
-      toast.error(error.message);
+      let message = error.message;
+      // Localize common backend errors
+      if (message === "Invalid email or password" || message === "invalid credentials") {
+          message = t("auth.errors.invalidEmailOrPassword");
+      }
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

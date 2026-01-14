@@ -6,6 +6,25 @@ test.describe('Local Authentication Flow', () => {
   const password = 'Password123!';
   const baseURL = 'http://localhost:5001';
 
+  test('should show validation error for weak password', async ({ page }) => {
+    console.log(`Navigating to ${baseURL}/register`);
+    await page.goto(`${baseURL}/register`);
+
+    // Verify hint text is visible
+    await expect(page.getByText('8-128 characters, including uppercase, lowercase, and a number.')).toBeVisible();
+
+    // Attempt registration with weak password
+    await page.fill('input[type="email"]', email);
+    await page.fill('input[type="password"]', 'weak'); // Short and no numbers/upper
+    await page.click('button[type="submit"]');
+
+    // Wait for error toast or message
+    // Note: Sonner toast might be tricky to catch with exact text depending on timing, 
+    // but we expect the backend to return an error which the frontend shows.
+    // The validator says "password must be at least 8 characters" for length < 8.
+    await expect(page.getByText('Password must be at least 8 characters').first()).toBeVisible();
+  });
+
   test('should register and login successfully', async ({ page }) => {
     // 1. Register
     console.log(`Navigating to ${baseURL}/register`);

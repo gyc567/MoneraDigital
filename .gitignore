@@ -28,3 +28,4 @@ backend.out
 frontend.out
 server
 *.bak
+nohup.out
