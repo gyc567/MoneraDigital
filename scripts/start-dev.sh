@@ -49,13 +49,6 @@ check_env() {
         exit 1
     fi
     
-    # 确保使用 development 数据库
-    if grep -q "/neondb?" .env; then
-        log_warn "检测到使用 neondb 数据库，正在切换到 development..."
-        sed -i '' 's|/neondb?|/development?|g' .env
-        log_success "已切换到 development 数据库"
-    fi
-    
     log_success ".env 配置检查通过"
 }
 
@@ -64,9 +57,9 @@ stop_existing() {
     log_info "停止现有进程..."
     
     # 停止 Go 服务器
-    if lsof -i :8080 > /dev/null 2>&1; then
-        kill $(lsof -t -i :8080) 2>/dev/null || true
-        log_info "已停止端口 8080 上的进程"
+    if lsof -i :8081 > /dev/null 2>&1; then
+        kill $(lsof -t -i :8081) 2>/dev/null || true
+        log_info "已停止端口 8081 上的进程"
     fi
     
     # 停止 Vite 开发服务器 (端口 5001)
@@ -93,28 +86,25 @@ start_backend() {
     go build -o /tmp/monera-server ./cmd/server/main.go
     
     # 导出环境变量
-    export PORT=8080
+    export PORT=8081
     export GIN_MODE=debug
     
     # 启动服务器
-    log_info "启动服务器 (端口 8080, 数据库: development)..."
+    log_info "启动服务器 (端口 8081, 数据库: neondb)..."
     /tmp/monera-server &
     
     # 等待服务器启动
-    sleep 3
-    
-    # 检查服务器是否运行
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-        log_success "Go 后端服务器已启动: http://localhost:8080"
-    else
-        # Try /api/docs as fallback check
-        if curl -s http://localhost:8080/api/docs > /dev/null 2>&1; then
-             log_success "Go 后端服务器已启动: http://localhost:8080"
-        else
-             log_error "Go 后端服务器启动失败"
-             exit 1
+    log_info "等待服务器启动..."
+    for i in {1..10}; do
+        if curl -s http://localhost:8081/health > /dev/null 2>&1; then
+            log_success "Go 后端服务器已启动: http://localhost:8081"
+            return 0
         fi
-    fi
+        sleep 1
+    done
+    
+    log_error "Go 后端服务器启动失败"
+    return 1
 }
 
 # 启动前端
@@ -174,8 +164,8 @@ main() {
             log_success "开发环境已完全启动!"
             log_success "=========================================="
             log_info "前端: http://localhost:5001"
-            log_info "后端: http://localhost:8080"
-            log_info "API:  http://localhost:8080/api/auth/login"
+            log_info "后端: http://localhost:8081"
+            log_info "API:  http://localhost:8081/api/auth/login"
             echo ""
             log_warn "按 Ctrl+C 停止所有服务"
             # Keep script running to maintain background processes

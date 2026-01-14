@@ -180,7 +180,12 @@
       "invalidEmail": "Invalid email format",
       "passwordTooShort": "Password must be at least 6 characters",
       "userAlreadyExists": "User already exists",
-      "invalidEmailOrPassword": "Invalid email or password"
+      "invalidEmailOrPassword": "Invalid email or password",
+      "invalidParameters": "Invalid parameters, please check your input",
+      "invalidEmailFormat": "Invalid email format",
+      "invalidPasswordFormat": "Password must contain uppercase, lowercase, and digit characters",
+      "emailAlreadyRegistered": "This email is already registered",
+      "serverError": "Server error, please try again later"
     }
   },
   "notFound": {

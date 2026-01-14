@@ -180,7 +180,12 @@
       "invalidEmail": "无效的邮箱格式",
       "passwordTooShort": "密码至少需要6个字符",
       "userAlreadyExists": "用户已存在",
-      "invalidEmailOrPassword": "邮箱或密码错误"
+      "invalidEmailOrPassword": "邮箱或密码错误",
+      "invalidParameters": "参数错误，请检查输入",
+      "invalidEmailFormat": "邮箱格式不正确",
+      "invalidPasswordFormat": "密码需要包含大写字母、小写字母和数字",
+      "emailAlreadyRegistered": "该邮箱已被注册",
+      "serverError": "服务器错误，请稍后重试"
     }
   },
   "notFound": {
