@@ -32,6 +32,22 @@ const (
 	WithdrawalStatusFailed     WithdrawalStatus = "FAILED"
 )
 
+type DepositStatus string
+
+const (
+	DepositStatusPending   DepositStatus = "PENDING"
+	DepositStatusConfirmed DepositStatus = "CONFIRMED"
+	DepositStatusFailed    DepositStatus = "FAILED"
+)
+
+type WalletCreationStatus string
+
+const (
+	WalletCreationStatusCreating WalletCreationStatus = "CREATING"
+	WalletCreationStatusSuccess  WalletCreationStatus = "SUCCESS"
+	WalletCreationStatusFailed   WalletCreationStatus = "FAILED"
+)
+
 // User model
 type User struct {
 	ID                   int            `json:"id" db:"id"`
@@ -41,6 +57,35 @@ type User struct {
 	TwoFactorEnabled     bool           `json:"two_factor_enabled" db:"two_factor_enabled"`
 	TwoFactorBackupCodes sql.NullString `json:"-" db:"two_factor_backup_codes"`
 	CreatedAt            time.Time      `json:"created_at" db:"created_at"`
+}
+
+// Deposit model
+type Deposit struct {
+	ID          int            `json:"id" db:"id"`
+	UserID      int            `json:"user_id" db:"user_id"`
+	TxHash      string         `json:"tx_hash" db:"tx_hash"`
+	Amount      string         `json:"amount" db:"amount"`
+	Asset       string         `json:"asset" db:"asset"`
+	Chain       string         `json:"chain" db:"chain"`
+	Status      DepositStatus  `json:"status" db:"status"`
+	FromAddress sql.NullString `json:"from_address" db:"from_address"`
+	ToAddress   sql.NullString `json:"to_address" db:"to_address"`
+	CreatedAt   time.Time      `json:"created_at" db:"created_at"`
+	ConfirmedAt sql.NullTime   `json:"confirmed_at" db:"confirmed_at"`
+}
+
+// WalletCreationRequest model
+type WalletCreationRequest struct {
+	ID           int                  `json:"id" db:"id"`
+	RequestID    string               `json:"request_id" db:"request_id"`
+	UserID       int                  `json:"user_id" db:"user_id"`
+	Status       WalletCreationStatus `json:"status" db:"status"`
+	WalletID     sql.NullString       `json:"wallet_id" db:"wallet_id"`
+	Address      sql.NullString       `json:"address" db:"address"`
+	Addresses    sql.NullString       `json:"addresses" db:"addresses"` // JSON string
+	ErrorMessage sql.NullString       `json:"error_message" db:"error_message"`
+	CreatedAt    time.Time            `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time            `json:"updated_at" db:"updated_at"`
 }
 
 // LendingPosition model
@@ -103,7 +148,7 @@ type LoginRequest struct {
 
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+	Password string `json:"password" binding:"required"`
 }
 
 type ApplyLendingRequest struct {

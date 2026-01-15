@@ -12,6 +12,7 @@ import NotFound from "./pages/NotFound";
 import DashboardLayout from "./components/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
 import Assets from "./pages/dashboard/Assets";
+import Deposit from "./pages/dashboard/Deposit";
 import Security from "./pages/dashboard/Security";
 import Lending from "./pages/dashboard/Lending";
 import Addresses from "./pages/dashboard/Addresses";
@@ -36,6 +37,7 @@ const App = () => (
               <Route index element={<Overview />} />
               <Route path="account-opening" element={<AccountOpening />} />
               <Route path="assets" element={<Assets />} />
+              <Route path="deposit" element={<Deposit />} />
               <Route path="lending" element={<Lending />} />
               <Route path="addresses" element={<Addresses />} />
               <Route path="withdraw" element={<Withdraw />} />

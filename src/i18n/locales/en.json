@@ -207,6 +207,7 @@
       "overview": "Overview",
       "accountOpening": "Account Opening",
       "assets": "Assets",
+      "deposit": "Deposit",
       "lending": "Lending",
       "addresses": "Addresses",
       "withdraw": "Withdraw",
@@ -303,6 +304,26 @@
       "noHistory": "No withdrawal history yet",
       "loading": "Loading..."
     }
+  },
+  "deposit": {
+    "title": "Deposit",
+    "description": "Deposit digital assets to your secure wallet.",
+    "selectAsset": "Select Asset",
+    "selectNetwork": "Select Network",
+    "address": "Deposit Address",
+    "copy": "Copy Address",
+    "copied": "Copied!",
+    "minDeposit": "Minimum deposit: 10 USDT",
+    "warning": "Ensure you are sending via {network} network. Sending to the wrong network may result in loss of funds.",
+    "history": "Deposit History",
+    "status": {
+      "PENDING": "Pending",
+      "CONFIRMED": "Success",
+      "FAILED": "Failed"
+    },
+    "noHistory": "No deposit history found.",
+    "activate": "Activate Account",
+    "activateDesc": "Please activate your wallet account first to get a deposit address."
   },
   "wallet": {
     "opening": {

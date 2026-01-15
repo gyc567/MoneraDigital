@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "test": "vitest --run",
     "test:ui": "vitest --ui",
-    "favicon": "node scripts/generate-favicon.js"
+    "favicon": "node scripts/generate-favicon.js",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

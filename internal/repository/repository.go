@@ -128,12 +128,57 @@ type WithdrawalModel struct {
 	FailureReason string
 }
 
+// Deposit 充值仓储接口
+type Deposit interface {
+	Create(ctx context.Context, deposit *DepositModel) error
+	GetByTxHash(ctx context.Context, txHash string) (*DepositModel, error)
+	GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*DepositModel, int64, error)
+	UpdateStatus(ctx context.Context, id int, status string, confirmedAt string) error
+}
+
+type DepositModel struct {
+	ID          int
+	UserID      int
+	TxHash      string
+	Amount      string
+	Asset       string
+	Chain       string
+	Status      string
+	FromAddress string
+	ToAddress   string
+	CreatedAt   string
+	ConfirmedAt string
+}
+
+// Wallet 钱包仓储接口
+type Wallet interface {
+	CreateRequest(ctx context.Context, req *WalletCreationRequestModel) error
+	GetRequestByUserID(ctx context.Context, userID int) (*WalletCreationRequestModel, error)
+	UpdateRequest(ctx context.Context, req *WalletCreationRequestModel) error
+	GetActiveWalletByUserID(ctx context.Context, userID int) (*WalletCreationRequestModel, error)
+}
+
+type WalletCreationRequestModel struct {
+	ID           int
+	RequestID    string
+	UserID       int
+	Status       string
+	WalletID     string
+	Address      string
+	Addresses    string // JSON
+	ErrorMessage string
+	CreatedAt    string
+	UpdatedAt    string
+}
+
 // Repository 仓储容器
 type Repository struct {
 	User       User
 	Lending    Lending
 	Address    Address
 	Withdrawal Withdrawal
+	Deposit    Deposit
+	Wallet     Wallet
 }
 
 // Common errors

@@ -30,6 +30,8 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		cont.LendingService,
 		cont.AddressService,
 		cont.WithdrawalService,
+		cont.DepositService,
+		cont.WalletService,
 	)
 
 	// Public routes
@@ -44,6 +46,11 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/2fa/setup", h.Setup2FA)
 			auth.POST("/2fa/enable", h.Enable2FA)
 			auth.POST("/2fa/verify-login", h.Verify2FALogin)
+		}
+		
+		webhooks := public.Group("/webhooks")
+		{
+			webhooks.POST("/core/deposit", h.HandleDepositWebhook)
 		}
 	}
 
@@ -60,6 +67,17 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		{
 			lending.POST("/apply", h.ApplyForLending)
 			lending.GET("/positions", h.GetUserPositions)
+		}
+
+		wallet := protected.Group("/wallet")
+		{
+			wallet.POST("/create", h.CreateWallet)
+			wallet.GET("/info", h.GetWalletInfo)
+		}
+
+		deposits := protected.Group("/deposits")
+		{
+			deposits.GET("", h.GetDeposits)
 		}
 
 		addresses := protected.Group("/addresses")

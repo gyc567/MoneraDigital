@@ -207,6 +207,7 @@
       "overview": "概览",
       "accountOpening": "用户开户",
       "assets": "资产总览",
+      "deposit": "充值",
       "lending": "借贷管理",
       "addresses": "地址管理",
       "withdraw": "提币",
@@ -287,7 +288,7 @@
     "withdraw": {
       "title": "提币",
       "newWithdrawal": "新建提币",
-      "history": "提币历史",
+      "history": "提币记录",
       "selectAddress": "选择提币地址",
       "selectDescription": "选择一个已验证的地址进行提币",
       "addressDetails": "地址详情",
@@ -303,6 +304,26 @@
       "noHistory": "还没有提币记录",
       "loading": "加载中..."
     }
+  },
+  "deposit": {
+    "title": "充值",
+    "description": "充值数字资产到您的安全钱包。",
+    "selectAsset": "选择币种",
+    "selectNetwork": "选择网络",
+    "address": "充值地址",
+    "copy": "复制地址",
+    "copied": "已复制！",
+    "minDeposit": "最小充值金额：10 USDT",
+    "warning": "请务必确认您选择的是 {network} 网络。充值到错误的网络将无法找回。",
+    "history": "充值记录",
+    "status": {
+      "PENDING": "确认中",
+      "CONFIRMED": "成功",
+      "FAILED": "失败"
+    },
+    "noHistory": "暂无充值记录",
+    "activate": "开通账户",
+    "activateDesc": "请先开通您的钱包账户以获取充值地址。"
   },
   "wallet": {
     "opening": {
