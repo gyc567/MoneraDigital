@@ -24,96 +24,218 @@ type Container struct {
 	// 仓储
 	Repository *repository.Repository
 
-	// 服务
-	AuthService       *services.AuthService
-	LendingService    *services.LendingService
-	AddressService    *services.AddressService
-	WithdrawalService *services.WithdrawalService
+		// 服务
 
-	// 中间件
-	RateLimitMiddleware middleware.PerEndpointRateLimiter
-}
+		AuthService       *services.AuthService
 
-// NewContainer 创建依赖注入容器
-func NewContainer(db *sql.DB, jwtSecret string) *Container {
-	// 初始化缓存
-	tokenBlacklist := cache.NewTokenBlacklist()
-	rateLimiter := middleware.NewRateLimiter(5, 60) // 5 请求/分钟
+		LendingService    *services.LendingService
 
-	// 初始化仓储
-	repo := &repository.Repository{
-		User: postgres.NewUserRepository(db),
-		// Other repositories are not implemented yet in postgres package
-		// Lending:    postgres.NewLendingRepository(db),
-		// Address:    postgres.NewAddressRepository(db),
-		// Withdrawal: postgres.NewWithdrawalRepository(db),
+		AddressService    *services.AddressService
+
+		WithdrawalService *services.WithdrawalService
+
+		DepositService    *services.DepositService
+
+		WalletService     *services.WalletService
+
+	
+
+		// 中间件
+
+		RateLimitMiddleware middleware.PerEndpointRateLimiter
+
 	}
 
-	// 初始化服务
-	authService := services.NewAuthService(db, jwtSecret)
-	authService.SetTokenBlacklist(tokenBlacklist)
+	
 
-	lendingService := services.NewLendingService(db)
-	addressService := services.NewAddressService(db)
-	withdrawalService := services.NewWithdrawalService(db)
+	// NewContainer 创建依赖注入容器
 
-	// 初始化中间件
-	rateLimitMiddleware := middleware.NewPerEndpointRateLimiter()
-	rateLimitMiddleware.AddEndpoint("/api/auth/register", 5, 60) // 5 请求/分钟
-	rateLimitMiddleware.AddEndpoint("/api/auth/login", 5, 60)    // 5 请求/分钟
-	rateLimitMiddleware.AddEndpoint("/api/auth/refresh", 10, 60) // 10 请求/分钟
+	func NewContainer(db *sql.DB, jwtSecret string) *Container {
 
-	return &Container{
-		DB:                  db,
-		TokenBlacklist:      tokenBlacklist,
-		RateLimiter:         rateLimiter,
-		Repository:          repo,
-		AuthService:         authService,
-		LendingService:      lendingService,
-		AddressService:      addressService,
-		WithdrawalService:   withdrawalService,
-		RateLimitMiddleware: *rateLimitMiddleware,
+		// 初始化缓存
+
+		tokenBlacklist := cache.NewTokenBlacklist()
+
+		rateLimiter := middleware.NewRateLimiter(5, 60) // 5 请求/分钟
+
+	
+
+		// 初始化仓储
+
+		repo := &repository.Repository{
+
+			User:    postgres.NewUserRepository(db),
+
+			Deposit: postgres.NewDepositRepository(db),
+
+			Wallet:  postgres.NewWalletRepository(db),
+
+			// Lending:    postgres.NewLendingRepository(db),
+
+			// Address:    postgres.NewAddressRepository(db),
+
+			// Withdrawal: postgres.NewWithdrawalRepository(db),
+
+		}
+
+	
+
+		// 初始化服务
+
+		authService := services.NewAuthService(db, jwtSecret)
+
+		authService.SetTokenBlacklist(tokenBlacklist)
+
+	
+
+		lendingService := services.NewLendingService(db)
+
+		addressService := services.NewAddressService(db)
+
+		withdrawalService := services.NewWithdrawalService(db)
+
+		depositService := services.NewDepositService(repo.Deposit)
+
+		walletService := services.NewWalletService(repo.Wallet)
+
+	
+
+		// 初始化中间件
+
+		rateLimitMiddleware := middleware.NewPerEndpointRateLimiter()
+
+		rateLimitMiddleware.AddEndpoint("/api/auth/register", 5, 60) // 5 请求/分钟
+
+		rateLimitMiddleware.AddEndpoint("/api/auth/login", 5, 60)    // 5 请求/分钟
+
+		rateLimitMiddleware.AddEndpoint("/api/auth/refresh", 10, 60) // 10 请求/分钟
+
+	
+
+		return &Container{
+
+			DB:                  db,
+
+			TokenBlacklist:      tokenBlacklist,
+
+			RateLimiter:         rateLimiter,
+
+			Repository:          repo,
+
+			AuthService:         authService,
+
+			LendingService:      lendingService,
+
+			AddressService:      addressService,
+
+			WithdrawalService:   withdrawalService,
+
+			DepositService:      depositService,
+
+			WalletService:       walletService,
+
+			RateLimitMiddleware: *rateLimitMiddleware,
+
+		}
+
 	}
-}
 
-// Close 关闭容器中的资源
-func (c *Container) Close() error {
-	if c.TokenBlacklist != nil {
-		c.TokenBlacklist.Close()
+	
+
+	// Close 关闭容器中的资源
+
+	func (c *Container) Close() error {
+
+		if c.TokenBlacklist != nil {
+
+			c.TokenBlacklist.Close()
+
+		}
+
+	
+
+		if c.DB != nil {
+
+			return c.DB.Close()
+
+		}
+
+	
+
+		return nil
+
 	}
 
-	if c.DB != nil {
-		return c.DB.Close()
+	
+
+	// Verify 验证容器中的所有依赖
+
+	func (c *Container) Verify() error {
+
+		// 验证数据库连接
+
+		if err := c.DB.Ping(); err != nil {
+
+			log.Printf("Database connection failed: %v", err)
+
+			return err
+
+		}
+
+	
+
+		// 验证服务初始化
+
+		if c.AuthService == nil {
+
+			return log.New(nil, "", 0).Output(0, "AuthService not initialized")
+
+		}
+
+	
+
+		if c.LendingService == nil {
+
+			return log.New(nil, "", 0).Output(0, "LendingService not initialized")
+
+		}
+
+	
+
+		if c.AddressService == nil {
+
+			return log.New(nil, "", 0).Output(0, "AddressService not initialized")
+
+		}
+
+	
+
+		if c.WithdrawalService == nil {
+
+			return log.New(nil, "", 0).Output(0, "WithdrawalService not initialized")
+
+		}
+
+	
+
+		if c.DepositService == nil {
+
+			return log.New(nil, "", 0).Output(0, "DepositService not initialized")
+
+		}
+
+	
+
+		if c.WalletService == nil {
+
+			return log.New(nil, "", 0).Output(0, "WalletService not initialized")
+
+		}
+
+	
+
+		log.Println("Container verification passed")
+
+		return nil
+
 	}
-
-	return nil
-}
-
-// Verify 验证容器中的所有依赖
-func (c *Container) Verify() error {
-	// 验证数据库连接
-	if err := c.DB.Ping(); err != nil {
-		log.Printf("Database connection failed: %v", err)
-		return err
-	}
-
-	// 验证服务初始化
-	if c.AuthService == nil {
-		return log.New(nil, "", 0).Output(0, "AuthService not initialized")
-	}
-
-	if c.LendingService == nil {
-		return log.New(nil, "", 0).Output(0, "LendingService not initialized")
-	}
-
-	if c.AddressService == nil {
-		return log.New(nil, "", 0).Output(0, "AddressService not initialized")
-	}
-
-	if c.WithdrawalService == nil {
-		return log.New(nil, "", 0).Output(0, "WithdrawalService not initialized")
-	}
-
-	log.Println("Container verification passed")
-	return nil
-}

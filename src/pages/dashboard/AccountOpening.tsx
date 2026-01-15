@@ -1,54 +1,85 @@
 import { useTranslation } from "react-i18next";
 import { Shield, Copy, Check, AlertCircle, Loader2, Wallet } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { cn } from "@/lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const AccountOpening = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [status, setStatus] = useState<"none" | "loading" | "success" | "error">("none");
-  const [walletData, setWalletData] = useState<{ address: string; walletId: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Simulated function to create wallet - replace with actual API call
-  const handleCreateWallet = async () => {
-    setStatus("loading");
-
-    try {
-      // Simulate API call to create custody account
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Mock successful response
-      setWalletData({
-        address: "0x1234567890abcdef1234567890abcdef12345678",
-        walletId: "wallet_abc123def456",
+  const { data: walletInfo, isLoading } = useQuery({
+    queryKey: ["walletInfo"],
+    queryFn: async () => {
+      const res = await fetch("/api/wallet/info", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-      setStatus("success");
+      if (!res.ok) throw new Error("Failed to fetch info");
+      return res.json();
+    },
+    refetchInterval: (query) => {
+        const data = query.state.data;
+        return data?.status === "CREATING" ? 2000 : false
+    }, 
+  });
 
-      toast({
-        title: t("wallet.opening.successTitle"),
-        description: t("wallet.opening.successDescription"),
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/wallet/create", {
+        method: "POST",
+        headers: { 
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}` 
+        },
       });
-    } catch (error) {
-      setStatus("error");
+      if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to create wallet");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["walletInfo"] });
+      // Toast handled by UI state change usually, but good to notify
+    },
+    onError: (err) => {
       toast({
         variant: "destructive",
         title: t("wallet.opening.errorTitle"),
-        description: t("wallet.opening.errorDescription"),
+        description: err.message,
       });
     }
+  });
+
+  const handleCreateWallet = () => {
+    createMutation.mutate();
   };
 
-  const copyToClipboard = async () => {
-    if (walletData?.address) {
-      await navigator.clipboard.writeText(walletData.address);
+  const copyToClipboard = async (text: string) => {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    }
   };
+
+  const status = walletInfo?.status || "NONE";
+  const isCreating = status === "CREATING" || createMutation.isPending;
+
+  // Parse address for display (Pick TRON or first available)
+  let displayAddress = "";
+  let walletId = "";
+  if (status === "SUCCESS" && walletInfo?.addresses?.Valid) {
+      try {
+          const addrMap = JSON.parse(walletInfo.addresses.String);
+          displayAddress = addrMap["TRON"] || addrMap["ETH"] || Object.values(addrMap)[0] as string || "";
+          walletId = walletInfo.wallet_id?.String || "";
+      } catch (e) {
+          console.error("Failed to parse address", e);
+      }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -79,27 +110,32 @@ const AccountOpening = () => {
           </div>
 
           {/* Action Button */}
-          {status === "none" && (
+          {(status === "NONE" || status === "FAILED") && (
             <Button
               onClick={handleCreateWallet}
               className="w-full h-12 text-base font-medium"
               size="lg"
+              disabled={isCreating}
             >
-              <Wallet className="w-5 h-5 mr-2" />
-              {t("wallet.opening.activateButton")}
+              {isCreating ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              ) : (
+                  <Wallet className="w-5 h-5 mr-2" />
+              )}
+              {isCreating ? t("wallet.opening.creating") : t("wallet.opening.activateButton")}
             </Button>
           )}
 
-          {/* Loading State */}
-          {status === "loading" && (
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+          {/* Loading State Display */}
+          {status === "CREATING" && !createMutation.isPending && (
+             <div className="flex flex-col items-center justify-center py-8 space-y-4">
               <Loader2 className="w-12 h-12 text-primary animate-spin" />
               <p className="text-muted-foreground">{t("wallet.opening.creating")}</p>
             </div>
           )}
 
           {/* Success State */}
-          {status === "success" && walletData && (
+          {status === "SUCCESS" && (
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
                 <div className="flex items-center gap-2 text-green-500 mb-2">
@@ -114,16 +150,16 @@ const AccountOpening = () => {
               {/* Address Display */}
               <div className="p-4 rounded-lg bg-secondary/50 border border-border">
                 <p className="text-xs text-muted-foreground mb-2">
-                  {t("wallet.opening.walletId")}: {walletData.walletId}
+                  {t("wallet.opening.walletId")}: {walletId}
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-sm font-mono break-all bg-background p-3 rounded-md">
-                    {walletData.address}
+                    {displayAddress}
                   </code>
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={copyToClipboard}
+                    onClick={() => copyToClipboard(displayAddress)}
                     className="shrink-0"
                   >
                     {copied ? (
@@ -138,23 +174,6 @@ const AccountOpening = () => {
               <p className="text-xs text-muted-foreground text-center">
                 {t("wallet.opening.depositHint")}
               </p>
-            </div>
-          )}
-
-          {/* Error State */}
-          {status === "error" && (
-            <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
-              <div className="flex items-center gap-2 text-destructive mb-2">
-                <AlertCircle className="w-5 h-5" />
-                <span className="font-medium">{t("wallet.opening.error")}</span>
-              </div>
-              <Button
-                onClick={handleCreateWallet}
-                variant="outline"
-                className="w-full"
-              >
-                {t("wallet.opening.retry")}
-              </Button>
             </div>
           )}
         </CardContent>

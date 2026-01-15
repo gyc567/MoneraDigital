@@ -16,15 +16,19 @@ type Handler struct {
 	LendingService    *services.LendingService
 	AddressService    *services.AddressService
 	WithdrawalService *services.WithdrawalService
+	DepositService    *services.DepositService
+	WalletService     *services.WalletService
 	Validator         validator.Validator
 }
 
-func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService) *Handler {
+func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService) *Handler {
 	return &Handler{
 		AuthService:       auth,
 		LendingService:    lending,
 		AddressService:    address,
 		WithdrawalService: withdrawal,
+		DepositService:    deposit,
+		WalletService:     wallet,
 		Validator:         validator.NewValidator(),
 	}
 }

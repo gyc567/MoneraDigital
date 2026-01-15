@@ -9,7 +9,8 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
-  UserPlus
+  UserPlus,
+  ArrowDownCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -23,6 +24,7 @@ const DashboardSidebar = () => {
     { icon: LayoutDashboard, label: t("dashboard.nav.overview"), href: "/dashboard" },
     { icon: UserPlus, label: t("dashboard.nav.accountOpening"), href: "/dashboard/account-opening" },
     { icon: Wallet, label: t("dashboard.nav.assets"), href: "/dashboard/assets" },
+    { icon: ArrowDownCircle, label: t("dashboard.nav.deposit"), href: "/dashboard/deposit" },
     { icon: ArrowLeftRight, label: t("dashboard.nav.lending"), href: "/dashboard/lending" },
     { icon: TrendingUp, label: t("dashboard.nav.investments"), href: "/dashboard/investments" },
     { icon: ShieldCheck, label: t("dashboard.nav.security"), href: "/dashboard/security" },
@@ -38,9 +40,7 @@ const DashboardSidebar = () => {
     >
       {/* Logo Area */}
       <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center shrink-0">
-          <span className="text-primary-foreground font-bold text-lg">M</span>
-        </div>
+        <img src="/m-logo-new.png" alt="Monera Digital" className="w-8 h-8 object-contain shrink-0" />
         {!isCollapsed && (
           <span className="text-foreground font-semibold text-xl tracking-tight truncate">
             Monera<span className="text-primary">Digital</span>
