@@ -90,7 +90,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 
 	// 2. Check password
 	if !utils.CheckPasswordHash(req.Password, hashedPassword) {
-		return nil, errors.New("invalid password")
+		return nil, errors.New("invalid credentials")
 	}
 
 	// 2.5 Check 2FA
