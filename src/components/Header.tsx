@@ -42,9 +42,7 @@ const Header = () => {
         <div className="flex items-center justify-between h-16 lg:h-20">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">M</span>
-            </div>
+            <img src="/m-logo-new.png" alt="Monera Digital" className="w-8 h-8 object-contain" />
             <span className="text-foreground font-semibold text-xl tracking-tight">
               Monera<span className="text-primary">Digital</span>
             </span>

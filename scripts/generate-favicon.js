@@ -4,17 +4,17 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-const svgPath = path.join(process.cwd(), 'public/m-logo.svg');
+const sourcePath = path.join(process.cwd(), 'public/m-logo-new.png');
 const faviconPath = path.join(process.cwd(), 'public/favicon.ico');
 const outputPath = path.join(process.cwd(), 'public/favicon-32x32.png');
 
 async function generateFavicon() {
   try {
-    console.log('🎨 Generating PNG favicon from SVG...');
+    console.log('🎨 Generating Favicon from PNG source...');
 
-    const svgBuffer = fs.readFileSync(svgPath);
+    const sourceBuffer = fs.readFileSync(sourcePath);
 
-    await sharp(svgBuffer)
+    await sharp(sourceBuffer)
       .resize(32, 32, {
         fit: 'cover',
         position: 'center',
@@ -27,7 +27,7 @@ async function generateFavicon() {
 
     console.log('✅ Generated 32x32 PNG favicon:', outputPath);
 
-    await sharp(svgBuffer)
+    await sharp(sourceBuffer)
       .resize(32, 32, {
         fit: 'cover',
         position: 'center',
