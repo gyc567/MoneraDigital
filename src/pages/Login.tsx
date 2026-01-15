@@ -7,12 +7,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { validateRedirectPath } from "@/lib/redirect-validator";
+import { cn } from "@/lib/utils";
 
 import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "@/components/ui/input-otp";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [requires2FA, setRequires2FA] = useState(false);
   const [tempUserId, setTempUserId] = useState<number | null>(null);
@@ -27,9 +30,32 @@ export default function Login() {
     }
   }, [navigate]);
 
+  const clearErrors = () => {
+    setEmailError("");
+    setPasswordError("");
+  };
+
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearErrors();
     setIsLoading(true);
+
+    if (!isValidEmail(email)) {
+      setEmailError(t("auth.errors.invalidEmailFormat"));
+      setIsLoading(false);
+      return;
+    }
+
+    if (password.length < 1) {
+      setPasswordError(t("auth.errors.passwordRequired"));
+      setIsLoading(false);
+      return;
+    }
 
     try {
       if (requires2FA) {
@@ -59,7 +85,23 @@ export default function Login() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || t("auth.errors.loginFailed"));
+      if (!res.ok) {
+        const errorCode = data.code || "";
+        const errorMessage = data.message || t("auth.errors.loginFailed");
+        
+        if (errorCode === "EMAIL_NOT_FOUND") {
+          setEmailError(t("auth.errors.emailNotFound"));
+        } else if (errorCode === "INVALID_PASSWORD") {
+          setPasswordError(t("auth.errors.invalidPassword"));
+        } else if (errorCode === "INVALID_CREDENTIALS") {
+          setEmailError(t("auth.errors.invalidEmailOrPassword"));
+          setPasswordError(t("auth.errors.invalidEmailOrPassword"));
+        } else {
+          toast.error(errorMessage);
+        }
+        setIsLoading(false);
+        return;
+      }
 
       if (data.requires2FA) {
         setRequires2FA(true);
@@ -76,11 +118,18 @@ export default function Login() {
       navigate(returnTo);
     } catch (error: any) {
       let message = error.message;
-      // Localize common backend errors
-      if (message === "Invalid email or password" || message === "invalid credentials") {
-          message = t("auth.errors.invalidEmailOrPassword");
+      const msg = message.toLowerCase();
+      
+      if (msg.includes("email not found")) {
+        setEmailError(t("auth.errors.emailNotFound"));
+      } else if (msg.includes("invalid password")) {
+        setPasswordError(t("auth.errors.invalidPassword"));
+      } else if (msg.includes("invalid credentials") || msg.includes("invalid email or password")) {
+        setEmailError(t("auth.errors.invalidEmailOrPassword"));
+        setPasswordError(t("auth.errors.invalidEmailOrPassword"));
+      } else if (!emailError && !passwordError) {
+        toast.error(message);
       }
-      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -100,25 +149,51 @@ export default function Login() {
             {!requires2FA ? (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="email">{t("auth.login.email")}</Label>
+                  <Label htmlFor="email" className={cn(emailError && "text-red-500")}>
+                    {t("auth.login.email")}
+                  </Label>
                   <Input
                     id="email"
                     type="email"
                     placeholder={t("auth.login.emailPlaceholder")}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError("");
+                    }}
+                    onInvalid={(e) => {
+                      e.preventDefault();
+                      if (!isValidEmail(email)) {
+                        setEmailError(t("auth.errors.invalidEmailFormat"));
+                      }
+                    }}
+                    className={cn(emailError && "border-red-500 focus-visible:ring-red-500")}
                   />
+                  {emailError && (
+                    <p className="text-xs text-red-500 animate-in fade-in-0 slide-in-from-top-1">
+                      {emailError}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">{t("auth.login.password")}</Label>
+                  <Label htmlFor="password" className={cn(passwordError && "text-red-500")}>
+                    {t("auth.login.password")}
+                  </Label>
                   <Input
                     id="password"
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (passwordError) setPasswordError("");
+                    }}
+                    className={cn(passwordError && "border-red-500 focus-visible:ring-red-500")}
                   />
+                  {passwordError && (
+                    <p className="text-xs text-red-500 animate-in fade-in-0 slide-in-from-top-1">
+                      {passwordError}
+                    </p>
+                  )}
                 </div>
               </>
             ) : (

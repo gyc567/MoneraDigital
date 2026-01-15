@@ -189,7 +189,9 @@
       "invalidEmailFormat": "Invalid email format",
       "invalidPasswordFormat": "Password must contain uppercase, lowercase, and digit characters",
       "emailAlreadyRegistered": "This email is already registered",
-      "serverError": "Server error, please try again later"
+      "serverError": "Server error, please try again later",
+      "emailNotFound": "Email input error or does not exist",
+      "invalidPassword": "Password input error"
     }
   },
   "notFound": {

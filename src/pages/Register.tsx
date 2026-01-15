@@ -48,11 +48,28 @@ export default function Register() {
     return message;
   };
 
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
     setIsLoading(true);
     console.log("Attempting registration for:", email);
+
+    if (password.length < 8) {
+      setPasswordError(t("auth.errors.passwordTooShort"));
+      setIsLoading(false);
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setEmailError(t("auth.errors.invalidEmailFormat"));
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -148,8 +165,13 @@ export default function Register() {
                   setEmail(e.target.value);
                   if (emailError) setEmailError("");
                 }}
+                onInvalid={(e) => {
+                  e.preventDefault();
+                  if (!isValidEmail(email)) {
+                    setEmailError(t("auth.errors.invalidEmailFormat"));
+                  }
+                }}
                 className={cn(emailError && "border-red-500 focus-visible:ring-red-500")}
-                required
               />
               {emailError && (
                 <p className="text-xs text-red-500 animate-in fade-in-0 slide-in-from-top-1">

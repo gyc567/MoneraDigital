@@ -83,14 +83,14 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 	err := s.DB.QueryRow(query, req.Email).Scan(&user.ID, &user.Email, &hashedPassword, &user.TwoFactorEnabled)
 
 	if err == sql.ErrNoRows {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("email not found")
 	} else if err != nil {
 		return nil, err
 	}
 
 	// 2. Check password
 	if !utils.CheckPasswordHash(req.Password, hashedPassword) {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("invalid password")
 	}
 
 	// 2.5 Check 2FA

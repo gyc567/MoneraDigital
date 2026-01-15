@@ -55,6 +55,16 @@ func handleError(c *gin.Context, err error) {
 			Code:    "INVALID_CREDENTIALS",
 			Message: "Invalid email or password",
 		})
+	case "email not found":
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Code:    "EMAIL_NOT_FOUND",
+			Message: "Email input error or does not exist",
+		})
+	case "invalid password":
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Code:    "INVALID_PASSWORD",
+			Message: "Password input error",
+		})
 	case "email already registered":
 		c.JSON(http.StatusConflict, ErrorResponse{
 			Code:    "EMAIL_ALREADY_EXISTS",

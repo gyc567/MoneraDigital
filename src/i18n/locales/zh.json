@@ -189,7 +189,9 @@
       "invalidEmailFormat": "邮箱格式不正确",
       "invalidPasswordFormat": "密码需要包含大写字母、小写字母和数字",
       "emailAlreadyRegistered": "该邮箱已被注册",
-      "serverError": "服务器错误，请稍后重试"
+      "serverError": "服务器错误，请稍后重试",
+      "emailNotFound": "邮箱输入错误或不存在",
+      "invalidPassword": "密码输入错误"
     }
   },
   "notFound": {
