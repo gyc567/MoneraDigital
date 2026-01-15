@@ -87,17 +87,14 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) {
         const errorCode = data.code || "";
-        const errorMessage = data.message || t("auth.errors.loginFailed");
         
         if (errorCode === "EMAIL_NOT_FOUND") {
           setEmailError(t("auth.errors.emailNotFound"));
-        } else if (errorCode === "INVALID_PASSWORD") {
-          setPasswordError(t("auth.errors.invalidPassword"));
         } else if (errorCode === "INVALID_CREDENTIALS") {
           setEmailError(t("auth.errors.invalidEmailOrPassword"));
           setPasswordError(t("auth.errors.invalidEmailOrPassword"));
         } else {
-          toast.error(errorMessage);
+          toast.error(t("auth.errors.serverError"));
         }
         setIsLoading(false);
         return;
@@ -117,18 +114,9 @@ export default function Login() {
       const returnTo = validateRedirectPath((location.state as any)?.returnTo);
       navigate(returnTo);
     } catch (error: any) {
-      let message = error.message;
-      const msg = message.toLowerCase();
-      
-      if (msg.includes("email not found")) {
-        setEmailError(t("auth.errors.emailNotFound"));
-      } else if (msg.includes("invalid password")) {
-        setPasswordError(t("auth.errors.invalidPassword"));
-      } else if (msg.includes("invalid credentials") || msg.includes("invalid email or password")) {
-        setEmailError(t("auth.errors.invalidEmailOrPassword"));
-        setPasswordError(t("auth.errors.invalidEmailOrPassword"));
-      } else if (!emailError && !passwordError) {
-        toast.error(message);
+      console.error("Login error:", error);
+      if (!emailError && !passwordError) {
+        toast.error(t("auth.errors.serverError"));
       }
     } finally {
       setIsLoading(false);
