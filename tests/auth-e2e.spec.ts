@@ -4,7 +4,7 @@ test.describe('Registration and Login Flow', () => {
   const timestamp = Date.now();
   const testEmail = `test.${timestamp}@example.com`;
   const strongPassword = 'Password123!';
-  const baseURL = 'http://localhost:5001';
+  const baseURL = 'http://localhost:5000';
 
   test.describe('Registration Page', () => {
     test('should load registration page successfully', async ({ page }) => {

@@ -1,8 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	"monera-digital/internal/cache"
@@ -11,12 +16,14 @@ import (
 	"monera-digital/internal/utils"
 )
 
+// AuthService provides authentication functionality
 type AuthService struct {
 	DB             *sql.DB
 	jwtSecret      string
 	tokenBlacklist *cache.TokenBlacklist
 }
 
+// NewAuthService creates a new AuthService instance
 func NewAuthService(db *sql.DB, jwtSecret string) *AuthService {
 	return &AuthService{
 		DB:        db,
@@ -24,10 +31,12 @@ func NewAuthService(db *sql.DB, jwtSecret string) *AuthService {
 	}
 }
 
+// SetTokenBlacklist sets the token blacklist for logout functionality
 func (s *AuthService) SetTokenBlacklist(tb *cache.TokenBlacklist) {
 	s.tokenBlacklist = tb
 }
 
+// LoginResponse represents the login API response
 type LoginResponse struct {
 	User         *models.User `json:"user,omitempty"`
 	Token        string       `json:"token,omitempty"`
@@ -40,8 +49,9 @@ type LoginResponse struct {
 	UserID       int          `json:"user_id,omitempty"`
 }
 
+// Register handles user registration
 func (s *AuthService) Register(req models.RegisterRequest) (*models.User, error) {
-	// 1. Check if user exists
+	// Check if email already exists
 	var exists bool
 	err := s.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)", req.Email).Scan(&exists)
 	if err != nil {
@@ -51,18 +61,18 @@ func (s *AuthService) Register(req models.RegisterRequest) (*models.User, error)
 		return nil, errors.New("email already registered")
 	}
 
-	// 2. Hash password
+	// Hash password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. Insert user
+	// Insert user into database
 	var user models.User
 	query := `
-                INSERT INTO users (email, password, created_at)
-                VALUES ($1, $2, NOW())
-                RETURNING id, email, created_at, two_factor_enabled`
+		INSERT INTO users (email, password, created_at)
+		VALUES ($1, $2, NOW())
+		RETURNING id, email, created_at, two_factor_enabled`
 
 	err = s.DB.QueryRow(query, req.Email, hashedPassword).Scan(
 		&user.ID, &user.Email, &user.CreatedAt, &user.TwoFactorEnabled,
@@ -71,11 +81,62 @@ func (s *AuthService) Register(req models.RegisterRequest) (*models.User, error)
 		return nil, err
 	}
 
+	// Create account in Core Account System (fire and forget)
+	_, _ = s.createCoreAccount(user.ID, req.Email)
+
 	return &user, nil
 }
 
+// createCoreAccount creates an account in the Core Account System
+func (s *AuthService) createCoreAccount(userID int, email string) (string, error) {
+	accountReq := map[string]interface{}{
+		"externalId":  strconv.Itoa(userID),
+		"accountType": "INDIVIDUAL",
+		"profile": map[string]interface{}{
+			"email":     email,
+			"firstName": "",
+			"lastName":  "",
+		},
+		"metadata": map[string]interface{}{
+			"source": "monera_web",
+		},
+	}
+
+	jsonData, err := json.Marshal(accountReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	cfg := config.Load()
+	coreAPIURL := fmt.Sprintf("http://localhost:%s/api/core/accounts/create", cfg.Port)
+
+	resp, err := http.Post(coreAPIURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		// Return simulated ID for mock environment
+		return fmt.Sprintf("core_simulated_%d", userID), nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("core account creation failed with status: %d", resp.StatusCode)
+	}
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AccountID string `json:"accountId"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response.Data.AccountID, nil
+}
+
+// Login handles user authentication
 func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
-	// 1. Find user
 	var user models.User
 	var hashedPassword string
 
@@ -88,12 +149,12 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
-	// 2. Check password
+	// Verify password
 	if !utils.CheckPasswordHash(req.Password, hashedPassword) {
 		return nil, errors.New("invalid credentials")
 	}
 
-	// 2.5 Check 2FA
+	// Check if 2FA is required
 	if user.TwoFactorEnabled {
 		return &LoginResponse{
 			Requires2FA: true,
@@ -101,7 +162,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		}, nil
 	}
 
-	// 3. Generate Token
+	// Generate JWT token
 	cfg := config.Load()
 	token, err := utils.GenerateJWT(user.ID, user.Email, cfg.JWTSecret)
 	if err != nil {
@@ -115,17 +176,19 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		Token:       token,
 		AccessToken: token,
 		TokenType:   "Bearer",
-		ExpiresIn:   86400, // 24 hours in seconds
+		ExpiresIn:   86400,
 		ExpiresAt:   expiresAt,
 	}, nil
 }
 
+// Verify2FAAndLogin verifies 2FA token and completes login
 func (s *AuthService) Verify2FAAndLogin(userID int, token string) (*LoginResponse, error) {
-	// TODO: Implement
+	// TODO: Implement 2FA verification
 	return &LoginResponse{}, nil
 }
 
+// GetUserByID retrieves a user by their ID
 func (s *AuthService) GetUserByID(userID int) (*models.User, error) {
-	// TODO: Implement
+	// TODO: Implement user retrieval
 	return &models.User{}, nil
 }

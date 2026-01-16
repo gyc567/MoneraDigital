@@ -8,6 +8,7 @@ import (
 	"monera-digital/internal/container"
 	"monera-digital/internal/docs"
 	"monera-digital/internal/handlers"
+	"monera-digital/internal/handlers/core"
 	"monera-digital/internal/middleware"
 )
 
@@ -47,7 +48,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/2fa/enable", h.Enable2FA)
 			auth.POST("/2fa/verify-login", h.Verify2FALogin)
 		}
-		
+
 		webhooks := public.Group("/webhooks")
 		{
 			webhooks.POST("/core/deposit", h.HandleDepositWebhook)
@@ -101,4 +102,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// Core Account System Mock API
+	core.SetupRoutes(router)
 }

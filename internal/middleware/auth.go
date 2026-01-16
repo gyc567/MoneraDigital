@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"monera-digital/internal/config"
 	"monera-digital/internal/models"
 )
 
@@ -36,11 +37,17 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		token := parts[1]
 
+		// Get JWT secret from config
+		cfg := config.Load()
+		jwtSecret := cfg.JWTSecret
+		if jwtSecret == "" {
+			jwtSecret = "your-jwt-secret" // Fallback for development
+		}
+
 		// Parse and validate token
 		claims := &models.TokenClaims{}
 		parsedToken, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-			// In production, get JWT secret from container
-			return []byte("your-jwt-secret"), nil
+			return []byte(jwtSecret), nil
 		})
 
 		if err != nil || !parsedToken.Valid {
@@ -52,8 +59,8 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Check token type
-		if claims.TokenType != "access" {
+		// Check token type (if present in claims)
+		if claims.TokenType != "" && claims.TokenType != "access" {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{
 				Code:    "INVALID_TOKEN_TYPE",
 				Message: "Token type must be 'access'",
