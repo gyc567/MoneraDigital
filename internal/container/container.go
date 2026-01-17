@@ -61,38 +61,27 @@ type Container struct {
 	
 
 		// 初始化仓储
-
 		repo := &repository.Repository{
-
-			User:    postgres.NewUserRepository(db),
-
-			Deposit: postgres.NewDepositRepository(db),
-
-			Wallet:  postgres.NewWalletRepository(db),
-
+			User:       postgres.NewUserRepository(db),
+			Deposit:    postgres.NewDepositRepository(db),
+			Wallet:     postgres.NewWalletRepository(db),
+			Account:    postgres.NewAccountRepository(db),
+			Address:    postgres.NewAddressRepository(db),
+			Withdrawal: postgres.NewWithdrawalRepository(db),
 			// Lending:    postgres.NewLendingRepository(db),
-
-			// Address:    postgres.NewAddressRepository(db),
-
-			// Withdrawal: postgres.NewWithdrawalRepository(db),
-
 		}
 
-	
-
 		// 初始化服务
-
 		authService := services.NewAuthService(db, jwtSecret)
-
 		authService.SetTokenBlacklist(tokenBlacklist)
-
-	
 
 		lendingService := services.NewLendingService(db)
 
-		addressService := services.NewAddressService(db)
+		addressService := services.NewAddressService(repo.Address)
 
-		withdrawalService := services.NewWithdrawalService(db)
+		safeheronService := services.NewSafeheronService()
+
+		withdrawalService := services.NewWithdrawalService(db, repo, safeheronService)
 
 		depositService := services.NewDepositService(repo.Deposit)
 

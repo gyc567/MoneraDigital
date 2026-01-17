@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 )
 
@@ -16,7 +17,7 @@ func NewDepositRepository(db *sql.DB) repository.Deposit {
 	return &DepositRepository{db: db}
 }
 
-func (r *DepositRepository) Create(ctx context.Context, deposit *repository.DepositModel) error {
+func (r *DepositRepository) Create(ctx context.Context, deposit *models.Deposit) error {
 	query := `
 		INSERT INTO deposits (user_id, tx_hash, amount, asset, chain, status, from_address, to_address, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -29,18 +30,16 @@ func (r *DepositRepository) Create(ctx context.Context, deposit *repository.Depo
 	return err
 }
 
-func (r *DepositRepository) GetByTxHash(ctx context.Context, txHash string) (*repository.DepositModel, error) {
+func (r *DepositRepository) GetByTxHash(ctx context.Context, txHash string) (*models.Deposit, error) {
 	query := `
 		SELECT id, user_id, tx_hash, amount, asset, chain, status, from_address, to_address, created_at, confirmed_at
 		FROM deposits WHERE tx_hash = $1`
 	
-	var d repository.DepositModel
-	var confirmedAt sql.NullTime
-    var fromAddr, toAddr sql.NullString
+	var d models.Deposit
 
 	err := r.db.QueryRowContext(ctx, query, txHash).Scan(
 		&d.ID, &d.UserID, &d.TxHash, &d.Amount, &d.Asset, &d.Chain, &d.Status,
-		&fromAddr, &toAddr, &d.CreatedAt, &confirmedAt,
+		&d.FromAddress, &d.ToAddress, &d.CreatedAt, &d.ConfirmedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil 
@@ -48,15 +47,10 @@ func (r *DepositRepository) GetByTxHash(ctx context.Context, txHash string) (*re
 	if err != nil {
 		return nil, err
 	}
-    d.FromAddress = fromAddr.String
-    d.ToAddress = toAddr.String
-	if confirmedAt.Valid {
-		d.ConfirmedAt = confirmedAt.Time.Format(time.RFC3339)
-	}
 	return &d, nil
 }
 
-func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*repository.DepositModel, int64, error) {
+func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*models.Deposit, int64, error) {
 	// Count
 	var total int64
 	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM deposits WHERE user_id = $1", userID).Scan(&total)
@@ -76,18 +70,11 @@ func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, 
 	}
 	defer rows.Close()
 
-	var deposits []*repository.DepositModel
+	var deposits []*models.Deposit
 	for rows.Next() {
-		var d repository.DepositModel
-		var confirmedAt sql.NullTime
-        var fromAddr, toAddr sql.NullString
-		if err := rows.Scan(&d.ID, &d.UserID, &d.TxHash, &d.Amount, &d.Asset, &d.Chain, &d.Status, &fromAddr, &toAddr, &d.CreatedAt, &confirmedAt); err != nil {
+		var d models.Deposit
+		if err := rows.Scan(&d.ID, &d.UserID, &d.TxHash, &d.Amount, &d.Asset, &d.Chain, &d.Status, &d.FromAddress, &d.ToAddress, &d.CreatedAt, &d.ConfirmedAt); err != nil {
 			return nil, 0, err
-		}
-        d.FromAddress = fromAddr.String
-        d.ToAddress = toAddr.String
-		if confirmedAt.Valid {
-			d.ConfirmedAt = confirmedAt.Time.Format(time.RFC3339)
 		}
 		deposits = append(deposits, &d)
 	}
@@ -97,8 +84,6 @@ func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, 
 func (r *DepositRepository) UpdateStatus(ctx context.Context, id int, status string, confirmedAt string) error {
     var confirmedTime interface{} = nil
     if confirmedAt != "" {
-        // Parse if needed, or pass if driver supports string->timestamp implicit conversion (postgres usually needs type cast or valid format)
-        // Ideally parse:
         t, err := time.Parse(time.RFC3339, confirmedAt)
         if err == nil {
             confirmedTime = t

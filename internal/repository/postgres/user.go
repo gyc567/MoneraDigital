@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"time"
 
+	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 )
 
@@ -20,13 +21,13 @@ func NewUserRepository(db *sql.DB) repository.User {
 }
 
 // GetByEmail 根据邮箱获取用户
-func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*repository.UserModel, error) {
-	var user repository.UserModel
+func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
+	var user models.User
 
 	err := r.db.QueryRowContext(
 		ctx,
 		`SELECT id, email, password, two_factor_enabled, two_factor_secret,
-		        two_factor_backup_codes, created_at, updated_at
+		        two_factor_backup_codes, created_at
 		 FROM users WHERE email = $1`,
 		email,
 	).Scan(
@@ -37,7 +38,6 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*reposit
 		&user.TwoFactorSecret,
 		&user.TwoFactorBackupCodes,
 		&user.CreatedAt,
-		&user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -51,13 +51,13 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*reposit
 }
 
 // GetByID 根据ID获取用户
-func (r *UserRepository) GetByID(ctx context.Context, id int) (*repository.UserModel, error) {
-	var user repository.UserModel
+func (r *UserRepository) GetByID(ctx context.Context, id int) (*models.User, error) {
+	var user models.User
 
 	err := r.db.QueryRowContext(
 		ctx,
 		`SELECT id, email, password, two_factor_enabled, two_factor_secret,
-		        two_factor_backup_codes, created_at, updated_at
+		        two_factor_backup_codes, created_at
 		 FROM users WHERE id = $1`,
 		id,
 	).Scan(
@@ -68,7 +68,6 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*repository.UserM
 		&user.TwoFactorSecret,
 		&user.TwoFactorBackupCodes,
 		&user.CreatedAt,
-		&user.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -82,15 +81,15 @@ func (r *UserRepository) GetByID(ctx context.Context, id int) (*repository.UserM
 }
 
 // Create 创建用户
-func (r *UserRepository) Create(ctx context.Context, email, passwordHash string) (*repository.UserModel, error) {
-	var user repository.UserModel
+func (r *UserRepository) Create(ctx context.Context, email, passwordHash string) (*models.User, error) {
+	var user models.User
 
 	err := r.db.QueryRowContext(
 		ctx,
 		`INSERT INTO users (email, password, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING id, email, password, two_factor_enabled, two_factor_secret,
-		           two_factor_backup_codes, created_at, updated_at`,
+		           two_factor_backup_codes, created_at`,
 		email,
 		passwordHash,
 		time.Now(),
@@ -103,7 +102,6 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash string)
 		&user.TwoFactorSecret,
 		&user.TwoFactorBackupCodes,
 		&user.CreatedAt,
-		&user.UpdatedAt,
 	)
 
 	if err != nil {
@@ -118,7 +116,7 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash string)
 }
 
 // Update 更新用户
-func (r *UserRepository) Update(ctx context.Context, user *repository.UserModel) error {
+func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE users

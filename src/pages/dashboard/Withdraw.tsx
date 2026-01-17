@@ -15,24 +15,24 @@ import { toast } from "sonner";
 
 interface WithdrawalAddress {
   id: number;
-  address: string;
-  addressType: "BTC" | "ETH" | "USDC" | "USDT";
-  label: string;
-  isVerified: boolean;
-  isPrimary: boolean;
+  wallet_address: string;
+  chain_type: string;
+  address_alias: string;
+  verified: boolean;
+  // isPrimary: boolean; // Removed per PRD/Service update
 }
 
 interface Withdrawal {
   id: number;
-  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  status: "PENDING" | "PROCESSING" | "SENT" | "CONFIRMING" | "CONFIRMED" | "COMPLETED" | "FAILED";
   amount: string;
-  asset: string;
-  toAddress: string;
-  txHash: string | null;
-  fee: string | null;
-  receivedAmount: string | null;
-  createdAt: string;
-  completedAt: string | null;
+  coin_type: string;
+  to_address: string;
+  transaction_hash: string | null;
+  network_fee: string | null;
+  actual_amount: string | null;
+  created_at: string;
+  completed_at: string | null;
 }
 
 interface ChainOption {
@@ -101,28 +101,26 @@ const Withdraw = () => {
 
       if (res.ok) {
         const data = await res.json();
-        const verified = data.addresses.filter(
-          (addr: WithdrawalAddress) => addr.isVerified && !addr.deactivatedAt
-        );
-        setAddresses(verified);
+        // Backend returns snake_case
+        const allAddresses: WithdrawalAddress[] = data.addresses || [];
+        // Only show verified addresses for withdrawal
+        setAddresses(allAddresses.filter(a => a.verified));
 
-        // Auto-select address based on asset type preference
-        const assetMatching = verified.filter((addr: WithdrawalAddress) => addr.addressType === asset);
-        const primary = verified.find((addr: WithdrawalAddress) => addr.isPrimary);
-        const primaryAssetMatch = assetMatching.find((addr: WithdrawalAddress) => addr.isPrimary);
-
-        if (primaryAssetMatch) {
-          setSelectedAddressId(String(primaryAssetMatch.id));
-          setSelectedAddress(primaryAssetMatch);
-        } else if (assetMatching.length > 0) {
-          setSelectedAddressId(String(assetMatching[0].id));
-          setSelectedAddress(assetMatching[0]);
-        } else if (primary) {
-          setSelectedAddressId(String(primary.id));
-          setSelectedAddress(primary);
-        } else if (verified.length > 0) {
-          setSelectedAddressId(String(verified[0].id));
-          setSelectedAddress(verified[0]);
+        // Logic for auto-select
+        // NOTE: Backend Address doesn't strictly have 'addressType' that matches asset EXACTLY like 'ETH' vs 'Ethereum'.
+        // chain_type in backend is stored from req.ChainType.
+        // We assume User selects Asset, then we filter addresses by ChainType?
+        // But Asset != ChainType (USDT can be on TRC20).
+        // UI logic: Select Asset -> Select Chain -> Select Address.
+        // Current UI: Select Address -> it implies Chain & Asset.
+        // OR Select Asset -> UI sets Chain Options -> User selects Chain.
+        
+        // Let's assume for now we just show all addresses.
+        if (data.addresses && data.addresses.length > 0) {
+             // Basic auto-select first
+             const first = data.addresses[0];
+             setSelectedAddressId(String(first.id));
+             setSelectedAddress(first);
         }
       }
     } catch (error) {
@@ -214,7 +212,7 @@ const Withdraw = () => {
     const addr = addresses.find((a) => a.id === Number(addressId));
     if (addr) {
       setSelectedAddress(addr);
-      setAsset(addr.addressType);
+      // setAsset(addr.chain_type); // Mapping needed if enabled
     }
   };
 
@@ -233,8 +231,9 @@ const Withdraw = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
+        // Match Backend snake_case
         body: JSON.stringify({
-          addressId: Number(selectedAddressId),
+          address_id: Number(selectedAddressId),
           amount,
           asset,
         }),
@@ -304,6 +303,9 @@ const Withdraw = () => {
         return <CheckCircle2 className="text-green-500" size={20} />;
       case "PENDING":
       case "PROCESSING":
+      case "SENT":
+      case "CONFIRMING":
+      case "CONFIRMED":
         return <Clock className="text-yellow-500" size={20} />;
       case "FAILED":
         return <AlertCircle className="text-red-500" size={20} />;
@@ -357,9 +359,8 @@ const Withdraw = () => {
                         {addresses.map((addr) => (
                           <SelectItem key={addr.id} value={String(addr.id)}>
                             <div className="flex items-center gap-2">
-                              <span>{addr.label}</span>
-                              <Badge variant="outline">{addr.addressType}</Badge>
-                              {addr.isPrimary && <Badge className="bg-blue-600">Primary</Badge>}
+                              <span>{addr.address_alias}</span>
+                              <Badge variant="outline">{addr.chain_type}</Badge>
                             </div>
                           </SelectItem>
                         ))}
@@ -392,7 +393,7 @@ const Withdraw = () => {
                   {selectedAddress && (
                     <div className="p-4 bg-secondary/30 rounded-lg border border-border/50">
                       <p className="text-xs text-muted-foreground mb-2">Address Details</p>
-                      <p className="text-sm font-mono break-all">{selectedAddress.address}</p>
+                      <p className="text-sm font-mono break-all">{selectedAddress.wallet_address}</p>
                     </div>
                   )}
                 </CardContent>
@@ -481,7 +482,7 @@ const Withdraw = () => {
                         <div className="mt-1">{getStatusIcon(withdrawal.status)}</div>
                         <div className="space-y-2 flex-1">
                            <div className="flex items-center gap-2">
-                             <span className="font-semibold">{withdrawal.amount} {withdrawal.asset}</span>
+                             <span className="font-semibold">{withdrawal.amount} {withdrawal.coin_type}</span>
                              <Badge variant={
                                withdrawal.status === "COMPLETED"
                                  ? "default"
@@ -493,20 +494,20 @@ const Withdraw = () => {
                              </Badge>
                            </div>
                            <p className="text-xs text-muted-foreground font-mono break-all">
-                             To: {withdrawal.toAddress}
+                             To: {withdrawal.to_address}
                            </p>
                            <p className="text-xs text-muted-foreground">
-                             {new Date(withdrawal.createdAt).toLocaleString()}
+                             {new Date(withdrawal.created_at).toLocaleString()}
                            </p>
                            <div className="flex gap-4 mt-2">
-                             {withdrawal.fee && (
+                             {withdrawal.network_fee && (
                                <p className="text-xs text-muted-foreground">
-                                 Fee: {withdrawal.fee} {withdrawal.asset}
+                                 Fee: {withdrawal.network_fee} {withdrawal.coin_type}
                                </p>
                              )}
-                             {withdrawal.txHash && (
+                             {withdrawal.transaction_hash && (
                                <p className="text-xs text-muted-foreground font-mono break-all">
-                                 Tx: {withdrawal.txHash}
+                                 Tx: {withdrawal.transaction_hash}
                                </p>
                              )}
                            </div>
@@ -551,7 +552,7 @@ const Withdraw = () => {
 
             <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <p className="text-xs text-blue-200/80">
-                To: <span className="font-mono break-all">{selectedAddress?.address}</span>
+                To: <span className="font-mono break-all">{selectedAddress?.wallet_address}</span>
               </p>
               <p className="text-xs text-blue-200/80 mt-1">
                 Chain: <strong>{chain}</strong>
@@ -564,7 +565,7 @@ const Withdraw = () => {
             <AlertDialogAction
               onClick={async () => {
                 // Check if this is a new address (first withdrawal to this address)
-                if (selectedAddress && !selectedAddress.isVerified) {
+                if (selectedAddress && !selectedAddress.verified) {
                   setIsConfirming(false);
                   setIs2FADialogOpen(true);
                   setPendingWithdrawal({

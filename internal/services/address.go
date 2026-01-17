@@ -1,123 +1,81 @@
 package services
 
 import (
-	"crypto/rand"
+	"context"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"time"
 
 	"monera-digital/internal/models"
+	"monera-digital/internal/repository"
 )
 
 type AddressService struct {
-	DB *sql.DB
+	repo repository.Address
 }
 
-func NewAddressService(db *sql.DB) *AddressService {
-	return &AddressService{DB: db}
+func NewAddressService(repo repository.Address) *AddressService {
+	return &AddressService{repo: repo}
 }
 
-func (s *AddressService) GetAddresses(userID int) ([]models.WithdrawalAddress, error) {
-	query := `
-		SELECT id, user_id, address, address_type, label, is_verified, is_primary, created_at, verified_at, deactivated_at
-		FROM withdrawal_addresses
-		WHERE user_id = $1 AND deactivated_at IS NULL
-		ORDER BY created_at DESC
-	`
+func (s *AddressService) GetAddresses(ctx context.Context, userID int) ([]*models.WithdrawalAddress, error) {
+	return s.repo.GetAddressesByUserID(ctx, userID)
+}
 
-	rows, err := s.DB.Query(query, userID)
-	if err != nil {
-		return nil, err
+func (s *AddressService) AddAddress(ctx context.Context, userID int, req models.AddAddressRequest) (*models.WithdrawalAddress, error) {
+	// Check if already exists (optional, unique constraint handles it but maybe check alias?)
+	// DB Unique Constraint: (user_id, wallet_address)
+
+	addr := &models.WithdrawalAddress{
+		UserID:        userID,
+		AddressAlias:  req.AddressAlias,
+		ChainType:     req.ChainType,
+		WalletAddress: req.WalletAddress,
+		Verified:      false, // New addresses need verification
+		// VerifiedAt: nil
+		// VerificationMethod: nil
 	}
-	defer rows.Close()
 
-	var addresses []models.WithdrawalAddress
-	for rows.Next() {
-		var addr models.WithdrawalAddress
-		err := rows.Scan(
-			&addr.ID, &addr.UserID, &addr.Address, &addr.AddressType, &addr.Label,
-			&addr.IsVerified, &addr.IsPrimary, &addr.CreatedAt, &addr.VerifiedAt, &addr.DeactivatedAt,
-		)
-		if err != nil {
-			return nil, err
+	// PRD 4.1: If first time, needs verification. (Default verified=false)
+	// If existing whitelist, maybe skip?
+	// But AddAddress implies adding new.
+
+	createdAddr, err := s.repo.CreateAddress(ctx, addr)
+	if err != nil {
+		if err == repository.ErrAlreadyExists {
+			return nil, errors.New("address already exists")
 		}
-		addresses = append(addresses, addr)
-	}
-
-	return addresses, nil
-}
-
-func (s *AddressService) AddAddress(userID int, req models.AddAddressRequest) (*models.WithdrawalAddress, error) {
-	query := `
-		INSERT INTO withdrawal_addresses (user_id, address, address_type, label)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, user_id, address, address_type, label, is_verified, is_primary, created_at
-	`
-
-	var addr models.WithdrawalAddress
-	err := s.DB.QueryRow(query, userID, req.Address, req.AddressType, req.Label).Scan(
-		&addr.ID, &addr.UserID, &addr.Address, &addr.AddressType, &addr.Label,
-		&addr.IsVerified, &addr.IsPrimary, &addr.CreatedAt,
-	)
-	if err != nil {
 		return nil, err
 	}
 
-	// TODO: Send verification email
-	return &addr, nil
+	return createdAddr, nil
 }
 
-func (s *AddressService) VerifyAddress(userID int, addressID int, token string) error {
-	// Check verification token
-	query := `
-		SELECT expires_at
-		FROM address_verifications
-		WHERE address_id = $1 AND token = $2
-	`
-
-	var expiresAt time.Time
-	err := s.DB.QueryRow(query, addressID, token).Scan(&expiresAt)
+func (s *AddressService) VerifyAddress(ctx context.Context, userID int, addressID int, method string) error {
+	addr, err := s.repo.GetAddressByID(ctx, addressID)
 	if err != nil {
 		return err
 	}
-
-	if time.Now().After(expiresAt) {
-		return errors.New("token expired")
+	if addr.UserID != userID {
+		return errors.New("address not found")
 	}
 
-	// Update address as verified
-	query = `UPDATE withdrawal_addresses SET is_verified = true, verified_at = NOW() WHERE id = $1 AND user_id = $2`
-	_, err = s.DB.Exec(query, addressID, userID)
-	return err
+	addr.Verified = true
+	now := time.Now()
+	addr.VerifiedAt = sql.NullTime{Time: now, Valid: true}
+	addr.VerificationMethod = sql.NullString{String: method, Valid: true}
+
+	return s.repo.UpdateAddress(ctx, addr)
 }
 
-func (s *AddressService) SetPrimaryAddress(userID int, addressID int) error {
-	// First, unset all primary addresses for this user
-	query := `UPDATE withdrawal_addresses SET is_primary = false WHERE user_id = $1`
-	_, err := s.DB.Exec(query, userID)
+func (s *AddressService) DeleteAddress(ctx context.Context, userID int, addressID int) error {
+	addr, err := s.repo.GetAddressByID(ctx, addressID)
 	if err != nil {
 		return err
 	}
-
-	// Set this address as primary
-	query = `UPDATE withdrawal_addresses SET is_primary = true WHERE id = $1 AND user_id = $2`
-	_, err = s.DB.Exec(query, addressID, userID)
-	return err
-}
-
-func (s *AddressService) DeactivateAddress(userID int, addressID int) error {
-	query := `UPDATE withdrawal_addresses SET deactivated_at = NOW() WHERE id = $1 AND user_id = $2`
-	_, err := s.DB.Exec(query, addressID, userID)
-	return err
-}
-
-// Generate verification token
-func generateVerificationToken() (string, error) {
-	bytes := make([]byte, 32)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
+	if addr.UserID != userID {
+		return errors.New("address not found")
 	}
-	return hex.EncodeToString(bytes), nil
+
+	return s.repo.DeleteAddress(ctx, addressID)
 }

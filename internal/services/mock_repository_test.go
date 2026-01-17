@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"monera-digital/internal/repository"
+	"monera-digital/internal/models"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -11,7 +11,7 @@ type MockDepositRepository struct {
 	mock.Mock
 }
 
-func (m *MockDepositRepository) Create(ctx context.Context, deposit *repository.DepositModel) error {
+func (m *MockDepositRepository) Create(ctx context.Context, deposit *models.Deposit) error {
 	args := m.Called(ctx, deposit)
     if args.Get(0) == nil {
         deposit.ID = 1 
@@ -19,20 +19,20 @@ func (m *MockDepositRepository) Create(ctx context.Context, deposit *repository.
 	return args.Error(0)
 }
 
-func (m *MockDepositRepository) GetByTxHash(ctx context.Context, txHash string) (*repository.DepositModel, error) {
+func (m *MockDepositRepository) GetByTxHash(ctx context.Context, txHash string) (*models.Deposit, error) {
 	args := m.Called(ctx, txHash)
     if args.Get(0) == nil {
         return nil, args.Error(1)
     }
-	return args.Get(0).(*repository.DepositModel), args.Error(1)
+	return args.Get(0).(*models.Deposit), args.Error(1)
 }
 
-func (m *MockDepositRepository) GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*repository.DepositModel, int64, error) {
+func (m *MockDepositRepository) GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*models.Deposit, int64, error) {
 	args := m.Called(ctx, userID, limit, offset)
     if args.Get(0) == nil {
         return nil, 0, args.Error(2)
     }
-	return args.Get(0).([]*repository.DepositModel), args.Get(1).(int64), args.Error(2)
+	return args.Get(0).([]*models.Deposit), args.Get(1).(int64), args.Error(2)
 }
 
 func (m *MockDepositRepository) UpdateStatus(ctx context.Context, id int, status string, confirmedAt string) error {
@@ -45,7 +45,7 @@ type MockWalletRepository struct {
 	mock.Mock
 }
 
-func (m *MockWalletRepository) CreateRequest(ctx context.Context, req *repository.WalletCreationRequestModel) error {
+func (m *MockWalletRepository) CreateRequest(ctx context.Context, req *models.WalletCreationRequest) error {
 	args := m.Called(ctx, req)
     if args.Get(0) == nil {
         req.ID = 1
@@ -53,23 +53,150 @@ func (m *MockWalletRepository) CreateRequest(ctx context.Context, req *repositor
 	return args.Error(0)
 }
 
-func (m *MockWalletRepository) GetRequestByUserID(ctx context.Context, userID int) (*repository.WalletCreationRequestModel, error) {
+func (m *MockWalletRepository) GetRequestByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	args := m.Called(ctx, userID)
     if args.Get(0) == nil {
         return nil, args.Error(1)
     }
-	return args.Get(0).(*repository.WalletCreationRequestModel), args.Error(1)
+	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
-func (m *MockWalletRepository) UpdateRequest(ctx context.Context, req *repository.WalletCreationRequestModel) error {
+func (m *MockWalletRepository) UpdateRequest(ctx context.Context, req *models.WalletCreationRequest) error {
 	args := m.Called(ctx, req)
 	return args.Error(0)
 }
 
-func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*repository.WalletCreationRequestModel, error) {
+func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	args := m.Called(ctx, userID)
     if args.Get(0) == nil {
         return nil, args.Error(1)
     }
-	return args.Get(0).(*repository.WalletCreationRequestModel), args.Error(1)
+	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
+}
+
+// MockAccountRepository
+type MockAccountRepository struct {
+	mock.Mock
+}
+
+func (m *MockAccountRepository) GetByUserIDAndType(ctx context.Context, userID int, accountType string) (*models.Account, error) {
+	args := m.Called(ctx, userID, accountType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Account), args.Error(1)
+}
+
+func (m *MockAccountRepository) Create(ctx context.Context, account *models.Account) error {
+	args := m.Called(ctx, account)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) UpdateFrozenBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) ReleaseFrozenBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) DeductBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
+// MockWithdrawalRepository
+type MockWithdrawalRepository struct {
+	mock.Mock
+}
+
+func (m *MockWithdrawalRepository) CreateOrder(ctx context.Context, order *models.WithdrawalOrder) (*models.WithdrawalOrder, error) {
+	args := m.Called(ctx, order)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalOrder), args.Error(1)
+}
+
+func (m *MockWithdrawalRepository) GetOrdersByUserID(ctx context.Context, userID int) ([]*models.WithdrawalOrder, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.WithdrawalOrder), args.Error(1)
+}
+
+func (m *MockWithdrawalRepository) GetOrderByID(ctx context.Context, id int) (*models.WithdrawalOrder, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalOrder), args.Error(1)
+}
+
+func (m *MockWithdrawalRepository) UpdateOrder(ctx context.Context, order *models.WithdrawalOrder) error {
+	args := m.Called(ctx, order)
+	return args.Error(0)
+}
+
+func (m *MockWithdrawalRepository) CreateRequest(ctx context.Context, req *models.WithdrawalRequest) error {
+	args := m.Called(ctx, req)
+	return args.Error(0)
+}
+
+func (m *MockWithdrawalRepository) GetRequestByID(ctx context.Context, requestID string) (*models.WithdrawalRequest, error) {
+	args := m.Called(ctx, requestID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalRequest), args.Error(1)
+}
+
+// MockAddressRepository
+type MockAddressRepository struct {
+	mock.Mock
+}
+
+func (m *MockAddressRepository) CreateAddress(ctx context.Context, address *models.WithdrawalAddress) (*models.WithdrawalAddress, error) {
+	args := m.Called(ctx, address)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalAddress), args.Error(1)
+}
+
+func (m *MockAddressRepository) GetAddressesByUserID(ctx context.Context, userID int) ([]*models.WithdrawalAddress, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.WithdrawalAddress), args.Error(1)
+}
+
+func (m *MockAddressRepository) GetAddressByID(ctx context.Context, id int) (*models.WithdrawalAddress, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalAddress), args.Error(1)
+}
+
+func (m *MockAddressRepository) UpdateAddress(ctx context.Context, address *models.WithdrawalAddress) error {
+	args := m.Called(ctx, address)
+	return args.Error(0)
+}
+
+func (m *MockAddressRepository) DeleteAddress(ctx context.Context, id int) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockAddressRepository) GetByAddressAndChain(ctx context.Context, address, chain string) (*models.WithdrawalAddress, error) {
+	args := m.Called(ctx, address, chain)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WithdrawalAddress), args.Error(1)
 }

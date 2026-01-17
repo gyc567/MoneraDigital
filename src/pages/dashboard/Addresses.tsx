@@ -13,14 +13,13 @@ import { toast } from "sonner";
 
 interface WithdrawalAddress {
   id: number;
-  address: string;
-  addressType: "BTC" | "ETH" | "USDC" | "USDT";
-  label: string;
-  isVerified: boolean;
-  isPrimary: boolean;
-  createdAt: string;
-  verifiedAt: string | null;
-  deactivatedAt: string | null;
+  wallet_address: string;
+  chain_type: "BTC" | "ETH" | "USDC" | "USDT";
+  address_alias: string;
+  verified: boolean;
+  is_deleted: boolean;
+  created_at: string;
+  verified_at: string | null;
 }
 
 const Addresses = () => {
@@ -82,9 +81,9 @@ const Addresses = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          address: newAddress,
-          addressType,
-          label,
+          wallet_address: newAddress,
+          chain_type: addressType,
+          address_alias: label,
         }),
       });
 
@@ -220,47 +219,45 @@ const Addresses = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-3">
                     <div className="flex items-center gap-3">
-                      <h3 className="font-semibold">{addr.label}</h3>
-                      <Badge variant={addr.addressType === "BTC" ? "default" : "secondary"}>
-                        {addr.addressType}
+                      <h3 className="font-semibold">{addr.address_alias}</h3>
+                      <Badge variant={addr.chain_type === "BTC" ? "default" : "secondary"}>
+                        {addr.chain_type}
                       </Badge>
-                      {addr.isVerified && (
+                      {addr.verified && (
                         <Badge variant="outline" className="gap-1">
                           <Check size={14} />
                           Verified
                         </Badge>
                       )}
-                      {!addr.isVerified && (
+                      {!addr.verified && (
                         <Badge variant="outline" className="gap-1 text-yellow-600">
                           <Clock size={14} />
                           Pending
                         </Badge>
                       )}
-                      {addr.isPrimary && (
-                        <Badge className="bg-blue-600">Primary</Badge>
-                      )}
-                      {addr.deactivatedAt && (
+                      {/* addr.isPrimary not supported yet */}
+                      {addr.is_deleted && (
                         <Badge variant="destructive">Deactivated</Badge>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground break-all font-mono">
-                        {addr.address}
+                        {addr.wallet_address}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Added: {new Date(addr.createdAt).toLocaleDateString()}
+                        Added: {new Date(addr.created_at).toLocaleDateString()}
                       </p>
-                      {addr.verifiedAt && (
+                      {addr.verified_at && (
                         <p className="text-xs text-green-600">
-                          Verified: {new Date(addr.verifiedAt).toLocaleDateString()}
+                          Verified: {new Date(addr.verified_at).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex gap-2">
-                    {!addr.isVerified && !addr.deactivatedAt && (
+                    {!addr.verified && !addr.is_deleted && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -273,7 +270,8 @@ const Addresses = () => {
                       </Button>
                     )}
 
-                    {addr.isVerified && !addr.isPrimary && !addr.deactivatedAt && (
+                    {/* Primary button logic might need revisit if backend doesn't support it in list */}
+                    {addr.verified && !addr.is_deleted && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -283,7 +281,7 @@ const Addresses = () => {
                       </Button>
                     )}
 
-                    {!addr.deactivatedAt && (
+                    {!addr.is_deleted && (
                       <Button
                         size="sm"
                         variant="ghost"

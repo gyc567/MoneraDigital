@@ -170,14 +170,19 @@ func (h *Handler) GetUserPositions(c *gin.Context) {
 
 // Address handlers
 func (h *Handler) GetAddresses(c *gin.Context) {
-	_, exists := c.Get("userID")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	// TODO: Implement GetAddresses in AddressService
-	c.JSON(http.StatusOK, gin.H{"addresses": []interface{}{}, "total": 0, "count": 0})
+	addresses, err := h.AddressService.GetAddresses(c.Request.Context(), userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"addresses": addresses, "total": len(addresses), "count": len(addresses)})
 }
 
 func (h *Handler) AddAddress(c *gin.Context) {
@@ -187,13 +192,19 @@ func (h *Handler) AddAddress(c *gin.Context) {
 		return
 	}
 
-	var req map[string]interface{}
+	var req models.AddAddressRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "Address added", "user_id": userID})
+	addr, err := h.AddressService.AddAddress(c.Request.Context(), userID.(int), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, addr)
 }
 
 func (h *Handler) VerifyAddress(c *gin.Context) {
@@ -202,40 +213,51 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Address verified"})
+	// Simplified verification (mock)
+	c.JSON(http.StatusOK, gin.H{"message": "Address verification triggered"})
 }
 
 func (h *Handler) SetPrimaryAddress(c *gin.Context) {
-	_, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Primary address set"})
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "Not implemented"})
 }
 
 func (h *Handler) DeactivateAddress(c *gin.Context) {
-	_, exists := c.Get("userID")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Address deactivated"})
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	if err := h.AddressService.DeleteAddress(c.Request.Context(), userID.(int), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Address deleted"})
 }
 
 // Withdrawal handlers
 func (h *Handler) GetWithdrawals(c *gin.Context) {
-	_, exists := c.Get("userID")
+	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
-	// TODO: Implement GetWithdrawals in WithdrawalService
-	c.JSON(http.StatusOK, gin.H{"withdrawals": []interface{}{}, "total": 0, "count": 0})
+	orders, err := h.WithdrawalService.GetWithdrawalHistory(c.Request.Context(), userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"withdrawals": orders, "total": len(orders), "count": len(orders)})
 }
 
 func (h *Handler) CreateWithdrawal(c *gin.Context) {
@@ -245,13 +267,19 @@ func (h *Handler) CreateWithdrawal(c *gin.Context) {
 		return
 	}
 
-	var req map[string]interface{}
+	var req models.CreateWithdrawalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "Withdrawal created", "user_id": userID})
+	order, err := h.WithdrawalService.CreateWithdrawal(c.Request.Context(), userID.(int), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Withdrawal created", "order": order})
 }
 
 func (h *Handler) GetWithdrawalByID(c *gin.Context) {
@@ -268,7 +296,31 @@ func (h *Handler) GetWithdrawalByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id, "user_id": userID, "status": "pending"})
+	order, err := h.WithdrawalService.GetWithdrawalByID(c.Request.Context(), userID.(int), id)
+	if err != nil {
+		if err.Error() == "unauthorized" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, order)
+}
+
+func (h *Handler) GetWithdrawalFees(c *gin.Context) {
+	asset := c.Query("asset")
+	chain := c.Query("chain")
+	amount := c.Query("amount")
+
+	fee, received, err := h.WithdrawalService.EstimateFee(c.Request.Context(), asset, chain, amount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"fee": fee, "receivedAmount": received})
 }
 
 // Docs handler

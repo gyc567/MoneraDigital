@@ -25,15 +25,15 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int) (*models.W
 		return nil, err
 	}
 	if existing != nil {
-		return s.mapToModel(existing), nil
+		return existing, nil
 	}
 
 	// Create new
 	reqID := uuid.New().String()
-	newReq := &repository.WalletCreationRequestModel{
+	newReq := &models.WalletCreationRequest{
 		RequestID: reqID,
 		UserID:    userID,
-		Status:    string(models.WalletCreationStatusCreating),
+		Status:    models.WalletCreationStatusCreating,
 	}
 	err = s.repo.CreateRequest(ctx, newReq)
 	if err != nil {
@@ -54,19 +54,18 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int) (*models.W
 		addrJSON, _ := json.Marshal(mockAddresses)
 
 		// Update DB
-		updateReq := &repository.WalletCreationRequestModel{
-			ID:        newReq.ID,
-			Status:    string(models.WalletCreationStatusSuccess),
-			WalletID:  "wallet_" + reqID[:8],
-			Addresses: string(addrJSON),
-            Address:   "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", // Default/Primary
-		}
+		newReq.Status = models.WalletCreationStatusSuccess
+		newReq.WalletID = sql.NullString{String: "wallet_" + reqID[:8], Valid: true}
+		newReq.Addresses = sql.NullString{String: string(addrJSON), Valid: true}
+		newReq.Address = sql.NullString{String: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", Valid: true}
+		newReq.UpdatedAt = time.Now()
+
         // Create context for background task
         bgCtx := context.Background()
-		_ = s.repo.UpdateRequest(bgCtx, updateReq)
+		_ = s.repo.UpdateRequest(bgCtx, newReq)
 	}()
 
-	return s.mapToModel(newReq), nil
+	return newReq, nil
 }
 
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
@@ -83,27 +82,9 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
             return nil, err
         }
         if req != nil {
-            return s.mapToModel(req), nil
+            return req, nil
         }
 		return nil, nil
 	}
-	return s.mapToModel(w), nil
-}
-
-func (s *WalletService) mapToModel(r *repository.WalletCreationRequestModel) *models.WalletCreationRequest {
-	t, _ := time.Parse(time.RFC3339, r.CreatedAt)
-	u, _ := time.Parse(time.RFC3339, r.UpdatedAt)
-
-	return &models.WalletCreationRequest{
-		ID:           r.ID,
-		RequestID:    r.RequestID,
-		UserID:       r.UserID,
-		Status:       models.WalletCreationStatus(r.Status),
-		WalletID:     sql.NullString{String: r.WalletID, Valid: r.WalletID != ""},
-		Address:      sql.NullString{String: r.Address, Valid: r.Address != ""},
-		Addresses:    sql.NullString{String: r.Addresses, Valid: r.Addresses != ""},
-		ErrorMessage: sql.NullString{String: r.ErrorMessage, Valid: r.ErrorMessage != ""},
-		CreatedAt:    t,
-		UpdatedAt:    u,
-	}
+	return w, nil
 }

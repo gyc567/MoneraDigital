@@ -94,6 +94,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		{
 			withdrawals.GET("", h.GetWithdrawals)
 			withdrawals.POST("", h.CreateWithdrawal)
+			withdrawals.GET("/fees", h.GetWithdrawalFees)
 			withdrawals.GET("/:id", h.GetWithdrawalByID)
 		}
 	}

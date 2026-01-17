@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 	"time"
-	"monera-digital/internal/repository"
+	"monera-digital/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -13,8 +13,8 @@ func TestDepositService_GetDeposits(t *testing.T) {
 	mockRepo := new(MockDepositRepository)
 	service := NewDepositService(mockRepo)
 
-	now := time.Now().Format(time.RFC3339)
-	mockRepo.On("GetByUserID", mock.Anything, 1, 20, 0).Return([]*repository.DepositModel{
+	now := time.Now()
+	mockRepo.On("GetByUserID", mock.Anything, 1, 20, 0).Return([]*models.Deposit{
 		{ID: 1, UserID: 1, Amount: "100", Asset: "USDT", Status: "CONFIRMED", CreatedAt: now},
 	}, int64(1), nil)
 
