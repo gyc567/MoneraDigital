@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/api-client";
 
 const AccountOpening = () => {
   const { t } = useTranslation();
@@ -15,32 +16,24 @@ const AccountOpening = () => {
   const { data: walletInfo, isLoading } = useQuery({
     queryKey: ["walletInfo"],
     queryFn: async () => {
-      const res = await fetch("/api/wallet/info", {
+      return apiRequest("/api/wallet/info", {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-      if (!res.ok) throw new Error("Failed to fetch info");
-      return res.json();
     },
     refetchInterval: (query) => {
         const data = query.state.data;
         return data?.status === "CREATING" ? 2000 : false
-    }, 
+    },
   });
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/wallet/create", {
+      return apiRequest("/api/wallet/create", {
         method: "POST",
-        headers: { 
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}` 
+        headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`
         },
       });
-      if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to create wallet");
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["walletInfo"] });

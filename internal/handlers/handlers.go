@@ -1,23 +1,26 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+
 	"monera-digital/internal/dto"
 	"monera-digital/internal/models"
 	"monera-digital/internal/services"
 	"monera-digital/internal/validator"
 )
 
+// Lending handlers
 type Handler struct {
 	AuthService       *services.AuthService
 	LendingService    *services.LendingService
 	AddressService    *services.AddressService
 	WithdrawalService *services.WithdrawalService
-	DepositService    *services.DepositService
-	WalletService     *services.WalletService
+	DepositService       *services.DepositService
+	WalletService      *services.WalletService
 	Validator         validator.Validator
 }
 
@@ -153,13 +156,222 @@ func (h *Handler) Verify2FALogin(c *gin.Context) {
 }
 
 // Lending handlers
+import (
+	"fmt"
+	"strconv"
+	"github.com/gin-gonic/gin"
+	"monera-digital/internal/dto"
+	"monera-digital/internal/models"
+	"monera-digital/internal/services"
+)
+
 func (h *Handler) ApplyForLending(c *gin.Context) {
-	// Temporarily simplified - not fully implemented
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
+
+	var req dto.ApplyLendingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate amount
+	if req.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Amount must be positive"})
+		return
+	}
+
+	// Validate duration days
+	if req.DurationDays < 30 || req.DurationDays > 360 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Duration must be between 30 and 360 days"})
+		return
+	}
+
+	// Validate asset
+	supportedAssets := map[string]bool{"BTC": true, "ETH": true, "USDT": true, "USDC": true, "SOL": true}
+	if !supportedAssets[req.Asset] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Unsupported asset. Supported assets: BTC, ETH, USDT, USDC, SOL")})
+		return
+	}
+
+	modelReq := models.ApplyLendingRequest{
+		Asset:       req.Asset,
+		Amount:       fmt.Sprintf("%.8f", req.Amount),
+		DurationDays: req.DurationDays,
+	}
+
+	position, err := h.LendingService.ApplyForLending(userID.(int), modelReq)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	dtoPos := dto.LendingPositionResponse{
+		ID:           position.ID,
+		UserID:       position.UserID,
+		Asset:        position.Asset,
+		Amount:       position.Amount,
+		DurationDays: position.DurationDays,
+		APY:          position.Apy,
+		Status:       string(position.Status),
+			AccruedYield: position.AccruedYield,
+		StartDate:    position.StartDate,
+		EndDate:      position.EndDate,
+		CreatedAt:    position.StartDate,
+	}
+
+	c.JSON(http.StatusCreated, dtoPos)
+}
+
+func (h *Handler) ApplyForLending(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var req dto.ApplyLendingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate amount
+	if req.Amount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Amount must be positive"})
+		return
+	}
+
+	// Validate duration days
+	if req.DurationDays < 30 || req.DurationDays > 360 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Duration must be between 30 and 360 days"})
+		return
+	}
+
+	// Validate asset
+	supportedAssets := map[string]bool{"BTC": true, "ETH": true, "USDT": true, "USDC": true, "SOL": true}
+	if !supportedAssets[req.Asset] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Unsupported asset. Supported assets: BTC, ETH, USDT, USDC, SOL")})
+		return
+	}
+
+	modelReq := models.ApplyLendingRequest{
+		Asset:       req.Asset,
+		Amount:       fmt.Sprintf("%.8f", req.Amount),
+		DurationDays: req.DurationDays,
+	}
+
+	position, err := h.LendingService.ApplyForLending(userID.(int), modelReq)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	apy, _ := strconv.ParseFloat(position.Apy, 64)
+	amount, _ := strconv.ParseFloat(position.Amount, 64)
+	accruedYield, _ := strconv.ParseFloat(position.AccruedYield, 64)
+	
+	dtoPos := dto.LendingPositionResponse{
+		ID:           position.ID,
+		UserID:       position.UserID,
+		Asset:        position.Asset,
+		Amount:       amount,
+		DurationDays: position.DurationDays,
+		APY:          apy,
+		Status:       string(position.Status),
+		AccruedYield: accruedYield,
+		StartDate:    position.StartDate,
+		EndDate:      position.EndDate,
+		CreatedAt:    position.StartDate,
+	}
+
+	c.JSON(http.StatusCreated, dtoPos)
+}
+
+func (h *Handler) GetUserPositions(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	positions, err := h.LendingService.GetUserPositions(userID.(int))
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	dtoPositions := make([]dto.LendingPositionResponse, len(positions))
+	totalAmount := 0.0
+
+	for i, pos := range positions {
+		apy, _ := strconv.ParseFloat(pos.Apy, 64)
+		amount, _ := strconv.ParseFloat(pos.Amount, 64)
+		accruedYield, _ := strconv.ParseFloat(pos.AccruedYield, 64)
+		
+		totalAmount += accruedYield
+
+		dtoPositions[i] = dto.LendingPositionResponse{
+			ID:           pos.ID,
+			UserID:       pos.UserID,
+			Asset:        pos.Asset,
+			Amount:       amount,
+			DurationDays: pos.DurationDays,
+			APY:          apy,
+			Status:       string(pos.Status),
+			AccruedYield: accruedYield,
+			StartDate:    pos.StartDate,
+			EndDate:      pos.EndDate,
+			CreatedAt:    pos.StartDate,
+		}
+	}
+
+	c.JSON(http.StatusOK, dtoPositionsListResponse{
+		Positions: dtoPositions,
+		Total:     fmt.Sprintf("%.2f", totalAmount),
+		Count:      len(dtoPositions),
+	})
+}
+
+	positions, err := h.LendingService.GetUserPositions(userID.(int))
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	dtoPositions := make([]dto.LendingPositionResponse, len(positions))
+	totalAmount := 0.0
+
+	for i, pos := range positions {
+		apy, _ := strconv.ParseFloat(pos.Apy, 64)
+		amount, _ := strconv.ParseFloat(pos.Amount, 64)
+		accruedYield, _ := strconv.ParseFloat(pos.AccruedYield, 64)
+		totalAmount += accruedYield
+
+		dtoPositions[i] = dto.LendingPositionResponse{
+			ID:           pos.ID,
+			UserID:       pos.UserID,
+			Asset:        pos.Asset,
+			Amount:       amount,
+			DurationDays: pos.DurationDays,
+			APY:          apy,
+			Status:       string(pos.Status),
+			AccruedYield: accruedYield,
+			StartDate:    pos.StartDate,
+			EndDate:      pos.EndDate,
+			CreatedAt:    pos.StartDate,
+		}
+	}
+
+	c.JSON(http.StatusOK, dto.LendingPositionsListResponse{
+		Positions: dtoPositions,
+		Total:     fmt.Sprintf("%.2f", totalAmount),
+		Count:      len(dtoPositions),
+	})
+}
 	c.JSON(http.StatusOK, gin.H{"message": "Apply for lending endpoint", "user_id": userID})
 }
 
