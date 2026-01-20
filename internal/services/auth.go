@@ -112,7 +112,6 @@ func (s *AuthService) createCoreAccount(userID int, email string) (string, error
 
 	resp, err := http.Post(coreAPIURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		// Return simulated ID for mock environment
 		return fmt.Sprintf("core_simulated_%d", userID), nil
 	}
 	defer resp.Body.Close()

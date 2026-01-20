@@ -11,22 +11,64 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ArrowLeftRight, TrendingUp, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
-const ASSETS = ["BTC", "ETH", "USDT", "USDC", "SOL"];
-const DURATIONS = [30, 90, 180, 360];
+interface LendingPosition {
+  id: number;
+  asset: string;
+  amount: string;
+  apy: string;
+  endDate: string;
+  accruedYield: string;
+}
 
-const Lending = () => {
+const ASSETS = ["BTC", "ETH", "USDT", "USDC", "SOL"] as const;
+const DURATIONS = [30, 90, 180, 360] as const;
+
+type AssetType = typeof ASSETS[number];
+type DurationType = typeof DURATIONS[number];
+
+function getDurationMultiplier(duration: DurationType): number {
+  if (duration >= 360) return 1.5;
+  if (duration >= 180) return 1.25;
+  if (duration >= 90) return 1.1;
+  return 1.0;
+}
+
+function calculateAPY(asset: AssetType, duration: DurationType): string {
+  const baseRates: Record<AssetType, number> = {
+    BTC: 4.5,
+    ETH: 5.2,
+    USDT: 8.5,
+    USDC: 8.2,
+    SOL: 6.8,
+  };
+  const multiplier = getDurationMultiplier(duration);
+  const rate = baseRates[asset] ?? 5.0;
+  return (rate * multiplier).toFixed(2);
+}
+
+function calculateEstimatedYield(amount: string, apy: string, duration: DurationType): string {
+  if (!amount) return "0.0000";
+  const parsedAmount = parseFloat(amount);
+  const parsedAPY = parseFloat(apy);
+  const years = duration / 365;
+  return (parsedAmount * (parsedAPY / 100) * years).toFixed(4);
+}
+
+function Lending() {
   const { t } = useTranslation();
-  const [positions, setPositions] = useState<any[]>([]);
+  const [positions, setPositions] = useState<LendingPosition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Form State
-  const [asset, setAsset] = useState("USDT");
-  const [amount, setAmount] = useState("");
-  const [duration, setDuration] = useState("30");
+  const [asset, setAsset] = useState<string>("USDT");
+  const [amount, setAmount] = useState<string>("");
+  const [duration, setDuration] = useState<string>("30");
 
-  const fetchPositions = async () => {
+  const apy = calculateAPY(asset as AssetType, parseInt(duration) as DurationType);
+  const estYield = calculateEstimatedYield(amount, apy, parseInt(duration) as DurationType);
+
+  async function fetchPositions() {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch("/api/lending/positions", {
@@ -34,7 +76,6 @@ const Lending = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        // Extract positions array from response wrapper object
         setPositions(data.positions || []);
       }
     } catch (error) {
@@ -42,19 +83,13 @@ const Lending = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     fetchPositions();
   }, []);
 
-  const calculateAPY = (asset: string, duration: number) => {
-    const baseRates: any = { BTC: 4.5, ETH: 5.2, USDT: 8.5, USDC: 8.2, SOL: 6.8 };
-    const multiplier = duration >= 360 ? 1.5 : duration >= 180 ? 1.25 : duration >= 90 ? 1.1 : 1.0;
-    return ((baseRates[asset] || 5.0) * multiplier).toFixed(2);
-  };
-
-  const handleApply = async (e: React.FormEvent) => {
+  async function handleApply(e: React.FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
 
@@ -72,17 +107,15 @@ const Lending = () => {
       if (!res.ok) throw new Error("Application failed");
 
       toast.success(t("dashboard.lending.success"));
-      setOpen(false);
+      setIsDialogOpen(false);
       fetchPositions();
-    } catch (error: any) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Application failed";
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const apy = calculateAPY(asset, parseInt(duration));
-  const estYield = amount ? (parseFloat(amount) * (parseFloat(apy) / 100) * (parseInt(duration) / 365)).toFixed(4) : "0.0000";
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -92,7 +125,7 @@ const Lending = () => {
           <p className="text-muted-foreground">{t("dashboard.lending.applyDescription")}</p>
         </div>
         
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button size="lg" className="gap-2 shadow-lg shadow-primary/20">
               <ArrowLeftRight size={18} />
