@@ -188,7 +188,17 @@
       "invalidPasswordFormat": "密码需要包含大写字母、小写字母和数字",
       "emailAlreadyRegistered": "该邮箱已被注册",
       "serverError": "服务器错误，请稍后重试",
-      "emailNotFound": "邮箱输入错误或不存在"
+       "emailNotFound": "邮箱输入错误或不存在"
+    },
+    "2fa": {
+      "required": "安全验证",
+      "firstWithdrawal": "这是您首次向新地址提现，请输入验证码进行确认。",
+      "code": "验证码",
+      "placeholder": "输入6位验证码",
+      "hint": "请输入您邮箱或 authenticator 应用中的验证码",
+      "verifying": "验证中...",
+      "verifyButton": "验证并确认",
+      "success": "验证成功"
     }
   },
   "notFound": {
@@ -199,7 +209,35 @@
   "common": {
     "language": "语言",
     "english": "English",
-    "chinese": "简体中文"
+    "chinese": "简体中文",
+    "cancel": "取消",
+    "confirm": "确认",
+    "ok": "确定",
+    "loading": "加载中...",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "add": "添加",
+    "submit": "提交"
+  },
+  "addresses": {
+    "title": "地址管理",
+    "description": "管理您的提现地址并设置地址白名单",
+    "addDialog": "添加提现地址",
+    "addDescription": "添加新的加密货币地址用于提现。您将收到验证邮件。",
+    "label": "地址标签",
+    "placeholder": "例如：我的 MetaMask 钱包",
+    "hint": "为这个地址起一个描述性名称",
+    "addressPlaceholder": "0x...",
+    "addressHint": "用于接收提现的区块链地址",
+    "addButton": "添加地址",
+    "adding": "添加中...",
+    "verify": "验证地址",
+    "verifyDescription": "输入邮件中的验证码来确认此地址。",
+    "verificationCode": "验证码",
+    "deactivateConfirm": "停用地址",
+    "deactivateWarning": "这将永久停用该地址，您将无法使用它进行提现。此操作无法撤销。",
+    "noAddresses": "尚未添加任何地址。点击\"添加地址\"开始。"
   },
   "dashboard": {
     "nav": {
@@ -209,7 +247,7 @@
       "deposit": "充值",
       "lending": "借贷管理",
       "addresses": "地址管理",
-      "withdraw": "提币",
+      "withdraw": "提现",
       "investments": "投资产品",
       "security": "安全设置",
       "statements": "账户对账单"
@@ -285,22 +323,51 @@
       "noAddresses": "尚未添加任何地址。点击\"添加地址\"开始。"
     },
     "withdraw": {
-      "title": "提币",
-      "newWithdrawal": "新建提币",
-      "history": "提币记录",
-      "selectAddress": "选择提币地址",
-      "selectDescription": "选择一个已验证的地址进行提币",
-      "addressDetails": "地址详情",
-      "withdrawAmount": "提币金额",
-      "enterAmount": "输入您要提币的金额",
-      "review": "审查并确认",
-      "confirmTitle": "确认提币",
-      "confirmDescription": "请在下方审查详情后确认此提币请求。",
-      "to": "目标地址",
-      "disclaimer": "此提币将发送到您的已验证地址。确认邮件将发送到您的账户。",
-      "confirmButton": "确认提币",
+      "title": "提现",
+      "tab": {
+        "new": "发起提现",
+        "history": "历史记录"
+      },
+      "calculating": "计算中...",
+      "processing": "处理中...",
+      "address": {
+        "title": "选择提现地址",
+        "description": "选择一个已验证的钱包地址用于提现",
+        "label": "提现地址",
+        "loading": "正在加载地址...",
+        "empty": "暂无可用的已验证地址，请先添加提现地址。",
+        "addButton": "添加提现地址",
+        "details": "地址详情"
+      },
+      "chain": {
+        "label": "提现网络"
+      },
+      "amount": {
+        "title": "提现金额",
+        "description": "请输入您希望提现的金额",
+        "label": "金额"
+      },
+      "fee": {
+        "label": "网络手续费（预估）"
+      },
+      "receive": {
+        "label": "您将收到"
+      },
+      "review": {
+        "button": "确认信息"
+      },
+      "confirm": {
+        "title": "确认提现",
+        "description": "请在确认前仔细核对以下信息。",
+        "to": "目标地址",
+        "disclaimer": "此提现将发送到您的已验证地址。确认邮件将发送到您的账户。",
+        "button": "确认提现"
+      },
+      "history": {
+        "loading": "正在加载历史记录...",
+        "empty": "暂无提现记录"
+      },
       "noAddresses": "没有可用的已验证地址。请先添加并验证地址。",
-      "noHistory": "还没有提币记录",
       "loading": "加载中..."
     }
   },

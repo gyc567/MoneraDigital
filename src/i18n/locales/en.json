@@ -188,7 +188,17 @@
       "invalidPasswordFormat": "Password must contain uppercase, lowercase, and digit characters",
       "emailAlreadyRegistered": "This email is already registered",
       "serverError": "Server error, please try later",
-      "emailNotFound": "Email input error or does not exist"
+       "emailNotFound": "Email input error or does not exist"
+    },
+    "2fa": {
+      "required": "Security Verification Required",
+      "firstWithdrawal": "This is your first withdrawal to a new address. Please enter your 2FA code to confirm.",
+      "code": "Verification Code",
+      "placeholder": "Enter 6-digit code",
+      "hint": "Enter the code from your authenticator app or email",
+      "verifying": "Verifying...",
+      "verifyButton": "Verify & Confirm",
+      "success": "Verification successful"
     }
   },
   "notFound": {
@@ -199,7 +209,35 @@
   "common": {
     "language": "Language",
     "english": "English",
-    "chinese": "简体中文"
+    "chinese": "简体中文",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "ok": "OK",
+    "loading": "Loading...",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "submit": "Submit"
+  },
+  "addresses": {
+    "title": "Address Management",
+    "description": "Manage your withdrawal addresses and set up address whitelist",
+    "addDialog": "Add Withdrawal Address",
+    "addDescription": "Add a new cryptocurrency address for withdrawals. You'll receive a verification email.",
+    "label": "Address Label",
+    "placeholder": "e.g., My MetaMask Wallet",
+    "hint": "A descriptive name for this address",
+    "addressPlaceholder": "0x...",
+    "addressHint": "The wallet address to withdraw funds to",
+    "addButton": "Add Address",
+    "adding": "Adding...",
+    "verify": "Verify Address",
+    "verifyDescription": "Enter the verification code from your email to confirm this address.",
+    "verificationCode": "Verification Code",
+    "deactivateConfirm": "Deactivate Address",
+    "deactivateWarning": "This will permanently deactivate the address and you won't be able to use it for withdrawals. This action cannot be undone.",
+    "noAddresses": "No addresses added yet. Click \"Add Address\" to get started."
   },
   "dashboard": {
     "nav": {
@@ -286,21 +324,50 @@
     },
     "withdraw": {
       "title": "Withdraw Funds",
-      "newWithdrawal": "New Withdrawal",
-      "history": "History",
-      "selectAddress": "Select Withdrawal Address",
-      "selectDescription": "Choose a verified address to withdraw funds to",
-      "addressDetails": "Address Details",
-      "withdrawAmount": "Withdrawal Amount",
-      "enterAmount": "Enter the amount you wish to withdraw",
-      "review": "Review & Confirm",
-      "confirmTitle": "Confirm Withdrawal",
-      "confirmDescription": "Please review the details below before confirming this withdrawal.",
-      "to": "To Address",
-      "disclaimer": "This withdrawal will be processed to your verified address. A confirmation email will be sent to your account.",
-      "confirmButton": "Confirm Withdrawal",
+      "tab": {
+        "new": "New Withdrawal",
+        "history": "History"
+      },
+      "calculating": "Calculating...",
+      "processing": "Processing...",
+      "address": {
+        "title": "Select Withdrawal Address",
+        "description": "Choose a verified address to withdraw funds to",
+        "label": "Withdrawal Address",
+        "loading": "Loading addresses...",
+        "empty": "No verified addresses available. Please add a withdrawal address first.",
+        "addButton": "Add Withdrawal Address",
+        "details": "Address Details"
+      },
+      "chain": {
+        "label": "Withdrawal Chain"
+      },
+      "amount": {
+        "title": "Withdrawal Amount",
+        "description": "Enter the amount you wish to withdraw",
+        "label": "Amount"
+      },
+      "fee": {
+        "label": "Network Fee (estimated)"
+      },
+      "receive": {
+        "label": "You will receive"
+      },
+      "review": {
+        "button": "Review & Confirm"
+      },
+      "confirm": {
+        "title": "Confirm Withdrawal",
+        "description": "Please review the details below before confirming this withdrawal.",
+        "to": "To Address",
+        "disclaimer": "This withdrawal will be processed to your verified address. A confirmation email will be sent to your account.",
+        "button": "Confirm Withdrawal"
+      },
+      "history": {
+        "loading": "Loading history...",
+        "empty": "No withdrawal history yet"
+      },
       "noAddresses": "No verified addresses available. Please add and verify an address first.",
-      "noHistory": "No withdrawal history yet",
       "loading": "Loading..."
     }
   },
