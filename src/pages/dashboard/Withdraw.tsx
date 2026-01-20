@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowRight, CheckCircle2, Clock, AlertCircle, Shield, Wallet } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, AlertCircle, Shield, Wallet, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 interface WithdrawalAddress {
@@ -19,7 +19,6 @@ interface WithdrawalAddress {
   chain_type: string;
   address_alias: string;
   verified: boolean;
-  // isPrimary: boolean; // Removed per PRD/Service update
 }
 
 interface Withdrawal {
@@ -46,7 +45,7 @@ const CHAIN_OPTIONS: Record<string, ChainOption[]> = {
     { value: "Bitcoin", label: "Bitcoin Network", feeEstimate: "0.0005" },
   ],
   ETH: [
-    { value: "Ethereum", label: "Ethereum (ERC-20)", feeEstimate: "0.002" },
+    { value: "Ethereum", label: "Ethereum Network", feeEstimate: "0.002" },
   ],
   USDC: [
     { value: "Ethereum", label: "Ethereum (ERC-20)", feeEstimate: "1" },
@@ -61,15 +60,35 @@ const CHAIN_OPTIONS: Record<string, ChainOption[]> = {
   ],
 };
 
-const Withdraw = () => {
+// Address validation patterns by chain type
+const ADDRESS_PATTERNS: Record<string, RegExp> = {
+  Ethereum: /^0x[a-fA-F0-9]{40}$/,
+  Bitcoin: /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-zA-HJ-NP-Z0-9]{25,90}$/,
+  Arbitrum: /^0x[a-fA-F0-9]{40}$/,
+  Polygon: /^0x[a-fA-F0-9]{40}$/,
+  Tron: /^T[a-zA-Z0-9]{33}$/,
+};
+
+function isValidAddress(address: string, chain: string): boolean {
+  const pattern = ADDRESS_PATTERNS[chain];
+  return pattern ? pattern.test(address) : address.length >= 26 && address.length <= 64;
+}
+
+function Withdraw() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const [addresses, setAddresses] = useState<WithdrawalAddress[]>([]);
   const [withdrawalHistory, setWithdrawalHistory] = useState<Withdrawal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  // Address management state
+  const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
+  const [isCreatingAddress, setIsCreatingAddress] = useState(false);
+  const [newAddressAlias, setNewAddressAlias] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [newAddressChain, setNewAddressChain] = useState("Ethereum");
 
-  // Form states
+  // Withdrawal form state
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const initialAsset = (searchParams.get('asset') as "BTC" | "ETH" | "USDC" | "USDT") || "ETH";
@@ -130,6 +149,66 @@ const Withdraw = () => {
       setIsLoading(false);
     }
   };
+
+  // Create new address
+  const handleCreateAddress = async () => {
+    if (isCreatingAddress) return;
+
+    if (!newAddressAlias || !newAddress || !newAddressChain) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    if (!isValidAddress(newAddress, newAddressChain)) {
+      toast.error(`Invalid ${newAddressChain} address format. Please check and try again.`);
+      return;
+    }
+
+    setIsCreatingAddress(true);
+    try {
+      const token = localStorage.getItem("token");
+      const csrfToken = localStorage.getItem("csrf_token");
+
+      const res = await fetch("/api/addresses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(csrfToken && { "X-CSRF-Token": csrfToken }),
+        },
+        body: JSON.stringify({
+          wallet_address: newAddress.trim(),
+          chain_type: newAddressChain,
+          address_alias: newAddressAlias.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Address added successfully. Please verify it before first withdrawal.");
+        setIsAddAddressOpen(false);
+        setNewAddressAlias("");
+        setNewAddress("");
+        setNewAddressChain("Ethereum");
+        await fetchAddresses();
+      } else {
+        toast.error(data.error || "Failed to add address");
+      }
+    } catch (error) {
+      console.error("Create address error:", error);
+      toast.error("Failed to add address. Please try again.");
+    } finally {
+      setIsCreatingAddress(false);
+    }
+  };
+
+  // Reset address form to initial state
+  function resetAddressForm() {
+    setIsAddAddressOpen(false);
+    setNewAddressAlias("");
+    setNewAddress("");
+    setNewAddressChain("Ethereum");
+  }
 
   // Fetch withdrawal history
   const fetchHistory = async () => {
@@ -336,8 +415,14 @@ const Withdraw = () => {
           ) : addresses.length === 0 ? (
             <Card className="bg-card/50 border-border/50">
               <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  No verified addresses available. Please add and verify an address first.
+                <div className="text-center text-muted-foreground mb-6">
+                  No verified addresses available. Please add a withdrawal address first.
+                </div>
+                <div className="flex justify-center">
+                  <Button onClick={() => setIsAddAddressOpen(true)} className="gap-2">
+                    <Plus size={16} />
+                    Add Withdrawal Address
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -633,6 +718,81 @@ const Withdraw = () => {
               disabled={isVerifying2FA || !twoFactorCode}
             >
               {isVerifying2FA ? "Verifying..." : "Verify & Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Address Dialog */}
+      <Dialog open={isAddAddressOpen} onOpenChange={setIsAddAddressOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Add Withdrawal Address
+            </DialogTitle>
+            <DialogDescription>
+              Add a new wallet address for withdrawals. You will need to verify it before first use.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="alias">Address Label</Label>
+              <Input
+                id="alias"
+                placeholder="e.g., My MetaMask Wallet"
+                value={newAddressAlias}
+                onChange={(e) => setNewAddressAlias(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                A descriptive name for this address
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="chain">Blockchain Network</Label>
+              <Select value={newAddressChain} onValueChange={setNewAddressChain}>
+                <SelectTrigger id="chain">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Ethereum">Ethereum</SelectItem>
+                  <SelectItem value="Arbitrum">Arbitrum</SelectItem>
+                  <SelectItem value="Polygon">Polygon</SelectItem>
+                  <SelectItem value="Tron">Tron</SelectItem>
+                  <SelectItem value="Bitcoin">Bitcoin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="walletAddress">Wallet Address</Label>
+              <Input
+                id="walletAddress"
+                placeholder="0x..."
+                value={newAddress}
+                onChange={(e) => setNewAddress(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                The wallet address to withdraw funds to
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={resetAddressForm}
+              disabled={isCreatingAddress}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateAddress}
+              disabled={isCreatingAddress || !newAddressAlias || !newAddress}
+            >
+              {isCreatingAddress ? "Adding..." : "Add Address"}
             </Button>
           </DialogFooter>
         </DialogContent>
