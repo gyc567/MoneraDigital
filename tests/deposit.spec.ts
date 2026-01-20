@@ -4,29 +4,28 @@ test.describe('User Deposit Flow', () => {
   const timestamp = Date.now();
   const email = `deposit.test.${timestamp}@example.com`;
   const password = 'Password123!';
-  const baseURL = 'http://localhost:5001';
 
   test('should activate wallet and view deposit address', async ({ page }) => {
     // 1. Register and Login
-    await page.goto(`${baseURL}/register`);
+    await page.goto('/register');
     await page.fill('input[type="email"]', email);
     await page.fill('input[type="password"]', password);
     await page.click('button[type="submit"]');
     
     // Wait for login redirect
-    await page.waitForURL(`${baseURL}/login`);
+    await page.waitForURL('/login');
     
     await page.fill('input[type="email"]', email);
     await page.fill('input[type="password"]', password);
     await page.click('button[type="submit"]');
     
     // Wait for dashboard
-    await expect(page).toHaveURL(`${baseURL}/dashboard`);
+    await expect(page).toHaveURL('/dashboard');
 
     // 2. Navigate to Deposit Page
     // Click "Deposit" in sidebar
     await page.getByRole('link', { name: 'Deposit' }).click();
-    await expect(page).toHaveURL(`${baseURL}/dashboard/deposit`);
+    await expect(page).toHaveURL('/dashboard/deposit');
 
     // 3. Verify "Activate Account" Prompt
     // Since wallet is not created, we expect the activate prompt
@@ -34,7 +33,7 @@ test.describe('User Deposit Flow', () => {
     
     // Click "Activate Account" button (redirects to account-opening)
     await page.getByRole('button', { name: 'Activate Account' }).click();
-    await expect(page).toHaveURL(`${baseURL}/dashboard/account-opening`);
+    await expect(page).toHaveURL('/dashboard/account-opening');
 
     // 4. Activate Wallet
     // Click "Activate Now"

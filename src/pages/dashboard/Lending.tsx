@@ -34,7 +34,8 @@ const Lending = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        setPositions(data);
+        // Extract positions array from response wrapper object
+        setPositions(data.positions || []);
       }
     } catch (error) {
       console.error("Failed to fetch positions", error);

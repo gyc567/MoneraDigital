@@ -144,7 +144,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 	err := s.DB.QueryRow(query, req.Email).Scan(&user.ID, &user.Email, &hashedPassword, &user.TwoFactorEnabled)
 
 	if err == sql.ErrNoRows {
-		return nil, errors.New("email not found")
+		return nil, errors.New("invalid credentials")
 	} else if err != nil {
 		return nil, err
 	}
@@ -163,8 +163,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 	}
 
 	// Generate JWT token
-	cfg := config.Load()
-	token, err := utils.GenerateJWT(user.ID, user.Email, cfg.JWTSecret)
+	token, err := utils.GenerateJWT(user.ID, user.Email, s.jwtSecret)
 	if err != nil {
 		return nil, err
 	}

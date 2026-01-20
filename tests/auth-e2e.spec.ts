@@ -4,22 +4,21 @@ test.describe('Registration and Login Flow', () => {
   const timestamp = Date.now();
   const testEmail = `test.${timestamp}@example.com`;
   const strongPassword = 'Password123!';
-  const baseURL = 'http://localhost:5001';
 
   test.describe('Registration Page', () => {
     test('should load registration page successfully', async ({ page }) => {
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await expect(page).toHaveTitle(/Register|Monera/i);
       await expect(page.getByRole('heading', { name: /Register/i })).toBeVisible();
     });
 
     test('should show password requirements hint', async ({ page }) => {
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await expect(page.getByText('8-128 characters, including uppercase, lowercase, and a number.')).toBeVisible();
     });
 
     test('should show error for invalid email format', async ({ page }) => {
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await page.fill('input[type="email"]', 'invalid-email');
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
@@ -27,7 +26,7 @@ test.describe('Registration and Login Flow', () => {
     });
 
     test('should show error for short password', async ({ page }) => {
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await page.fill('input[type="email"]', testEmail);
       await page.fill('input[type="password"]', 'weak');
       await page.click('button[type="submit"]');
@@ -37,7 +36,7 @@ test.describe('Registration and Login Flow', () => {
 
     test('should show error for email already registered', async ({ page }) => {
       const existingEmail = 'existing@test.com';
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await page.fill('input[type="email"]', existingEmail);
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
@@ -53,13 +52,13 @@ test.describe('Registration and Login Flow', () => {
 
   test.describe('Login Page', () => {
     test('should load login page successfully', async ({ page }) => {
-      await page.goto(`${baseURL}/login`);
+      await page.goto('/login');
       await expect(page).toHaveTitle(/Login|Monera/i);
       await expect(page.getByRole('heading', { name: /Login/i })).toBeVisible();
     });
 
     test('should show error for invalid email format', async ({ page }) => {
-      await page.goto(`${baseURL}/login`);
+      await page.goto('/login');
       await page.fill('input[type="email"]', 'invalid-email');
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
@@ -67,7 +66,7 @@ test.describe('Registration and Login Flow', () => {
     });
 
     test('should show error for non-existent email', async ({ page }) => {
-      await page.goto(`${baseURL}/login`);
+      await page.goto('/login');
       await page.fill('input[type="email"]', 'nonexistent@example.com');
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
@@ -79,7 +78,7 @@ test.describe('Registration and Login Flow', () => {
     });
 
     test('should show error for wrong password', async ({ page }) => {
-      await page.goto(`${baseURL}/login`);
+      await page.goto('/login');
       // Use an email that exists in the database
       await page.fill('input[type="email"]', 'test@example.com');
       await page.fill('input[type="password"]', 'WrongPassword123!');
@@ -99,7 +98,7 @@ test.describe('Registration and Login Flow', () => {
     const uniqueEmail = `new.user.${timestamp}@example.com`;
 
     test('should register a new user successfully @db', async ({ page }) => {
-      await page.goto(`${baseURL}/register`);
+      await page.goto('/register');
       await page.fill('input[type="email"]', uniqueEmail);
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
@@ -119,7 +118,7 @@ test.describe('Registration and Login Flow', () => {
     });
 
     test('should login with newly registered user', async ({ page }) => {
-      await page.goto(`${baseURL}/login`);
+      await page.goto('/login');
       await page.fill('input[type="email"]', uniqueEmail);
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');

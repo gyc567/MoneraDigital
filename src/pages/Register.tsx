@@ -171,12 +171,6 @@ export default function Register() {
                     setEmailError(t("auth.errors.invalidEmailFormat"));
                   }
                 }}
-                onInvalid={(e) => {
-                  e.preventDefault();
-                  if (!isValidEmail(email)) {
-                    setEmailError(t("auth.errors.invalidEmailFormat"));
-                  }
-                }}
                 className={cn(emailError && "border-red-500 focus-visible:ring-red-500")}
               />
               {emailError && (

@@ -4,11 +4,10 @@ test.describe('Local Authentication Flow', () => {
   const timestamp = Date.now();
   const email = `local.test.${timestamp}@example.com`;
   const password = 'Password123!';
-  const baseURL = 'http://localhost:5001';
 
   test('should show validation error for weak password', async ({ page }) => {
-    console.log(`Navigating to ${baseURL}/register`);
-    await page.goto(`${baseURL}/register`);
+    console.log(`Navigating to /register`);
+    await page.goto(`/register`);
 
     // Verify hint text is visible
     await expect(page.getByText('8-128 characters, including uppercase, lowercase, and a number.')).toBeVisible();
@@ -27,8 +26,8 @@ test.describe('Local Authentication Flow', () => {
 
   test('should register and login successfully', async ({ page }) => {
     // 1. Register
-    console.log(`Navigating to ${baseURL}/register`);
-    await page.goto(`${baseURL}/register`);
+    console.log(`Navigating to /register`);
+    await page.goto('/register');
     
     console.log(`Registering with email: ${email}`);
     await page.fill('input[type="email"]', email);
@@ -54,8 +53,8 @@ test.describe('Local Authentication Flow', () => {
     }
 
     // 2. Login
-    console.log(`Navigating to ${baseURL}/login`);
-    await page.goto(`${baseURL}/login`);
+    console.log(`Navigating to /login`);
+    await page.goto('/login');
     
     console.log('Logging in...');
     await page.fill('input[type="email"]', email);
@@ -68,7 +67,7 @@ test.describe('Local Authentication Flow', () => {
     // 3. Verify Login
     console.log('Verifying login...');
     // Expect redirect to dashboard or home
-    await expect(page).toHaveURL(`${baseURL}/dashboard`);
+    await expect(page).toHaveURL('/dashboard');
     
     // Check for dashboard element (e.g., "Overview" or "Dashboard")
     // Adjust selector based on actual dashboard content

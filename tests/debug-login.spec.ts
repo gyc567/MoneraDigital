@@ -9,7 +9,7 @@ test.describe('Debug Login Error Handling', () => {
     });
 
     // Navigate to login
-    await page.goto('http://localhost:5001/login');
+    await page.goto('/login');
     
     // Fill in form
     await page.fill('input[type="email"]', 'nonexistent@example.com');

@@ -98,6 +98,7 @@
     "@vercel/node": "^5.5.16",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "@vitest/ui": "^4.0.16",
+    "agent-browser": "github:vercel-labs/agent-browser",
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9.32.0",
