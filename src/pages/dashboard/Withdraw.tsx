@@ -396,32 +396,32 @@ function Withdraw() {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Withdraw Funds</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t("dashboard.withdraw.title")}</h1>
       </div>
 
       <Tabs defaultValue="withdraw" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="withdraw">New Withdrawal</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="withdraw">{t("dashboard.withdraw.tab.new")}</TabsTrigger>
+          <TabsTrigger value="history">{t("dashboard.withdraw.tab.history")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="withdraw" className="space-y-6">
           {isLoading ? (
             <Card className="bg-card/50 border-border/50">
               <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">Loading addresses...</div>
+                <div className="text-center text-muted-foreground">{t("dashboard.withdraw.address.loading")}</div>
               </CardContent>
             </Card>
           ) : addresses.length === 0 ? (
             <Card className="bg-card/50 border-border/50">
               <CardContent className="pt-6">
                 <div className="text-center text-muted-foreground mb-6">
-                  No verified addresses available. Please add a withdrawal address first.
+                  {t("dashboard.withdraw.address.empty")}
                 </div>
                 <div className="flex justify-center">
                   <Button onClick={() => setIsAddAddressOpen(true)} className="gap-2">
                     <Plus size={16} />
-                    Add Withdrawal Address
+                    {t("dashboard.withdraw.address.addButton")}
                   </Button>
                 </div>
               </CardContent>
@@ -430,12 +430,12 @@ function Withdraw() {
             <>
               <Card className="bg-card/50 border-border/50">
                 <CardHeader>
-                  <CardTitle className="text-lg">Select Withdrawal Address</CardTitle>
-                  <CardDescription>Choose a verified address to withdraw funds to</CardDescription>
+                  <CardTitle className="text-lg">{t("dashboard.withdraw.address.title")}</CardTitle>
+                  <CardDescription>{t("dashboard.withdraw.address.description")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="address">Withdrawal Address</Label>
+                    <Label htmlFor="address">{t("dashboard.withdraw.address.label")}</Label>
                     <Select value={selectedAddressId} onValueChange={handleAddressChange}>
                       <SelectTrigger id="address">
                         <SelectValue />
@@ -455,7 +455,7 @@ function Withdraw() {
 
                   {/* Chain Selection */}
                   <div className="space-y-2">
-                    <Label htmlFor="chain">Withdrawal Chain</Label>
+                    <Label htmlFor="chain">{t("dashboard.withdraw.chain.label")}</Label>
                     <Select value={chain} onValueChange={setChain}>
                       <SelectTrigger id="chain">
                         <SelectValue placeholder="Select chain" />
@@ -477,7 +477,7 @@ function Withdraw() {
 
                   {selectedAddress && (
                     <div className="p-4 bg-secondary/30 rounded-lg border border-border/50">
-                      <p className="text-xs text-muted-foreground mb-2">Address Details</p>
+                      <p className="text-xs text-muted-foreground mb-2">{t("dashboard.withdraw.address.details")}</p>
                       <p className="text-sm font-mono break-all">{selectedAddress.wallet_address}</p>
                     </div>
                   )}
@@ -486,12 +486,12 @@ function Withdraw() {
 
               <Card className="bg-card/50 border-border/50">
                 <CardHeader>
-                  <CardTitle className="text-lg">Withdrawal Amount</CardTitle>
-                  <CardDescription>Enter the amount you wish to withdraw</CardDescription>
+                  <CardTitle className="text-lg">{t("dashboard.withdraw.amount.title")}</CardTitle>
+                  <CardDescription>{t("dashboard.withdraw.amount.description")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="amount">Amount</Label>
+                    <Label htmlFor="amount">{t("dashboard.withdraw.amount.label")}</Label>
                     <div className="flex gap-2">
                       <Input
                         id="amount"
@@ -511,12 +511,12 @@ function Withdraw() {
                   {amount && Number(amount) > 0 && (
                     <div className="p-4 bg-secondary/30 rounded-lg border border-border/50 space-y-3">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Network Fee (estimated)</span>
+                        <span className="text-muted-foreground">{t("dashboard.withdraw.fee.label")}</span>
                         <span className="font-medium">{fee} {asset}</span>
                       </div>
                       <div className="h-px bg-border/50" />
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">You will receive</span>
+                        <span className="text-muted-foreground">{t("dashboard.withdraw.receive.label")}</span>
                         <span className="font-semibold text-lg text-green-500">
                           {receivedAmount} {asset}
                         </span>
@@ -530,11 +530,11 @@ function Withdraw() {
                     className="w-full gap-2"
                   >
                     {isCalculatingFee ? (
-                      <>Calculating...</>
+                      <>{t("dashboard.withdraw.calculating")}</>
                     ) : (
                       <>
                         <ArrowRight size={16} />
-                        Review & Confirm
+                        {t("dashboard.withdraw.review.button")}
                       </>
                     )}
                   </Button>
@@ -548,13 +548,13 @@ function Withdraw() {
           {isHistoryLoading ? (
             <Card className="bg-card/50 border-border/50">
               <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">Loading history...</div>
+                <div className="text-center text-muted-foreground">{t("dashboard.withdraw.history.loading")}</div>
               </CardContent>
             </Card>
           ) : withdrawalHistory.length === 0 ? (
             <Card className="bg-card/50 border-border/50">
               <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">No withdrawal history yet</div>
+                <div className="text-center text-muted-foreground">{t("dashboard.withdraw.history.empty")}</div>
               </CardContent>
             </Card>
           ) : (
@@ -611,33 +611,33 @@ function Withdraw() {
       <AlertDialog open={isConfirming} onOpenChange={setIsConfirming}>
         <AlertDialogContent className="sm:max-w-[425px]">
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Withdrawal</AlertDialogTitle>
+            <AlertDialogTitle>{t("dashboard.withdraw.confirm.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Please review the details below before confirming this withdrawal.
+              {t("dashboard.withdraw.confirm.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-muted-foreground">Amount</p>
+                <p className="text-xs text-muted-foreground">{t("dashboard.withdraw.amount.label")}</p>
                 <p className="text-lg font-semibold">{amount} {asset}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Network Fee</p>
+                <p className="text-xs text-muted-foreground">{t("dashboard.withdraw.fee.label")}</p>
                 <p className="text-lg font-semibold">{fee} {asset}</p>
               </div>
             </div>
 
             <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
               <p className="text-xs text-green-200/80">
-                You will receive: <strong>{receivedAmount} {asset}</strong>
+                {t("dashboard.withdraw.receive.label")}: <strong>{receivedAmount} {asset}</strong>
               </p>
             </div>
 
             <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <p className="text-xs text-blue-200/80">
-                To: <span className="font-mono break-all">{selectedAddress?.wallet_address}</span>
+                {t("dashboard.withdraw.confirm.to")}: <span className="font-mono break-all">{selectedAddress?.wallet_address}</span>
               </p>
               <p className="text-xs text-blue-200/80 mt-1">
                 Chain: <strong>{chain}</strong>
@@ -645,58 +645,58 @@ function Withdraw() {
             </div>
           </div>
 
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                // Check if this is a new address (first withdrawal to this address)
-                if (selectedAddress && !selectedAddress.verified) {
-                  setIsConfirming(false);
-                  setIs2FADialogOpen(true);
-                  setPendingWithdrawal({
-                    addressId: selectedAddress.id,
-                    amount,
-                    asset,
-                    chain,
-                  });
-                } else {
-                  await handleSubmitWithdrawal();
-                }
-              }}
-              disabled={isSubmitting}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {isSubmitting ? "Processing..." : "Confirm Withdrawal"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+           <AlertDialogFooter>
+             <AlertDialogCancel disabled={isSubmitting}>{t("common.cancel")}</AlertDialogCancel>
+             <AlertDialogAction
+               onClick={async () => {
+                 // Check if this is a new address (first withdrawal to this address)
+                 if (selectedAddress && !selectedAddress.verified) {
+                   setIsConfirming(false);
+                   setIs2FADialogOpen(true);
+                   setPendingWithdrawal({
+                     addressId: selectedAddress.id,
+                     amount,
+                     asset,
+                     chain,
+                   });
+                 } else {
+                   await handleSubmitWithdrawal();
+                 }
+               }}
+               disabled={isSubmitting}
+               className="bg-green-600 hover:bg-green-700"
+             >
+               {isSubmitting ? t("dashboard.withdraw.processing") : t("dashboard.withdraw.confirm.button")}
+             </AlertDialogAction>
+           </AlertDialogFooter>
+         </AlertDialogContent>
+       </AlertDialog>
 
-      {/* 2FA Verification Dialog for New Addresses */}
-      <Dialog open={is2FADialogOpen} onOpenChange={setIs2FADialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-yellow-500" />
-              Security Verification Required
-            </DialogTitle>
-            <DialogDescription>
-              This is your first withdrawal to a new address. Please enter your 2FA code to confirm.
-            </DialogDescription>
-          </DialogHeader>
+       {/* 2FA Verification Dialog for New Addresses */}
+       <Dialog open={is2FADialogOpen} onOpenChange={setIs2FADialogOpen}>
+         <DialogContent className="sm:max-w-[425px]">
+           <DialogHeader>
+             <DialogTitle className="flex items-center gap-2">
+               <Shield className="h-5 w-5 text-yellow-500" />
+               {t("auth.2fa.required")}
+             </DialogTitle>
+             <DialogDescription>
+               {t("auth.2fa.firstWithdrawal")}
+             </DialogDescription>
+           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="2fa-code">Verification Code</Label>
-              <Input
-                id="2fa-code"
-                placeholder="Enter 6-digit code"
-                value={twoFactorCode}
-                onChange={(e) => setTwoFactorCode(e.target.value)}
-                maxLength={6}
-              />
-              <p className="text-xs text-muted-foreground">
-                Enter the code from your authenticator app or email
+           <div className="space-y-4 py-4">
+             <div className="space-y-2">
+               <Label htmlFor="2fa-code">{t("auth.2fa.code")}</Label>
+               <Input
+                 id="2fa-code"
+                 placeholder={t("auth.2fa.placeholder")}
+                 value={twoFactorCode}
+                 onChange={(e) => setTwoFactorCode(e.target.value)}
+                 maxLength={6}
+               />
+               <p className="text-xs text-muted-foreground">
+                {t("auth.2fa.hint")}
               </p>
             </div>
           </div>
@@ -711,13 +711,13 @@ function Withdraw() {
               }}
               disabled={isVerifying2FA}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleVerify2FAAndSubmit}
               disabled={isVerifying2FA || !twoFactorCode}
             >
-              {isVerifying2FA ? "Verifying..." : "Verify & Confirm"}
+              {isVerifying2FA ? t("auth.2fa.verifying") : t("auth.2fa.verifyButton")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -729,29 +729,29 @@ function Withdraw() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5" />
-              Add Withdrawal Address
+              {t("addresses.addDialog")}
             </DialogTitle>
             <DialogDescription>
-              Add a new wallet address for withdrawals. You will need to verify it before first use.
+              {t("addresses.addDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="alias">Address Label</Label>
+              <Label htmlFor="alias">{t("addresses.label")}</Label>
               <Input
                 id="alias"
-                placeholder="e.g., My MetaMask Wallet"
+                placeholder={t("addresses.placeholder")}
                 value={newAddressAlias}
                 onChange={(e) => setNewAddressAlias(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                A descriptive name for this address
+                {t("addresses.hint")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="chain">Blockchain Network</Label>
+              <Label htmlFor="chain">{t("deposit.selectNetwork")}</Label>
               <Select value={newAddressChain} onValueChange={setNewAddressChain}>
                 <SelectTrigger id="chain">
                   <SelectValue />
@@ -767,15 +767,15 @@ function Withdraw() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="walletAddress">Wallet Address</Label>
+              <Label htmlFor="walletAddress">{t("deposit.address")}</Label>
               <Input
                 id="walletAddress"
-                placeholder="0x..."
+                placeholder={t("addresses.addressPlaceholder")}
                 value={newAddress}
                 onChange={(e) => setNewAddress(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                The wallet address to withdraw funds to
+                {t("addresses.addressHint")}
               </p>
             </div>
           </div>
@@ -786,13 +786,13 @@ function Withdraw() {
               onClick={resetAddressForm}
               disabled={isCreatingAddress}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleCreateAddress}
               disabled={isCreatingAddress || !newAddressAlias || !newAddress}
             >
-              {isCreatingAddress ? "Adding..." : "Add Address"}
+              {isCreatingAddress ? t("addresses.adding") : t("addresses.addButton")}
             </Button>
           </DialogFooter>
         </DialogContent>

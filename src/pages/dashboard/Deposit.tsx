@@ -149,7 +149,7 @@ const Deposit = () => {
 
                     <div className="flex items-start gap-2 text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-500/10 p-3 rounded-md w-full">
                         <AlertTriangle className="w-5 h-5 shrink-0" />
-                        <p>{t("deposit.warning", { network })}</p>
+                        <p>{t("deposit.warning", { network: network })}</p>
                     </div>
                     
                     <p className="text-xs text-muted-foreground">{t("deposit.minDeposit")}</p>
