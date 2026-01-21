@@ -97,6 +97,7 @@
     "@types/react-dom": "^18.3.7",
     "@vercel/node": "^5.5.16",
     "@vitejs/plugin-react-swc": "^3.11.0",
+    "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.16",
     "agent-browser": "github:vercel-labs/agent-browser",
     "autoprefixer": "^10.4.21",

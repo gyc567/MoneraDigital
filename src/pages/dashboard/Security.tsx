@@ -121,15 +121,15 @@ const Security = () => {
               <Lock className="text-primary" size={20} />
               <CardTitle className="text-lg">{t("dashboard.security.password")}</CardTitle>
             </div>
-            <CardDescription>Update your password to keep your account secure.</CardDescription>
+            <CardDescription>{t("dashboard.security.passwordDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 max-w-md">
             <div className="space-y-2">
-              <Label htmlFor="current-password">Current Password</Label>
+              <Label htmlFor="current-password">{t("dashboard.security.currentPassword")}</Label>
               <Input id="current-password" type="password" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
+              <Label htmlFor="new-password">{t("dashboard.security.newPassword")}</Label>
               <Input id="new-password" type="password" />
             </div>
             <Button>{t("dashboard.security.password")}</Button>
@@ -147,7 +147,7 @@ const Security = () => {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Add an extra layer of security to your account by enabling two-factor authentication.
+                {t("dashboard.security.twoFactorDescription")}
               </p>
               
               <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-border/50">
@@ -158,7 +158,7 @@ const Security = () => {
                     <ShieldAlert className="text-muted-foreground" size={20} />
                   )}
                   <div className="text-sm font-medium">
-                    Status: <span className={isEnabled ? "text-green-500" : "text-muted-foreground"}>
+                    {t("dashboard.security.status")}: <span className={isEnabled ? "text-green-500" : "text-muted-foreground"}>
                       {isEnabled ? t("dashboard.security.enabled") : t("dashboard.security.disabled")}
                     </span>
                   </div>
@@ -177,7 +177,7 @@ const Security = () => {
                     <DialogHeader>
                       <DialogTitle>{t("dashboard.security.setup2FA")}</DialogTitle>
                       <DialogDescription>
-                        {step === 1 ? t("dashboard.security.scanQR") : "Save your backup codes in a safe place."}
+                        {step === 1 ? t("dashboard.security.scanQR") : t("dashboard.security.saveBackupCodes")}
                       </DialogDescription>
                     </DialogHeader>
 
@@ -191,10 +191,10 @@ const Security = () => {
                           <div className="w-48 h-48 bg-secondary animate-pulse rounded-xl flex items-center justify-center text-xs text-muted-foreground" />
                         )}
                         <div className="w-full space-y-2 text-center">
-                          <p className="text-xs text-muted-foreground font-medium">Secret Key (Manual):</p>
+                          <p className="text-xs text-muted-foreground font-medium">{t("dashboard.security.secretKeyManual")}:</p>
                           <code className="text-xs font-mono bg-secondary px-3 py-1 rounded-full border border-border">{secret}</code>
                         </div>
-                        <Button onClick={() => setStep(2)} className="w-full">Next: Backup Codes</Button>
+                        <Button onClick={() => setStep(2)} className="w-full">{t("dashboard.security.nextBackupCodes")}</Button>
                       </div>
                     ) : (
                       <div className="space-y-6 py-4">
@@ -205,8 +205,8 @@ const Security = () => {
                         </div>
                         <div className="flex gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
                           <Info size={16} className="text-blue-500 shrink-0" />
-                          <p className="text-[11px] text-blue-200/80 leading-relaxed">
-                            These codes can be used once each to log in if you lose your device.
+                           <p className="text-[11px] text-blue-200/80 leading-relaxed">
+                            {t("dashboard.security.backupCodeInfo")}
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -221,7 +221,7 @@ const Security = () => {
                         </div>
                         <DialogFooter>
                           <Button onClick={handleEnable} className="w-full" disabled={isSettingUp || token.length !== 6}>
-                            {isSettingUp ? "Verifying..." : t("dashboard.security.verify")}
+                            {isSettingUp ? t("dashboard.security.verifying") : t("dashboard.security.verify")}
                           </Button>
                         </DialogFooter>
                       </div>
@@ -242,10 +242,10 @@ const Security = () => {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Restrict withdrawals to only pre-approved wallet addresses.
+                {t("dashboard.security.whitelistDescription")}
               </p>
               <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/addresses")}>
-                Manage Addresses
+                {t("dashboard.security.manageAddresses")}
               </Button>
             </CardContent>
           </Card>

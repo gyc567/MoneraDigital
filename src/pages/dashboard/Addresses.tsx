@@ -192,23 +192,23 @@ const Addresses = () => {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Withdrawal Addresses</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t("dashboard.addresses.title")}</h1>
         <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
           <Plus size={20} />
-          Add Address
+          {t("dashboard.addresses.addAddress")}
         </Button>
       </div>
 
       {isLoading ? (
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
-            <div className="text-center text-muted-foreground">Loading addresses...</div>
+            <div className="text-center text-muted-foreground">{t("dashboard.addresses.loading")}</div>
           </CardContent>
         </Card>
       ) : addresses.length === 0 ? (
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
-            <div className="text-center text-muted-foreground">No addresses added yet. Click "Add Address" to get started.</div>
+            <div className="text-center text-muted-foreground">{t("dashboard.addresses.noAddresses")}</div>
           </CardContent>
         </Card>
       ) : (
@@ -226,18 +226,18 @@ const Addresses = () => {
                       {addr.verified && (
                         <Badge variant="outline" className="gap-1">
                           <Check size={14} />
-                          Verified
+                          {t("dashboard.addresses.verified")}
                         </Badge>
                       )}
                       {!addr.verified && (
                         <Badge variant="outline" className="gap-1 text-yellow-600">
                           <Clock size={14} />
-                          Pending
+                          {t("dashboard.addresses.pending")}
                         </Badge>
                       )}
                       {/* addr.isPrimary not supported yet */}
                       {addr.is_deleted && (
-                        <Badge variant="destructive">Deactivated</Badge>
+                        <Badge variant="destructive">{t("dashboard.addresses.deactivated")}</Badge>
                       )}
                     </div>
 
@@ -246,11 +246,11 @@ const Addresses = () => {
                         {addr.wallet_address}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Added: {new Date(addr.created_at).toLocaleDateString()}
+                        {t("dashboard.addresses.added")}: {new Date(addr.created_at).toLocaleDateString()}
                       </p>
                       {addr.verified_at && (
                         <p className="text-xs text-green-600">
-                          Verified: {new Date(addr.verified_at).toLocaleDateString()}
+                          {t("dashboard.addresses.verified")}: {new Date(addr.verified_at).toLocaleDateString()}
                         </p>
                       )}
                     </div>
@@ -266,7 +266,7 @@ const Addresses = () => {
                           setIsVerifyDialogOpen(true);
                         }}
                       >
-                        Verify
+                        {t("dashboard.addresses.verify")}
                       </Button>
                     )}
 
@@ -277,7 +277,7 @@ const Addresses = () => {
                         variant="outline"
                         onClick={() => handleSetPrimary(addr.id)}
                       >
-                        Set Primary
+                        {t("dashboard.addresses.setPrimary")}
                       </Button>
                     )}
 
@@ -303,40 +303,40 @@ const Addresses = () => {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Add Withdrawal Address</DialogTitle>
+            <DialogTitle>{t("dashboard.addresses.addDialogTitle")}</DialogTitle>
             <DialogDescription>
-              Add a new cryptocurrency address for withdrawals. You'll receive a verification email.
+              {t("dashboard.addresses.addDialogDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="label">Address Label</Label>
+              <Label htmlFor="label">{t("dashboard.addresses.addressLabel")}</Label>
               <Input
                 id="label"
-                placeholder="e.g., My Ethereum Wallet"
+                placeholder={t("dashboard.addresses.addressLabelPlaceholder")}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="type">Asset Type</Label>
+              <Label htmlFor="type">{t("dashboard.addresses.assetType")}</Label>
               <Select value={addressType} onValueChange={(value: any) => setAddressType(value)}>
                 <SelectTrigger id="type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
-                  <SelectItem value="ETH">Ethereum (ETH)</SelectItem>
-                  <SelectItem value="USDC">USD Coin (USDC)</SelectItem>
-                  <SelectItem value="USDT">Tether (USDT)</SelectItem>
+                  <SelectItem value="BTC">{t("dashboard.addresses.btc")}</SelectItem>
+                  <SelectItem value="ETH">{t("dashboard.addresses.eth")}</SelectItem>
+                  <SelectItem value="USDC">{t("dashboard.addresses.usdc")}</SelectItem>
+                  <SelectItem value="USDT">{t("dashboard.addresses.usdt")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="address">Wallet Address</Label>
+              <Label htmlFor="address">{t("dashboard.addresses.walletAddress")}</Label>
               <Input
                 id="address"
                 placeholder="0x1234567890abcdef1234567890abcdef12345678"
@@ -344,7 +344,7 @@ const Addresses = () => {
                 onChange={(e) => setNewAddress(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                {addressType === "BTC" ? "Bitcoin address (P2PKH, P2SH, or Bech32)" : "Ethereum address or ERC-20 token address"}
+                {addressType === "BTC" ? t("dashboard.addresses.btcAddressHint") : t("dashboard.addresses.ethAddressHint")}
               </p>
             </div>
           </div>
@@ -355,13 +355,13 @@ const Addresses = () => {
               onClick={() => setIsDialogOpen(false)}
               disabled={isSubmitting}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleAddAddress}
               disabled={isSubmitting || !newAddress || !label}
             >
-              {isSubmitting ? "Adding..." : "Add Address"}
+              {isSubmitting ? t("dashboard.addresses.adding") : t("dashboard.addresses.addAddress")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -371,18 +371,18 @@ const Addresses = () => {
       <Dialog open={isVerifyDialogOpen} onOpenChange={setIsVerifyDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Verify Address</DialogTitle>
+            <DialogTitle>{t("dashboard.addresses.verifyDialogTitle")}</DialogTitle>
             <DialogDescription>
-              Enter the verification code from your email to confirm this address.
+              {t("dashboard.addresses.verifyDialogDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="token">Verification Code</Label>
+              <Label htmlFor="token">{t("dashboard.addresses.verificationCode")}</Label>
               <Input
                 id="token"
-                placeholder="Paste the verification token from your email"
+                placeholder={t("dashboard.addresses.verificationCodePlaceholder")}
                 value={verificationToken}
                 onChange={(e) => setVerificationToken(e.target.value)}
               />
@@ -395,13 +395,13 @@ const Addresses = () => {
               onClick={() => setIsVerifyDialogOpen(false)}
               disabled={isSubmitting}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={handleVerifyAddress}
               disabled={isSubmitting || !verificationToken}
             >
-              {isSubmitting ? "Verifying..." : "Verify"}
+              {isSubmitting ? t("dashboard.addresses.verifying") : t("dashboard.addresses.verify")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -411,18 +411,18 @@ const Addresses = () => {
       <AlertDialog open={deleteAddressId !== null} onOpenChange={(open) => !open && setDeleteAddressId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate Address</AlertDialogTitle>
+            <AlertDialogTitle>{t("dashboard.addresses.deactivateDialogTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently deactivate the address and you won't be able to use it for withdrawals. This action cannot be undone.
+              {t("dashboard.addresses.deactivateDialogDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteAddress}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Deactivate
+              {t("dashboard.addresses.deactivate")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
