@@ -1,24 +1,30 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider, ToastViewport } from '@/components/ui/toast';
 import i18n from '@/i18n';
 import AccountOpening from './AccountOpening';
 import * as React from 'react';
 
+const queryClient = new QueryClient();
+
 describe('AccountOpening', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en');
+    queryClient.clear();
   });
 
   const renderComponent = () => {
     return render(
-      React.createElement(I18nextProvider, { i18n },
-        React.createElement(ToastProvider, null,
-          React.createElement(AccountOpening),
-          React.createElement(ToastViewport)
-        )
-      )
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18n}>
+          <ToastProvider>
+            <AccountOpening />
+            <ToastViewport />
+          </ToastProvider>
+        </I18nextProvider>
+      </QueryClientProvider>
     );
   };
 
@@ -101,13 +107,16 @@ describe('AccountOpening', () => {
     await act(async () => {
       await i18n.changeLanguage('zh');
     });
+
     render(
-      React.createElement(I18nextProvider, { i18n },
-        React.createElement(ToastProvider, null,
-          React.createElement(AccountOpening),
-          React.createElement(ToastViewport)
-        )
-      )
+      <QueryClientProvider client={queryClient}>
+        <I18nextProvider i18n={i18n}>
+          <ToastProvider>
+            <AccountOpening />
+            <ToastViewport />
+          </ToastProvider>
+        </I18nextProvider>
+      </QueryClientProvider>
     );
     expect(screen.getByText('开通资金账户')).toBeInTheDocument();
   });

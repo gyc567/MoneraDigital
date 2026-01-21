@@ -10,6 +10,15 @@ import QRCode from "qrcode";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 
+interface DepositTransaction {
+  id: string | number;
+  asset: string;
+  chain: string;
+  created_at: string;
+  amount: string;
+  status: 'CONFIRMED' | 'PENDING' | 'FAILED';
+}
+
 const Deposit = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -17,6 +26,15 @@ const Deposit = () => {
   const [network, setNetwork] = useState("TRON");
   const [copied, setCopied] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
+
+  const networkOptions = [
+    { value: "TRON", label: "TRON (TRC20)" },
+    { value: "ETH", label: "Ethereum (ERC20)" },
+    { value: "BSC", label: "BNB Smart Chain (BEP20)" },
+  ];
+
+  const selectedNetwork = networkOptions.find(option => option.value === network);
+  const networkLabel = selectedNetwork ? selectedNetwork.label : network;
 
   const { data: walletInfo, isLoading: isWalletLoading } = useQuery({
     queryKey: ["walletInfo"],
@@ -125,9 +143,11 @@ const Deposit = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="TRON">TRON (TRC20)</SelectItem>
-                    <SelectItem value="ETH">Ethereum (ERC20)</SelectItem>
-                    <SelectItem value="BSC">BNB Smart Chain (BEP20)</SelectItem>
+                    {networkOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -149,7 +169,7 @@ const Deposit = () => {
 
                     <div className="flex items-start gap-2 text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-500/10 p-3 rounded-md w-full">
                         <AlertTriangle className="w-5 h-5 shrink-0" />
-                        <p>{t("deposit.warning", { network: network })}</p>
+                        <p>{t("deposit.warning", { network: networkLabel })}</p>
                     </div>
                     
                     <p className="text-xs text-muted-foreground">{t("deposit.minDeposit")}</p>
@@ -174,7 +194,7 @@ const Deposit = () => {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {depositsData.deposits.map((tx: any) => (
+                        {depositsData.deposits.map((tx: DepositTransaction) => (
                             <div key={tx.id} className="flex items-center justify-between p-4 border border-border/50 bg-card rounded-lg hover:bg-secondary/20 transition-colors">
                                 <div>
                                     <div className="font-medium flex items-center gap-2">
