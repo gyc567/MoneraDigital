@@ -22,7 +22,7 @@ func (r *DepositRepository) Create(ctx context.Context, deposit *models.Deposit)
 		INSERT INTO deposits (user_id, tx_hash, amount, asset, chain, status, from_address, to_address, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id`
-	
+
 	err := r.db.QueryRowContext(ctx, query,
 		deposit.UserID, deposit.TxHash, deposit.Amount, deposit.Asset, deposit.Chain,
 		deposit.Status, deposit.FromAddress, deposit.ToAddress, time.Now(),
@@ -34,7 +34,7 @@ func (r *DepositRepository) GetByTxHash(ctx context.Context, txHash string) (*mo
 	query := `
 		SELECT id, user_id, tx_hash, amount, asset, chain, status, from_address, to_address, created_at, confirmed_at
 		FROM deposits WHERE tx_hash = $1`
-	
+
 	var d models.Deposit
 
 	err := r.db.QueryRowContext(ctx, query, txHash).Scan(
@@ -42,7 +42,7 @@ func (r *DepositRepository) GetByTxHash(ctx context.Context, txHash string) (*mo
 		&d.FromAddress, &d.ToAddress, &d.CreatedAt, &d.ConfirmedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, nil 
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -63,14 +63,14 @@ func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, 
 		FROM deposits WHERE user_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`
-	
+
 	rows, err := r.db.QueryContext(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
 
-	var deposits []*models.Deposit
+	deposits := make([]*models.Deposit, 0, limit)
 	for rows.Next() {
 		var d models.Deposit
 		if err := rows.Scan(&d.ID, &d.UserID, &d.TxHash, &d.Amount, &d.Asset, &d.Chain, &d.Status, &d.FromAddress, &d.ToAddress, &d.CreatedAt, &d.ConfirmedAt); err != nil {
@@ -82,15 +82,15 @@ func (r *DepositRepository) GetByUserID(ctx context.Context, userID int, limit, 
 }
 
 func (r *DepositRepository) UpdateStatus(ctx context.Context, id int, status string, confirmedAt string) error {
-    var confirmedTime interface{} = nil
-    if confirmedAt != "" {
-        t, err := time.Parse(time.RFC3339, confirmedAt)
-        if err == nil {
-            confirmedTime = t
-        } else {
-            confirmedTime = time.Now() // Fallback
-        }
-    }
+	var confirmedTime interface{} = nil
+	if confirmedAt != "" {
+		t, err := time.Parse(time.RFC3339, confirmedAt)
+		if err == nil {
+			confirmedTime = t
+		} else {
+			confirmedTime = time.Now() // Fallback
+		}
+	}
 	query := `UPDATE deposits SET status = $1, confirmed_at = $2 WHERE id = $3`
 	_, err := r.db.ExecContext(ctx, query, status, confirmedTime, id)
 	return err

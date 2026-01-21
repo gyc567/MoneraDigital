@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"monera-digital/internal/account"
 	"monera-digital/internal/container"
 	"monera-digital/internal/docs"
 	"monera-digital/internal/handlers"
@@ -35,6 +36,10 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		cont.WalletService,
 	)
 
+	// Account System Client
+	accountClient := account.NewClient("http://localhost:8081") // TODO: Use config
+	accountHandler := &handlers.AccountHandler{Client: accountClient}
+
 	// Public routes
 	public := router.Group("/api")
 	{
@@ -52,6 +57,17 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		webhooks := public.Group("/webhooks")
 		{
 			webhooks.POST("/core/deposit", h.HandleDepositWebhook)
+		}
+
+		// Account System Routes
+		accounts := public.Group("/accounts")
+		{
+			accounts.GET("", accountHandler.GetUserAccounts)
+			accounts.POST("", accountHandler.CreateAccount)
+			accounts.GET("/history", accountHandler.GetAccountHistory)
+			accounts.POST("/freeze", accountHandler.FreezeBalance)
+			accounts.POST("/unfreeze", accountHandler.UnfreezeBalance)
+			accounts.POST("/transfer", accountHandler.Transfer)
 		}
 	}
 

@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -12,14 +13,19 @@ type TokenBlacklist struct {
 	mu     sync.RWMutex
 	ticker *time.Ticker
 	done   chan bool
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewTokenBlacklist 创建令牌黑名单
 func NewTokenBlacklist() *TokenBlacklist {
+	ctx, cancel := context.WithCancel(context.Background())
 	tb := &TokenBlacklist{
 		tokens: make(map[string]time.Time),
 		ticker: time.NewTicker(1 * time.Hour),
-		done:   make(chan bool),
+		done:   make(chan bool, 1),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	// 启动清理过期令牌的后台任务
@@ -68,7 +74,7 @@ func (tb *TokenBlacklist) cleanupExpiredTokens() {
 			}
 			tb.mu.Unlock()
 
-		case <-tb.done:
+		case <-tb.ctx.Done():
 			tb.ticker.Stop()
 			return
 		}
@@ -77,7 +83,7 @@ func (tb *TokenBlacklist) cleanupExpiredTokens() {
 
 // Close 关闭黑名单
 func (tb *TokenBlacklist) Close() {
-	tb.done <- true
+	tb.cancel()
 }
 
 // Size 获取黑名单中的令牌数量

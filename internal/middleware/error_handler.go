@@ -16,12 +16,27 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// errorMapping maps error messages to HTTP responses
+var errorMapping = map[string]struct {
+	status int
+	code   string
+	msg    string
+}{
+	"email not found":                 {http.StatusUnauthorized, "EMAIL_NOT_FOUND", "Email input error or does not exist"},
+	"invalid credentials":             {http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password"},
+	"email already registered":        {http.StatusConflict, "EMAIL_ALREADY_EXISTS", "Email is already registered"},
+	"invalid refresh token":           {http.StatusUnauthorized, "INVALID_REFRESH_TOKEN", "Refresh token is invalid or expired"},
+	"refresh token has been revoked":  {http.StatusUnauthorized, "TOKEN_REVOKED", "Refresh token has been revoked"},
+	"token blacklist not initialized": {http.StatusInternalServerError, "INTERNAL_ERROR", "Token service is not properly initialized"},
+	"unauthorized":                    {http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required"},
+	"not found":                       {http.StatusNotFound, "NOT_FOUND", "Resource not found"},
+}
+
 // ErrorHandler middleware for handling errors consistently
 func ErrorHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
-		// Check if there are any errors
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last()
 			handleError(c, err.Err)
@@ -46,58 +61,22 @@ func handleError(c *gin.Context, err error) {
 		return
 	}
 
-	// Check for specific error messages
+	// Check for mapped errors
 	errMsg := err.Error()
-
-	switch errMsg {
-	case "email not found":
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Code:    "EMAIL_NOT_FOUND",
-			Message: "Email input error or does not exist",
+	if mapping, ok := errorMapping[errMsg]; ok {
+		c.JSON(mapping.status, ErrorResponse{
+			Code:    mapping.code,
+			Message: mapping.msg,
 		})
-	case "invalid credentials":
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Code:    "INVALID_CREDENTIALS",
-			Message: "Invalid email or password",
-		})
-	case "email already registered":
-		c.JSON(http.StatusConflict, ErrorResponse{
-			Code:    "EMAIL_ALREADY_EXISTS",
-			Message: "Email is already registered",
-		})
-	case "invalid refresh token":
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Code:    "INVALID_REFRESH_TOKEN",
-			Message: "Refresh token is invalid or expired",
-		})
-	case "refresh token has been revoked":
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Code:    "TOKEN_REVOKED",
-			Message: "Refresh token has been revoked",
-		})
-	case "token blacklist not initialized":
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Code:    "INTERNAL_ERROR",
-			Message: "Token service is not properly initialized",
-		})
-	case "unauthorized":
-		c.JSON(http.StatusUnauthorized, ErrorResponse{
-			Code:    "UNAUTHORIZED",
-			Message: "Authentication required",
-		})
-	case "not found":
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Code:    "NOT_FOUND",
-			Message: "Resource not found",
-		})
-	default:
-		// Generic internal server error
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Code:    "INTERNAL_ERROR",
-			Message: "An internal server error occurred",
-			Details: errMsg,
-		})
+		return
 	}
+
+	// Generic internal server error
+	c.JSON(http.StatusInternalServerError, ErrorResponse{
+		Code:    "INTERNAL_ERROR",
+		Message: "An internal server error occurred",
+		Details: errMsg,
+	})
 }
 
 // RecoveryHandler middleware for recovering from panics

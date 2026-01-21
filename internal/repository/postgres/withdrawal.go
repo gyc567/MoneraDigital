@@ -47,7 +47,7 @@ func (r *WithdrawalRepository) GetOrdersByUserID(ctx context.Context, userID int
 	}
 	defer rows.Close()
 
-	var orders []*models.WithdrawalOrder
+	orders := make([]*models.WithdrawalOrder, 0, 50)
 	for rows.Next() {
 		var o models.WithdrawalOrder
 		if err := rows.Scan(

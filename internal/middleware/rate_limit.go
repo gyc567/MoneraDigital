@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -16,14 +17,19 @@ type RateLimiter struct {
 	mu     sync.RWMutex
 	limit  int
 	window time.Duration
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewRateLimiter 创建速率限制器
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	ctx, cancel := context.WithCancel(context.Background())
 	rl := &RateLimiter{
 		store:  make(map[string][]time.Time),
 		limit:  limit,
 		window: window,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	// 启动清理过期时间戳的后台任务
@@ -32,7 +38,10 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	return rl
 }
 
-// IsAllowed 检查是否允许请求
+func (rl *RateLimiter) Stop() {
+	rl.cancel()
+}
+
 func (rl *RateLimiter) IsAllowed(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -40,21 +49,18 @@ func (rl *RateLimiter) IsAllowed(key string) bool {
 	now := time.Now()
 	timestamps := rl.store[key]
 
-	// 清理过期的时间戳
-	var valid []time.Time
+	valid := make([]time.Time, 0, len(timestamps))
 	for _, ts := range timestamps {
 		if now.Sub(ts) < rl.window {
 			valid = append(valid, ts)
 		}
 	}
 
-	// 检查是否超过限制
 	if len(valid) >= rl.limit {
 		rl.store[key] = valid
 		return false
 	}
 
-	// 添加当前时间戳
 	valid = append(valid, now)
 	rl.store[key] = valid
 	return true
@@ -65,24 +71,34 @@ func (rl *RateLimiter) cleanupExpiredTimestamps() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for key, timestamps := range rl.store {
-			var valid []time.Time
-			for _, ts := range timestamps {
-				if now.Sub(ts) < rl.window {
-					valid = append(valid, ts)
+	for {
+		select {
+		case <-ticker.C:
+			rl.mu.Lock()
+			now := time.Now()
+			keysToDelete := []string{}
+			for key, timestamps := range rl.store {
+				var valid []time.Time
+				for _, ts := range timestamps {
+					if now.Sub(ts) < rl.window {
+						valid = append(valid, ts)
+					}
+				}
+
+				if len(valid) == 0 {
+					keysToDelete = append(keysToDelete, key)
+				} else {
+					rl.store[key] = valid
 				}
 			}
-
-			if len(valid) == 0 {
+			for _, key := range keysToDelete {
 				delete(rl.store, key)
-			} else {
-				rl.store[key] = valid
 			}
+			rl.mu.Unlock()
+
+		case <-rl.ctx.Done():
+			return
 		}
-		rl.mu.Unlock()
 	}
 }
 

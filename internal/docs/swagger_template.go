@@ -213,6 +213,211 @@ const swaggerTemplate = `{
           }
         }
       }
+    },
+    "/accounts": {
+      "get": {
+        "summary": "Get user accounts",
+        "description": "Retrieves all accounts for a given user",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of accounts",
+            "schema": {
+              "$ref": "#/definitions/GetUserAccountsResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new account",
+        "description": "Creates a new account for a user",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateAccountRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account created",
+            "schema": {
+              "$ref": "#/definitions/CreateAccountResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/accounts/history": {
+      "get": {
+        "summary": "Get account history",
+        "description": "Retrieves transaction history for an account",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "integer"
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "type": "integer"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of history records",
+            "schema": {
+              "$ref": "#/definitions/GetAccountHistoryResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/accounts/freeze": {
+      "post": {
+        "summary": "Freeze balance",
+        "description": "Freezes a specified amount in an account",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FreezeBalanceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance frozen successfully",
+            "schema": {
+              "$ref": "#/definitions/FreezeBalanceResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/accounts/unfreeze": {
+      "post": {
+        "summary": "Unfreeze balance",
+        "description": "Unfreezes a specified amount in an account",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UnfreezeBalanceRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance unfrozen successfully",
+            "schema": {
+              "$ref": "#/definitions/UnfreezeBalanceResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/accounts/transfer": {
+      "post": {
+        "summary": "Transfer funds",
+        "description": "Moves funds between two accounts",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TransferRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer successful",
+            "schema": {
+              "$ref": "#/definitions/TransferResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -402,6 +607,244 @@ const swaggerTemplate = `{
         },
         "details": {
           "type": "string"
+        }
+      }
+    },
+    "GetUserAccountsResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Account"
+          }
+        }
+      }
+    },
+    "Account": {
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "accountType": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "balance": {
+          "type": "string"
+        },
+        "frozenBalance": {
+          "type": "string"
+        },
+        "availableBalance": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "CreateAccountRequest": {
+      "type": "object",
+      "required": ["userId", "accountType", "currency"],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "accountType": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        }
+      }
+    },
+    "CreateAccountResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/definitions/Account"
+        }
+      }
+    },
+    "GetAccountHistoryResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HistoryRecord"
+          }
+        }
+      }
+    },
+    "HistoryRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "transactionType": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "FreezeBalanceRequest": {
+      "type": "object",
+      "required": ["accountId", "userId", "amount", "currency"],
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "FreezeBalanceResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "UnfreezeBalanceRequest": {
+      "type": "object",
+      "required": ["accountId", "userId", "amount", "currency"],
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "UnfreezeBalanceResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "TransferRequest": {
+      "type": "object",
+      "required": ["fromAccountId", "toAccountId", "amount", "currency"],
+      "properties": {
+        "fromAccountId": {
+          "type": "string"
+        },
+        "toAccountId": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "TransferResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean"
+            }
+          }
         }
       }
     }

@@ -21,7 +21,7 @@ var SwaggerInfo = struct {
 }
 
 // swaggerInstanceName is the registered swag instance name
-const swaggerInstanceName = "monera-digital-api"
+const swaggerInstanceName = "swagger"
 
 // NewSwagger initializes the swagger documentation
 func NewSwagger() {

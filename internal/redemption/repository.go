@@ -3,6 +3,7 @@ package redemption
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,18 +15,23 @@ type RedemptionRepository interface {
 }
 
 type InMemoryRedemptionRepository struct {
-	mu   sync.RWMutex
-	data map[string]*RedemptionRecord
+	mu     sync.RWMutex
+	data   map[string]*RedemptionRecord
+	nextID int64
 }
 
 func NewInMemoryRedemptionRepository() *InMemoryRedemptionRepository {
-	return &InMemoryRedemptionRepository{data: make(map[string]*RedemptionRecord)}
+	return &InMemoryRedemptionRepository{
+		data:   make(map[string]*RedemptionRecord),
+		nextID: 0,
+	}
 }
 
 func (r *InMemoryRedemptionRepository) Create(record *RedemptionRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	record.ID = fmt.Sprintf("REDEEM-%d-%d", time.Now().UnixNano(), len(r.data)+1)
+	newID := atomic.AddInt64(&r.nextID, 1)
+	record.ID = fmt.Sprintf("REDEEM-%d-%d", time.Now().UnixNano(), newID)
 	r.data[record.ID] = record
 	return nil
 }

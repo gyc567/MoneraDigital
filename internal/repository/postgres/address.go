@@ -49,7 +49,7 @@ func (r *AddressRepository) GetAddressesByUserID(ctx context.Context, userID int
 	}
 	defer rows.Close()
 
-	var addresses []*models.WithdrawalAddress
+	addresses := make([]*models.WithdrawalAddress, 0, 10)
 	for rows.Next() {
 		var addr models.WithdrawalAddress
 		if err := rows.Scan(
@@ -115,7 +115,7 @@ func (r *AddressRepository) GetByAddressAndChain(ctx context.Context, address, c
 	// But wait, the PRD says "Check if address is in whitelist" usually implies checking if the USER has it.
 	// I'll implement it as finding the first match (maybe not useful) or update interface.
 	// Better: Update interface to include UserID.
-	
+
 	// For now, simple implementation:
 	var addr models.WithdrawalAddress
 	err := r.db.QueryRowContext(ctx,
