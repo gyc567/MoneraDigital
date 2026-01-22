@@ -575,19 +575,19 @@ const FixedDeposit = () => {
                             )}
                             <Input
                               type="number"
-                              placeholder={`${t("dashboard.fixedDeposit.minAmount")}: ${selectedProduct?.minAmount || 0} USDT`}
+                              placeholder={`${t("dashboard.fixedDeposit.minAmount")}: ${selectedProduct?.minAmount || 0} ${selectedProduct?.currency || 'USDT'}`}
                               value={amount}
                               onChange={(e) => setAmount(e.target.value)}
                               required
                              />
                              {selectedProduct && amount && parseFloat(amount) < selectedProduct.minAmount && (
                                <p className="text-xs text-red-500">
-                                 {t("dashboard.fixedDeposit.amountBelowMinError")} {selectedProduct.minAmount} USDT
+                                 {t("dashboard.fixedDeposit.amountBelowMinError")} {selectedProduct.minAmount} {selectedProduct.currency}
                                </p>
                              )}
                              {selectedProduct && amount && parseFloat(amount) > selectedProduct.maxAmount && (
                                <p className="text-xs text-red-500">
-                                 {t("dashboard.fixedDeposit.amountAboveMaxError")} {selectedProduct.maxAmount} USDT
+                                 {t("dashboard.fixedDeposit.amountAboveMaxError")} {selectedProduct.maxAmount} {selectedProduct.currency}
                                </p>
                              )}
                           </div>
