@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from './db.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { decrypt } from './encryption.js';
 import logger from './logger.js';
 
 const getJwtSecret = () => {
@@ -29,7 +30,7 @@ export class AuthService {
     
     logger.info({ email: validated.email }, 'Attempting to register new user');
     
-    const hashedPassword = await (bcrypt.default || bcrypt).hash(validated.password, 10);
+    const hashedPassword = await bcrypt.hash(validated.password, 10);
 
     try {
       const [user] = await db.insert(users).values({
@@ -68,7 +69,7 @@ export class AuthService {
       throw new Error('Invalid email or password');
     }
 
-    const isValid = await (bcrypt.default || bcrypt).compare(password, user.password);
+    const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       logger.warn({ email: validated.email, userId: user.id }, 'Login failed: incorrect password');
       throw new Error('Invalid email or password');
@@ -99,12 +100,13 @@ export class AuthService {
    */
   static async verify2FAAndLogin(userId: number, token: string) {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+    if (!user || !user.twoFactorEnabled) {
       throw new Error('2FA not enabled');
     }
 
-    const { authenticator } = await import('otplib');
-    const isValid = authenticator.check(token, user.twoFactorSecret);
+    const { TwoFactorService } = await import('./two-factor-service.js');
+    const isValid = await TwoFactorService.verify(userId, token);
+    
     if (!isValid) {
       throw new Error('Invalid verification code');
     }

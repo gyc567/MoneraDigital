@@ -20,7 +20,10 @@ export class TwoFactorService {
       crypto.randomBytes(4).toString('hex').toUpperCase()
     );
     
-    const qrCodeUrl = await QRCode.toDataURL(otpauth);
+    const qrCodeUrl = await QRCode.toDataURL(otpauth, {
+      margin: 2,
+      width: 400
+    });
     
     // 存储加密后的密钥和恢复码
     await db.update(users)
@@ -30,7 +33,7 @@ export class TwoFactorService {
       })
       .where(eq(users.id, userId));
 
-    return { secret, qrCodeUrl, backupCodes };
+    return { secret, qrCodeUrl, backupCodes, otpauth };
   }
 
   /**

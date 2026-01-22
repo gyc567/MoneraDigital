@@ -294,10 +294,17 @@
       "disable2FA": "Disable 2FA",
       "setup2FA": "Setup 2FA",
       "scanQR": "Scan this QR code with your authenticator app (Google Authenticator, Duo, etc.)",
+      "saveBackupCodes": "Save your backup codes in a safe place",
       "enterCode": "Enter the 6-digit code from your app",
       "verify": "Verify & Enable",
+      "verifying": "Verifying...",
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "secretKeyManual": "Secret Key (Manual Entry)",
+      "openInApp": "Open in Authenticator App",
+      "nextBackupCodes": "Next: Backup Codes",
+      "backupCodeInfo": "These backup codes can be used to access your account if you lose your 2FA device. Store them securely.",
+      "disable2FAConfirm": "Are you sure you want to disable 2FA? This will make your account less secure."
     },
     "lending": {
       "applyTitle": "Lend Assets",
