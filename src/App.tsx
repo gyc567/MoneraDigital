@@ -11,13 +11,14 @@ import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
 import DashboardLayout from "./components/DashboardLayout";
 import Overview from "./pages/dashboard/Overview";
+import AccountOpening from "./pages/dashboard/AccountOpening";
 import Assets from "./pages/dashboard/Assets";
 import Deposit from "./pages/dashboard/Deposit";
-import Security from "./pages/dashboard/Security";
 import Lending from "./pages/dashboard/Lending";
 import Addresses from "./pages/dashboard/Addresses";
 import Withdraw from "./pages/dashboard/Withdraw";
-import AccountOpening from "./pages/dashboard/AccountOpening";
+import Security from "./pages/dashboard/Security";
+import FixedDeposit from "./pages/dashboard/FixedDeposit";
 
 const queryClient = new QueryClient();
 
@@ -41,7 +42,8 @@ const App = () => (
               <Route path="lending" element={<Lending />} />
               <Route path="addresses" element={<Addresses />} />
               <Route path="withdraw" element={<Withdraw />} />
-              <Route path="investments" element={<div>Investments Page (Coming Soon)</div>} />
+              <Route path="investments" element={<div className="p-8 text-center text-muted-foreground">Investment products coming soon</div>} />
+              <Route path="fixed-deposit" element={<FixedDeposit />} />
               <Route path="security" element={<Security />} />
               <Route path="statements" element={<div>Statements Page (Coming Soon)</div>} />
             </Route>

@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"monera-digital/internal/models"
 )
@@ -69,6 +70,106 @@ type Wallet interface {
 	GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error)
 }
 
+// Wealth 理财仓储接口
+type Wealth interface {
+	GetActiveProducts(ctx context.Context) ([]*WealthProductModel, error)
+	GetProductByID(ctx context.Context, id int64) (*WealthProductModel, error)
+	CreateOrder(ctx context.Context, order *WealthOrderModel) error
+	GetOrdersByUserID(ctx context.Context, userID int64) ([]*WealthOrderModel, error)
+	GetOrderByID(ctx context.Context, id int64) (*WealthOrderModel, error)
+	UpdateOrder(ctx context.Context, order *WealthOrderModel) error
+	UpdateProductSoldQuota(ctx context.Context, id int64, amount string) error
+	GetActiveOrders(ctx context.Context) ([]*WealthOrderModel, error)
+	GetExpiredOrders(ctx context.Context) ([]*WealthOrderModel, error)
+	AccrueInterest(ctx context.Context, orderID int64, amount string, date string) error
+	SettleOrder(ctx context.Context, orderID int64, interestPaid string) error
+	RenewOrder(ctx context.Context, order *WealthOrderModel, product *WealthProductModel) (*WealthOrderModel, error)
+}
+
+// WealthProductModel 理财产品模型
+type WealthProductModel struct {
+	ID               int64
+	Title            string
+	Currency         string
+	APY              string
+	Duration         int
+	MinAmount        string
+	MaxAmount        string
+	TotalQuota       string
+	SoldQuota        string
+	Status           int
+	AutoRenewAllowed bool
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+// WealthOrderModel 理财订单模型
+type WealthOrderModel struct {
+	ID                 int64
+	UserID             int64
+	ProductID          int64
+	ProductTitle       string
+	Currency           string
+	Amount             string
+	PrincipalRedeemed  string
+	InterestExpected   string
+	InterestPaid       string
+	InterestAccrued    string
+	StartDate          string
+	EndDate            string
+	LastInterestDate   string
+	AutoRenew          bool
+	Status             int
+	RenewedFromOrderID *int64
+	RenewedToOrderID   *int64
+	RedeemedAt         string
+	RedemptionAmount   string
+	RedemptionType     sql.NullString
+	CreatedAt          string
+	UpdatedAt          string
+}
+
+// Account 账户仓储接口
+type Account interface {
+	GetAccountByUserIDAndCurrency(ctx context.Context, userID int64, currency string) (*AccountModel, error)
+	GetAccountsByUserID(ctx context.Context, userID int64) ([]*AccountModel, error)
+	FreezeBalance(ctx context.Context, accountID int64, amount string) error
+	UnfreezeBalance(ctx context.Context, accountID int64, amount string) error
+	DeductBalance(ctx context.Context, accountID int64, amount string) error
+	AddBalance(ctx context.Context, accountID int64, amount string) error
+}
+
+// AccountModel 账户模型
+type AccountModel struct {
+	ID            int64
+	UserID        int64
+	Type          string
+	Currency      string
+	Balance       string
+	FrozenBalance string
+	Version       int64
+	CreatedAt     string
+	UpdatedAt     string
+}
+
+// Journal 资金流水仓储接口
+type Journal interface {
+	CreateJournalRecord(ctx context.Context, record *JournalModel) error
+}
+
+// JournalModel 资金流水模型
+type JournalModel struct {
+	ID              int64
+	SerialNo        string
+	UserID          int64
+	AccountID       int64
+	Amount          string
+	BalanceSnapshot string
+	BizType         string
+	RefID           *int64
+	CreatedAt       string
+}
+
 // Repository 仓储容器
 type Repository struct {
 	User       User
@@ -78,6 +179,9 @@ type Repository struct {
 	Withdrawal Withdrawal
 	Deposit    Deposit
 	Wallet     Wallet
+	Wealth     Wealth
+	Account    Account
+	Journal    Journal
 }
 
 // Common errors
