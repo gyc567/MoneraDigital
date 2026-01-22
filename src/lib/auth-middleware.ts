@@ -1,7 +1,11 @@
 import jwt from 'jsonwebtoken';
 import { VercelRequest } from '@vercel/node';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev-only';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required. Please set it in your .env file.');
+}
 
 export interface AuthUser {
   userId: number;

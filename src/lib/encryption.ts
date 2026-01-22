@@ -1,14 +1,13 @@
 import crypto from 'crypto';
 import logger from './logger.js';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // 必须是 32 字节 (256 bits)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+if (!ENCRYPTION_KEY) {
+  throw new Error('ENCRYPTION_KEY environment variable is required. Please set it in your .env file. This is used to encrypt sensitive 2FA data.');
+}
 
 export function encrypt(text: string): string {
-  if (!ENCRYPTION_KEY) {
-    logger.error('ENCRYPTION_KEY is missing, returning plain text (UNSAFE!)');
-    return text;
-  }
-
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
   
@@ -19,8 +18,6 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(data: string): string {
-  if (!ENCRYPTION_KEY) return data;
-
   try {
     const buffer = Buffer.from(data, 'base64');
     const iv = buffer.subarray(0, 16);
@@ -32,7 +29,7 @@ export function decrypt(data: string): string {
 
     return decipher.update(text) + decipher.final('utf8');
   } catch (error) {
-    logger.error('Decryption failed');
+    logger.error({ error }, 'Decryption failed');
     throw new Error('Failed to decrypt data');
   }
 }

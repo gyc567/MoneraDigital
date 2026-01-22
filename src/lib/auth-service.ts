@@ -10,8 +10,7 @@ import logger from './logger.js';
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    logger.error('JWT_SECRET environment variable is missing');
-    return 'fallback-secret-for-dev-only';
+    throw new Error('JWT_SECRET environment variable is required');
   }
   return secret;
 };
