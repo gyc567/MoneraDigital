@@ -11,4 +11,23 @@ internal/
 .env.local
 .env.*.local
 playwright.config.ts
+# Build outputs and temporary files
+tmp/
+server/
+dist/
+coverage/
+# Log files
+*.log
+vercel-dev.log
+start_dev_i18n.log
+# Test reports
+2FA_TEST_REPORT.html
+TEST_REPORT_LENDING_FIX.html
+*_TEST_REPORT.html
+*_TEST_REPORT.md
+# Temporary mock/test files
+mock-api-server.mjs
+server.js
+test-2fa-flow.js
+test-2fa-ui.js
 

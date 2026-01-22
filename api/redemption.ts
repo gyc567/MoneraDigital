@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { InMemoryRedemptionRepository } from '../src/lib/redemption/redemption-repository';
-import { RedemptionService } from '../src/lib/redemption/redemption-service';
-import { getProduct } from '../src/lib/redemption/products';
+import { InMemoryRedemptionRepository } from '../src/lib/redemption/redemption-repository.js';
+import { RedemptionService } from '../src/lib/redemption/redemption-service.js';
+import { getProduct } from '../src/lib/redemption/products.js';
 
 const repo = new InMemoryRedemptionRepository();
 const service = new RedemptionService(repo);

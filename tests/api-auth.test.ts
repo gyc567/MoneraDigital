@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import handler from '../api/auth/[...route]';
-import { AuthService } from '../src/lib/auth-service';
-import { TwoFactorService } from '../src/lib/two-factor-service';
-import { db } from '../src/lib/db';
-import { verifyToken } from '../src/lib/auth-middleware';
+import { AuthService } from '../src/lib/auth-service.js';
+import { TwoFactorService } from '../src/lib/two-factor-service.js';
+import { db } from '../src/lib/db.js';
+import { verifyToken } from '../src/lib/auth-middleware.js';
 import { ZodError } from 'zod';
 
 // Mutable state for mock
@@ -16,7 +16,7 @@ beforeEach(() => {
   mockDbState.queryResult = [];
 });
 
-vi.mock('../src/lib/auth-service', () => ({
+vi.mock('../src/lib/auth-service.js', () => ({
   AuthService: {
     login: vi.fn(),
     register: vi.fn(),
@@ -24,14 +24,14 @@ vi.mock('../src/lib/auth-service', () => ({
   },
 }));
 
-vi.mock('../src/lib/two-factor-service', () => ({
+vi.mock('../src/lib/two-factor-service.js', () => ({
   TwoFactorService: {
     setup: vi.fn(),
     enable: vi.fn(),
   },
 }));
 
-vi.mock('../src/lib/db', () => ({
+vi.mock('../src/lib/db.js', () => ({
   db: {
     select: vi.fn().mockImplementation(() => ({
       from: vi.fn().mockImplementation(() => ({
@@ -44,11 +44,11 @@ vi.mock('../src/lib/db', () => ({
   },
 }));
 
-vi.mock('../src/lib/auth-middleware', () => ({
+vi.mock('../src/lib/auth-middleware.js', () => ({
   verifyToken: vi.fn(),
 }));
 
-vi.mock('../src/lib/rate-limit', () => ({
+vi.mock('../src/lib/rate-limit.js', () => ({
   rateLimit: vi.fn().mockResolvedValue(true),
 }));
 

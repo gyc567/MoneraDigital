@@ -1,7 +1,7 @@
-import { InMemoryRedemptionRepository } from './redemption-repository';
-import { RedemptionRecord } from './redemption-model';
-import { getProduct, Product } from './products';
-import { addDays } from './utils';
+import { InMemoryRedemptionRepository } from './redemption-repository.js';
+import { RedemptionRecord } from './redemption-model.js';
+import { getProduct, Product } from './products.js';
+import { addDays } from './utils.js';
 
 export class RedemptionService {
   private repo: InMemoryRedemptionRepository;

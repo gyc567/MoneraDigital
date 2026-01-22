@@ -1,6 +1,6 @@
-import { InMemoryRedemptionRepository } from '../lib/redemption/redemption-repository';
-import { RedemptionService } from '../lib/redemption/redemption-service';
-import { getProduct } from '../lib/redemption/products';
+import { InMemoryRedemptionRepository } from '../lib/redemption/redemption-repository.js';
+import { RedemptionService } from '../lib/redemption/redemption-service.js';
+import { getProduct } from '../lib/redemption/products.js';
 
 // Simple test setup using in-memory repo
 describe('RedemptionService', () => {
