@@ -6,14 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Lock, Smartphone, Globe, CheckCircle2, ShieldAlert, Info } from "lucide-react";
+import { Lock, Smartphone, Globe, CheckCircle2, ShieldAlert, Info, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 
 const Security = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isEnabled, setIsEnabled] = useState(false);
   const [qrCode, setQrCode] = useState("");
+  const [otpauth, setOtpauth] = useState("");
   const [secret, setSecret] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [token, setToken] = useState("");
@@ -21,6 +23,26 @@ const Security = () => {
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [step, setStep] = useState(1); // 1: QR, 2: Backup Codes
   const [open, setOpen] = useState(false);
+  const [isDisabling, setIsDisabling] = useState(false);
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+  const [disableToken, setDisableToken] = useState("");
+
+  useEffect(() => {
+    if (otpauth) {
+      QRCode.toDataURL(otpauth, {
+        margin: 2,
+        width: 400,
+        color: {
+          dark: "#000000",
+          light: "#ffffff"
+        }
+      })
+        .then(url => setQrCode(url))
+        .catch(err => {
+          console.error("Failed to generate QR code:", err);
+        });
+    }
+  }, [otpauth]);
 
   const fetchStatus = async () => {
     try {
@@ -59,6 +81,7 @@ const Security = () => {
       const data = await res.json();
       if (res.ok) {
         setQrCode(data.qrCodeUrl);
+        setOtpauth(data.otpauth);
         setSecret(data.secret);
         setBackupCodes(data.backupCodes);
         setStep(1);
@@ -105,6 +128,36 @@ const Security = () => {
       toast.error(error.message);
     } finally {
       setIsSettingUp(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setIsDisabling(true);
+    try {
+      const authToken = localStorage.getItem("token");
+      const res = await fetch("/api/auth/2fa/disable", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}` 
+        },
+        body: JSON.stringify({ token: disableToken })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(t("dashboard.security.disabled"));
+        setIsEnabled(false);
+        setDisableDialogOpen(false);
+        setDisableToken("");
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      console.error("2FA Disable error:", error);
+      toast.error(error.message);
+    } finally {
+      setIsDisabling(false);
     }
   };
 
@@ -164,15 +217,51 @@ const Security = () => {
                   </div>
                 </div>
 
-                <Dialog open={open} onOpenChange={setOpen}>
+                <div className="flex gap-2">
                   <Button 
                     variant={isEnabled ? "outline" : "default"} 
                     size="sm" 
-                    onClick={isEnabled ? undefined : handleSetup}
-                    disabled={isSettingUp || isLoadingStatus}
+                    onClick={isEnabled ? () => setDisableDialogOpen(true) : handleSetup}
+                    disabled={isSettingUp || isLoadingStatus || isDisabling}
                   >
-                    {isSettingUp ? "..." : (isEnabled ? t("dashboard.security.disable2FA") : t("dashboard.security.enable2FA"))}
+                    {isSettingUp || isDisabling ? "..." : (isEnabled ? t("dashboard.security.disable2FA") : t("dashboard.security.enable2FA"))}
                   </Button>
+                </div>
+
+                <Dialog open={disableDialogOpen} onOpenChange={setDisableDialogOpen}>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>{t("dashboard.security.disable2FA")}</DialogTitle>
+                      <DialogDescription>
+                        {t("dashboard.security.disable2FAConfirm")}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>{t("dashboard.security.enterCode")}</Label>
+                        <Input 
+                          placeholder="000000" 
+                          value={disableToken} 
+                          onChange={(e) => setDisableToken(e.target.value)}
+                          className="text-center text-lg tracking-[0.5em] font-bold"
+                          maxLength={6}
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button 
+                          variant="destructive" 
+                          onClick={handleDisable} 
+                          className="w-full" 
+                          disabled={isDisabling || disableToken.length !== 6}
+                        >
+                          {isDisabling ? t("dashboard.security.verifying") : t("dashboard.security.disable2FA")}
+                        </Button>
+                      </DialogFooter>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={open} onOpenChange={setOpen}>
                   <DialogContent className="sm:max-w-[425px]">
                     <DialogHeader>
                       <DialogTitle>{t("dashboard.security.setup2FA")}</DialogTitle>
@@ -192,7 +281,31 @@ const Security = () => {
                         )}
                         <div className="w-full space-y-2 text-center">
                           <p className="text-xs text-muted-foreground font-medium">{t("dashboard.security.secretKeyManual")}:</p>
-                          <code className="text-xs font-mono bg-secondary px-3 py-1 rounded-full border border-border">{secret}</code>
+                          <div className="flex items-center justify-center gap-2">
+                            <code className="text-xs font-mono bg-secondary px-3 py-1 rounded-full border border-border">{secret}</code>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                navigator.clipboard.writeText(secret);
+                                toast.success(t("common.copied"));
+                              }}
+                            >
+                              <Copy size={14} />
+                            </Button>
+                          </div>
+                          {otpauth && (
+                            <div className="mt-4">
+                              <a 
+                                href={otpauth} 
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                <ExternalLink size={12} />
+                                {t("dashboard.security.openInApp")}
+                              </a>
+                            </div>
+                          )}
                         </div>
                         <Button onClick={() => setStep(2)} className="w-full">{t("dashboard.security.nextBackupCodes")}</Button>
                       </div>
