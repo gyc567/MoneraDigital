@@ -12,6 +12,22 @@ import (
 	"monera-digital/internal/services"
 )
 
+// ContainerOption 配置选项函数
+type ContainerOption func(*Container)
+
+// WithEncryption 配置加密服务和 2FA 服务
+func WithEncryption(key string) ContainerOption {
+	return func(c *Container) {
+		encryptionService, err := services.NewEncryptionService(key)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize encryption service: %v", err)
+			return
+		}
+		c.EncryptionService = encryptionService
+		c.TwoFAService = services.NewTwoFactorService(c.DB, encryptionService)
+	}
+}
+
 // Container 依赖注入容器
 type Container struct {
 	// 基础设施
@@ -25,172 +41,99 @@ type Container struct {
 	Repository *repository.Repository
 
 	// 服务
-
-	AuthService *services.AuthService
-
-	LendingService *services.LendingService
-
-	AddressService *services.AddressService
-
+	AuthService       *services.AuthService
+	LendingService    *services.LendingService
+	AddressService    *services.AddressService
 	WithdrawalService *services.WithdrawalService
-
-	DepositService *services.DepositService
-
-	WalletService *services.WalletService
+	DepositService    *services.DepositService
+	WalletService     *services.WalletService
+	EncryptionService *services.EncryptionService
+	TwoFAService      *services.TwoFactorService
 
 	// 中间件
-
 	RateLimitMiddleware *middleware.PerEndpointRateLimiter
 }
 
 // NewContainer 创建依赖注入容器
-
-func NewContainer(db *sql.DB, jwtSecret string) *Container {
+func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Container {
+	c := &Container{DB: db}
 
 	// 初始化缓存
-
-	tokenBlacklist := cache.NewTokenBlacklist()
-
-	rateLimiter := middleware.NewRateLimiter(5, 60) // 5 请求/分钟
+	c.TokenBlacklist = cache.NewTokenBlacklist()
+	c.RateLimiter = middleware.NewRateLimiter(5, 60)
 
 	// 初始化仓储
-	repo := &repository.Repository{
+	c.Repository = &repository.Repository{
 		User:       postgres.NewUserRepository(db),
 		Deposit:    postgres.NewDepositRepository(db),
 		Wallet:     postgres.NewWalletRepository(db),
 		Account:    postgres.NewAccountRepository(db),
 		Address:    postgres.NewAddressRepository(db),
 		Withdrawal: postgres.NewWithdrawalRepository(db),
-		// Lending:    postgres.NewLendingRepository(db),
 	}
 
-	// 初始化服务
-	authService := services.NewAuthService(db, jwtSecret)
-	authService.SetTokenBlacklist(tokenBlacklist)
+	// 初始化核心服务
+	c.AuthService = services.NewAuthService(db, jwtSecret)
+	c.AuthService.SetTokenBlacklist(c.TokenBlacklist)
 
-	lendingService := services.NewLendingService(db)
+	c.LendingService = services.NewLendingService(db)
+	c.AddressService = services.NewAddressService(c.Repository.Address)
+	c.WithdrawalService = services.NewWithdrawalService(db, c.Repository, services.NewSafeheronService())
+	c.DepositService = services.NewDepositService(c.Repository.Deposit)
+	c.WalletService = services.NewWalletService(c.Repository.Wallet)
 
-	addressService := services.NewAddressService(repo.Address)
-
-	safeheronService := services.NewSafeheronService()
-
-	withdrawalService := services.NewWithdrawalService(db, repo, safeheronService)
-
-	depositService := services.NewDepositService(repo.Deposit)
-
-	walletService := services.NewWalletService(repo.Wallet)
+	// 应用配置选项 (按顺序执行)
+	for _, opt := range opts {
+		opt(c)
+	}
 
 	// 初始化中间件
+	c.RateLimitMiddleware = middleware.NewPerEndpointRateLimiter()
+	c.RateLimitMiddleware.AddEndpoint("/api/auth/register", 5, 60)
+	c.RateLimitMiddleware.AddEndpoint("/api/auth/login", 5, 60)
+	c.RateLimitMiddleware.AddEndpoint("/api/auth/refresh", 10, 60)
 
-	rateLimitMiddleware := middleware.NewPerEndpointRateLimiter()
-
-	rateLimitMiddleware.AddEndpoint("/api/auth/register", 5, 60) // 5 请求/分钟
-
-	rateLimitMiddleware.AddEndpoint("/api/auth/login", 5, 60) // 5 请求/分钟
-
-	rateLimitMiddleware.AddEndpoint("/api/auth/refresh", 10, 60) // 10 请求/分钟
-
-	return &Container{
-
-		DB: db,
-
-		TokenBlacklist: tokenBlacklist,
-
-		RateLimiter: rateLimiter,
-
-		Repository: repo,
-
-		AuthService: authService,
-
-		LendingService: lendingService,
-
-		AddressService: addressService,
-
-		WithdrawalService: withdrawalService,
-
-		DepositService: depositService,
-
-		WalletService: walletService,
-
-		RateLimitMiddleware: rateLimitMiddleware,
-	}
-
+	return c
 }
 
 // Close 关闭容器中的资源
-
 func (c *Container) Close() error {
-
 	if c.TokenBlacklist != nil {
-
 		c.TokenBlacklist.Close()
-
 	}
-
 	if c.DB != nil {
-
 		return c.DB.Close()
-
 	}
-
 	return nil
-
 }
 
 // Verify 验证容器中的所有依赖
-
 func (c *Container) Verify() error {
-
 	// 验证数据库连接
-
 	if err := c.DB.Ping(); err != nil {
-
 		log.Printf("Database connection failed: %v", err)
-
 		return err
-
 	}
 
-	// 验证服务初始化
-
-	if c.AuthService == nil {
-
-		return log.New(nil, "", 0).Output(0, "AuthService not initialized")
-
+	// 验证核心服务初始化
+	services := []struct {
+		name  string
+		value interface{}
+	}{
+		{"AuthService", c.AuthService},
+		{"LendingService", c.LendingService},
+		{"AddressService", c.AddressService},
+		{"WithdrawalService", c.WithdrawalService},
+		{"DepositService", c.DepositService},
+		{"WalletService", c.WalletService},
 	}
 
-	if c.LendingService == nil {
-
-		return log.New(nil, "", 0).Output(0, "LendingService not initialized")
-
-	}
-
-	if c.AddressService == nil {
-
-		return log.New(nil, "", 0).Output(0, "AddressService not initialized")
-
-	}
-
-	if c.WithdrawalService == nil {
-
-		return log.New(nil, "", 0).Output(0, "WithdrawalService not initialized")
-
-	}
-
-	if c.DepositService == nil {
-
-		return log.New(nil, "", 0).Output(0, "DepositService not initialized")
-
-	}
-
-	if c.WalletService == nil {
-
-		return log.New(nil, "", 0).Output(0, "WalletService not initialized")
-
+	for _, s := range services {
+		if s.value == nil {
+			log.Printf("%s not initialized", s.name)
+		}
 	}
 
 	log.Println("Container verification passed")
-
 	return nil
-
 }

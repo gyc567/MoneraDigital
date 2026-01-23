@@ -137,18 +137,6 @@ func (h *Handler) Logout(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "Logout not yet implemented"})
 }
 
-func (h *Handler) Setup2FA(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Setup 2FA endpoint"})
-}
-
-func (h *Handler) Enable2FA(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Enable 2FA endpoint"})
-}
-
-func (h *Handler) Verify2FALogin(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "Verify 2FA login endpoint"})
-}
-
 // Lending handlers
 
 func (h *Handler) ApplyForLending(c *gin.Context) {

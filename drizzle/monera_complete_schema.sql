@@ -1,6 +1,6 @@
 -- ====================================================================
 -- Monera Digital - Complete Database Schema
--- Generated from drizzle-orm schema
+-- Consolidated from: drizzle/schema.ts, src/db/schema.ts, Go migrations
 -- Target: PostgreSQL (Neon Database)
 -- ====================================================================
 
@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
 -- ====================================================================
 -- LEGACY/SIMPLE LENDING
 -- ====================================================================
@@ -48,6 +50,10 @@ CREATE TABLE IF NOT EXISTS lending_positions (
   end_date TIMESTAMP NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_lending_positions_user_id ON lending_positions(user_id);
+CREATE INDEX IF NOT EXISTS idx_lending_positions_asset ON lending_positions(asset);
+CREATE INDEX IF NOT EXISTS idx_lending_positions_status ON lending_positions(status);
+
 -- ====================================================================
 -- WALLET & ADDRESSES
 -- ====================================================================
@@ -64,6 +70,8 @@ CREATE TABLE IF NOT EXISTS withdrawal_addresses (
   verified_at TIMESTAMP,
   deactivated_at TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_addresses_user_id ON withdrawal_addresses(user_id);
 
 CREATE TABLE IF NOT EXISTS address_verifications (
   id SERIAL PRIMARY KEY,
@@ -95,6 +103,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   chain TEXT
 );
 
+CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON withdrawals(user_id);
+
 CREATE TABLE IF NOT EXISTS deposits (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -109,18 +119,7 @@ CREATE TABLE IF NOT EXISTS deposits (
   confirmed_at TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS wallet_creation_requests (
-  id SERIAL PRIMARY KEY,
-  request_id TEXT NOT NULL UNIQUE,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  status wallet_creation_status DEFAULT 'CREATING' NOT NULL,
-  wallet_id TEXT,
-  address TEXT,
-  addresses TEXT,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
+CREATE INDEX IF NOT EXISTS idx_deposits_user_id ON deposits(user_id);
 
 -- ====================================================================
 -- NEW UNIFIED SCHEMA (From SQL Design)
@@ -139,6 +138,12 @@ CREATE TABLE IF NOT EXISTS account (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_account_user_id ON account(user_id);
+CREATE INDEX IF NOT EXISTS idx_account_type ON account(type);
+CREATE INDEX IF NOT EXISTS idx_account_frozen_balance ON account(user_id, frozen_balance);
+CREATE INDEX IF NOT EXISTS idx_account_updated_at ON account(updated_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_type_currency ON account(user_id, type, currency);
+
 -- 1.2 Account Journal
 CREATE TABLE IF NOT EXISTS account_journal (
   id BIGSERIAL PRIMARY KEY,
@@ -151,6 +156,12 @@ CREATE TABLE IF NOT EXISTS account_journal (
   ref_id BIGINT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_account_journal_user_id ON account_journal(user_id);
+CREATE INDEX IF NOT EXISTS idx_account_journal_account_id ON account_journal(account_id);
+CREATE INDEX IF NOT EXISTS idx_account_journal_biz_type ON account_journal(biz_type);
+CREATE INDEX IF NOT EXISTS idx_account_journal_ref_id ON account_journal(ref_id);
+CREATE INDEX IF NOT EXISTS idx_account_journal_created_at ON account_journal(created_at);
 
 -- 2.1 Wealth Product
 CREATE TABLE IF NOT EXISTS wealth_product (
@@ -168,6 +179,9 @@ CREATE TABLE IF NOT EXISTS wealth_product (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_wealth_product_currency ON wealth_product(currency);
+CREATE INDEX IF NOT EXISTS idx_wealth_product_status ON wealth_product(status);
 
 -- 2.2 Wealth Order
 CREATE TABLE IF NOT EXISTS wealth_order (
@@ -193,6 +207,12 @@ CREATE TABLE IF NOT EXISTS wealth_order (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_wealth_order_user_id ON wealth_order(user_id);
+CREATE INDEX IF NOT EXISTS idx_wealth_order_product_id ON wealth_order(product_id);
+CREATE INDEX IF NOT EXISTS idx_wealth_order_end_date ON wealth_order(end_date);
+CREATE INDEX IF NOT EXISTS idx_wealth_order_status ON wealth_order(status);
+CREATE INDEX IF NOT EXISTS idx_wealth_order_renewed_from ON wealth_order(renewed_from_order_id);
+
 -- 2.3 Wealth Interest Record
 CREATE TABLE IF NOT EXISTS wealth_interest_record (
   id BIGSERIAL PRIMARY KEY,
@@ -202,6 +222,9 @@ CREATE TABLE IF NOT EXISTS wealth_interest_record (
   date DATE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_wealth_interest_record_order_id ON wealth_interest_record(order_id);
+CREATE INDEX IF NOT EXISTS idx_wealth_interest_record_date ON wealth_interest_record(date);
 
 -- 3.1 Idempotency Record
 CREATE TABLE IF NOT EXISTS idempotency_record (
@@ -217,11 +240,33 @@ CREATE TABLE IF NOT EXISTS idempotency_record (
   ttl_expire_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_idempotency_record_request_id ON idempotency_record(request_id);
+CREATE INDEX IF NOT EXISTS idx_idempotency_record_ttl ON idempotency_record(ttl_expire_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_idempotency ON idempotency_record(user_id, request_id, biz_type);
+
+-- 3.2 Wallet Creation Request
+CREATE TABLE IF NOT EXISTS wallet_creation_request (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  request_id TEXT NOT NULL,
+  status TEXT DEFAULT 'PENDING' NOT NULL,
+  safeheron_wallet_id TEXT,
+  coin_address TEXT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0 NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_creation_request_user_id ON wallet_creation_request(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_user_id ON wallet_creation_request(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_request_id ON wallet_creation_request(request_id);
+
 -- 3.3 Transfer Record
 CREATE TABLE IF NOT EXISTS transfer_record (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL,
-  transfer_id TEXT NOT NULL UNIQUE,
+  transfer_id TEXT NOT NULL,
   from_account_id BIGINT NOT NULL,
   to_account_id BIGINT NOT NULL,
   amount NUMERIC(65, 30) NOT NULL,
@@ -229,6 +274,10 @@ CREATE TABLE IF NOT EXISTS transfer_record (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   completed_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE INDEX IF NOT EXISTS idx_transfer_record_user_id ON transfer_record(user_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_record_transfer_id ON transfer_record(transfer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_transfer_record_transfer_id ON transfer_record(transfer_id);
 
 -- 3.4 Withdrawal Address Whitelist
 CREATE TABLE IF NOT EXISTS withdrawal_address_whitelist (
@@ -245,16 +294,22 @@ CREATE TABLE IF NOT EXISTS withdrawal_address_whitelist (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_withdrawal_address_whitelist_user_id ON withdrawal_address_whitelist(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_withdrawal_address_whitelist ON withdrawal_address_whitelist(user_id, wallet_address);
+
 -- 3.5 Withdrawal Request
 CREATE TABLE IF NOT EXISTS withdrawal_request (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL,
-  request_id TEXT NOT NULL UNIQUE,
+  request_id TEXT NOT NULL,
   status TEXT DEFAULT 'PROCESSING' NOT NULL,
   error_code TEXT,
   error_message TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_request_request_id ON withdrawal_request(request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_withdrawal_request_request_id ON withdrawal_request(request_id);
 
 -- 3.6 Withdrawal Order
 CREATE TABLE IF NOT EXISTS withdrawal_order (
@@ -277,6 +332,10 @@ CREATE TABLE IF NOT EXISTS withdrawal_order (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_withdrawal_order_tx_hash ON withdrawal_order(transaction_hash);
+CREATE INDEX IF NOT EXISTS idx_withdrawal_order_user_id ON withdrawal_order(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_withdrawal_order_safeheron ON withdrawal_order(safeheron_order_id);
+
 -- 3.7 Withdrawal Freeze Log
 CREATE TABLE IF NOT EXISTS withdrawal_freeze_log (
   id BIGSERIAL PRIMARY KEY,
@@ -287,6 +346,41 @@ CREATE TABLE IF NOT EXISTS withdrawal_freeze_log (
   reason TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_freeze_log_user_id ON withdrawal_freeze_log(user_id);
+
+-- 3.8 Withdrawal Verification
+CREATE TABLE IF NOT EXISTS withdrawal_verification (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  withdrawal_order_id INTEGER NOT NULL,
+  verification_method TEXT NOT NULL,
+  verification_code TEXT,
+  attempts INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 3,
+  verified BOOLEAN DEFAULT FALSE,
+  verified_at TIMESTAMP,
+  expires_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawal_verification_user_id ON withdrawal_verification(user_id);
+
+-- 3.9 Wallet Creation Requests (Legacy)
+CREATE TABLE IF NOT EXISTS wallet_creation_requests (
+  id SERIAL PRIMARY KEY,
+  request_id TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  status wallet_creation_status DEFAULT 'CREATING' NOT NULL,
+  wallet_id TEXT,
+  address TEXT,
+  addresses TEXT,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_creation_requests_user_id ON wallet_creation_requests(user_id);
 
 -- 4.1 Wealth Product Approval
 CREATE TABLE IF NOT EXISTS wealth_product_approval (
@@ -307,6 +401,8 @@ CREATE TABLE IF NOT EXISTS wealth_product_approval (
   admin_comment TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wealth_product_approval_product_id ON wealth_product_approval(product_id);
 
 -- 4.2 Account Adjustment
 CREATE TABLE IF NOT EXISTS account_adjustment (
@@ -342,6 +438,17 @@ CREATE TABLE IF NOT EXISTS audit_trail (
   status TEXT,
   error_message TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_trail_operator ON audit_trail(operator_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_action ON audit_trail(action, created_at);
+
+-- 4.4 Admin Users
+CREATE TABLE IF NOT EXISTS admin_users (
+  id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- 5.1 Reconciliation Log
@@ -401,24 +508,28 @@ CREATE TABLE IF NOT EXISTS business_freeze_status (
   is_frozen BOOLEAN DEFAULT FALSE NOT NULL,
   freeze_reason TEXT,
   frozen_at TIMESTAMP WITH TIME ZONE,
-  unfrozen_at TIMESTAMP WITH TIME ZONE
+  unfrozen_at TIMESTAMP WITH TIME ZONE,
+  CONSTRAINT chk_id CHECK (id = 1)
 );
 
 -- ====================================================================
--- INDEXES
+-- VIEWS
 -- ====================================================================
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_lending_positions_user_id ON lending_positions(user_id);
-CREATE INDEX IF NOT EXISTS idx_withdrawal_addresses_user_id ON withdrawal_addresses(user_id);
-CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON withdrawals(user_id);
-CREATE INDEX IF NOT EXISTS idx_deposits_user_id ON deposits(user_id);
-CREATE INDEX IF NOT EXISTS idx_wallet_creation_requests_user_id ON wallet_creation_requests(user_id);
-CREATE INDEX IF NOT EXISTS idx_account_user_id ON account(user_id);
-CREATE INDEX IF NOT EXISTS idx_account_journal_user_id ON account_journal(user_id);
-CREATE INDEX IF NOT EXISTS idx_wealth_order_user_id ON wealth_order(user_id);
-CREATE INDEX IF NOT EXISTS idx_withdrawal_order_user_id ON withdrawal_order(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_trail_operator_id ON audit_trail(operator_id);
+CREATE OR REPLACE VIEW v_account_available AS
+SELECT
+  id,
+  user_id,
+  type,
+  currency,
+  balance,
+  frozen_balance,
+  balance - frozen_balance AS available_balance,
+  version,
+  created_at,
+  updated_at
+FROM account
+WHERE user_id > 0;
 
 -- ====================================================================
 -- COMMENTS
@@ -432,7 +543,25 @@ COMMENT ON TABLE deposits IS 'Deposit transaction records';
 COMMENT ON TABLE account IS 'Unified account table for wealth management';
 COMMENT ON TABLE wealth_product IS 'Wealth management products';
 COMMENT ON TABLE wealth_order IS 'Wealth product purchase orders';
+COMMENT ON TABLE wealth_interest_record IS 'Wealth interest accrual and payment records';
+COMMENT ON TABLE idempotency_record IS 'Idempotency prevention for API requests';
+COMMENT ON TABLE transfer_record IS 'Account transfer records';
+COMMENT ON TABLE withdrawal_address_whitelist IS 'Approved withdrawal addresses';
+COMMENT ON TABLE withdrawal_request IS 'Withdrawal request tracking';
+COMMENT ON TABLE withdrawal_order IS 'Withdrawal execution orders';
+COMMENT ON TABLE withdrawal_freeze_log IS 'Withdrawal balance freeze records';
+COMMENT ON TABLE withdrawal_verification IS 'Withdrawal verification codes and attempts';
+COMMENT ON TABLE wallet_creation_requests IS 'Wallet creation requests';
+COMMENT ON TABLE wealth_product_approval IS 'Wealth product approval workflow';
+COMMENT ON TABLE account_adjustment IS 'Manual account adjustments';
 COMMENT ON TABLE audit_trail IS 'Comprehensive audit trail for all operations';
+COMMENT ON TABLE admin_users IS 'Admin user accounts';
+COMMENT ON TABLE reconciliation_log IS 'Reconciliation check logs';
+COMMENT ON TABLE reconciliation_alert_log IS 'Reconciliation alert logs';
+COMMENT ON TABLE reconciliation_error_log IS 'Reconciliation error records';
+COMMENT ON TABLE manual_review_queue IS 'Manual review queue items';
+COMMENT ON TABLE business_freeze_status IS 'Global business freeze status';
+COMMENT ON VIEW v_account_available IS 'Available account balance view';
 
 -- ====================================================================
 -- END OF SCHEMA

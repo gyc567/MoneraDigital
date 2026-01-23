@@ -53,7 +53,8 @@ func main() {
 	logger.Info("Database connected successfully")
 
 	// Initialize container
-	cont := container.NewContainer(database, cfg.JWTSecret)
+	cont := container.NewContainer(database, cfg.JWTSecret,
+		container.WithEncryption(cfg.EncryptionKey))
 
 	// Verify container
 	if err := cont.Verify(); err != nil {

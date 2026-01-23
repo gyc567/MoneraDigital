@@ -37,6 +37,9 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		cont.WealthService,
 	)
 
+	// Create 2FA handler
+	twofaHandler := handlers.NewTwoFAHandler(cont.TwoFAService)
+
 	// Account System Client
 	accountClient := account.NewClient("http://localhost:8081") // TODO: Use config
 	accountHandler := &handlers.AccountHandler{Client: accountClient}
@@ -50,9 +53,14 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/login", h.Login)
 			auth.POST("/refresh", h.RefreshToken)
 			auth.POST("/logout", h.Logout)
-			auth.POST("/2fa/setup", h.Setup2FA)
-			auth.POST("/2fa/enable", h.Enable2FA)
-			auth.POST("/2fa/verify-login", h.Verify2FALogin)
+			twofa := auth.Group("/2fa")
+			{
+				twofa.POST("/setup", twofaHandler.Setup2FA)
+				twofa.POST("/enable", twofaHandler.Enable2FA)
+				twofa.POST("/verify", twofaHandler.Verify2FA)
+				twofa.POST("/disable", twofaHandler.Disable2FA)
+				twofa.GET("/status", twofaHandler.Get2FAStatus)
+			}
 		}
 
 		webhooks := public.Group("/webhooks")

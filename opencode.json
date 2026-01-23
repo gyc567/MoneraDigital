@@ -1,0 +1,378 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-5",
+  "small_model": "anthropic/claude-haiku-4-5",
+  "autoupdate": true,
+  "theme": "opencode",
+  "share": "manual",
+  
+  "instructions": [
+    ".opencode/rules/coding-style.md",
+    ".opencode/rules/security.md",
+    ".opencode/rules/testing.md",
+    ".opencode/rules/git-workflow.md",
+    ".opencode/rules/agents.md",
+    ".opencode/rules/performance.md",
+    ".opencode/rules/hooks.md",
+    ".opencode/rules/patterns.md"
+  ],
+  
+  "default_agent": "build",
+  
+  "tui": {
+    "scroll_speed": 3,
+    "scroll_acceleration": {
+      "enabled": true
+    },
+    "diff_style": "auto"
+  },
+  
+  "server": {
+    "port": 4096,
+    "hostname": "0.0.0.0",
+    "mdns": true
+  },
+  
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      ".git/**",
+      ".next/**"
+    ]
+  },
+  
+  "permission": {
+    "edit": "ask",
+    "bash": "ask",
+    "Write": "ask"
+  },
+  
+  "formatter": {
+    "prettier": {
+      "disabled": false,
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".json", ".md"]
+    }
+  },
+  
+  "agent": {
+    "planner": {
+      "description": "Implementation planning specialist - restate requirements, identify risks, create step-by-step plans. WAIT for user confirmation before touching code.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a senior software planner. Your role is to:\n1. Restate requirements clearly\n2. Break down implementation into phases\n3. Identify dependencies and risks\n4. Create actionable steps\n5. WAIT for user confirmation before any code changes\n\nUse: /plan command to invoke",
+      "tools": {
+        "Read": true,
+        "Grep": true,
+        "Glob": true,
+        "Write": false,
+        "Edit": false,
+        "Bash": false
+      }
+    },
+    
+    "architect": {
+      "description": "Software architecture specialist - system design, scalability, technical decisions. Use PROACTIVELY for new features, refactoring, or architectural decisions.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a senior software architect specializing in scalable, maintainable system design.\n\nYour responsibilities:\n- Design system architecture for new features\n- Evaluate technical trade-offs\n- Recommend patterns and best practices\n- Identify scalability bottlenecks\n- Create Architecture Decision Records (ADRs)\n\nReview process:\n1. Current state analysis\n2. Requirements gathering\n3. Design proposal with trade-offs\n4. Final recommendations",
+      "tools": {
+        "Read": true,
+        "Grep": true,
+        "Glob": true,
+        "Write": false,
+        "Edit": false,
+        "Bash": false
+      }
+    },
+    
+    "tdd-guide": {
+      "description": "Test-driven development specialist - enforces TDD with 80%+ coverage. Use for new features, bug fixes, refactoring.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a TDD expert. Enforce:\n1. Tests BEFORE code (RED phase)\n2. Minimal implementation to pass tests (GREEN phase)\n3. Refactor while keeping tests green (IMPROVE phase)\n\nCoverage requirements:\n- Minimum 80% coverage (unit + integration + E2E)\n- All edge cases covered\n- Error scenarios tested\n\nTest types:\n- Unit tests for individual functions\n- Integration tests for APIs\n- E2E tests for critical user flows",
+      "tools": {
+        "Read": true,
+        "Write": true,
+        "Edit": true,
+        "Bash": true,
+        "Grep": true,
+        "Glob": true
+      }
+    },
+    
+    "code-reviewer": {
+      "description": "Quality and security code review - reviews code for best practices, maintainability, and potential issues. Use AFTER writing code.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a senior code reviewer. Focus on:\n- Code quality and readability\n- Security vulnerabilities\n- Performance issues\n- Maintainability\n- Consistency with project patterns\n- Error handling completeness\n\nAlways use multiple perspectives:\n- Factual reviewer\n- Senior engineer\n- Security expert\n- Consistency reviewer",
+      "tools": {
+        "Read": true,
+        "Grep": true,
+        "Glob": true,
+        "Bash": true,
+        "Write": false,
+        "Edit": false
+      }
+    },
+    
+    "security-reviewer": {
+      "description": "Security vulnerability analysis - audits code for security issues. Use for auth, payment, PII, or before commits.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a security expert. Audit for:\n- Authentication/authorization flaws\n- Injection vulnerabilities (SQL, XSS, CSRF)\n- Sensitive data exposure\n- Cryptographic weaknesses\n- Access control issues\n- Third-party dependency risks\n\nSecurity principles:\n- Defense in depth\n- Principle of least privilege\n- Secure by default",
+      "tools": {
+        "Read": true,
+        "Grep": true,
+        "Glob": true,
+        "Write": false,
+        "Edit": false,
+        "Bash": false
+      }
+    },
+    
+    "build-error-resolver": {
+      "description": "Build and TypeScript error resolution specialist. Use when build fails. Minimal diffs, no architectural changes.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are an expert at fixing build errors quickly. Focus on:\n- TypeScript compilation errors\n- Build failures\n- Import/module resolution issues\n- Configuration errors\n\nStrategy:\n1. Collect ALL errors\n2. Categorize by type\n3. Fix with minimal changes (1-5% of file)\n4. Verify build passes\n5. NEVER refactor architecture\n\nCommon fixes:\n- Add type annotations\n- Fix imports\n- Add null checks\n- Install missing dependencies",
+      "tools": {
+        "Read": true,
+        "Write": true,
+        "Edit": true,
+        "Bash": true,
+        "Grep": true,
+        "Glob": true
+      }
+    },
+    
+    "e2e-runner": {
+      "description": "Playwright E2E testing specialist - creates and runs end-to-end tests for critical user flows.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are an E2E testing expert using Playwright. Create tests for:\n- Critical user workflows\n- Complete user journeys\n- Browser automation scenarios\n- UI interaction flows\n\nBest practices:\n- Use semantic selectors\n- Test one thing per test\n- Handle async operations properly\n- Clean up after tests\n- Independent, isolated tests",
+      "tools": {
+        "Read": true,
+        "Write": true,
+        "Edit": true,
+        "Bash": true,
+        "Grep": true,
+        "Glob": true
+      }
+    },
+    
+    "refactor-cleaner": {
+      "description": "Dead code cleanup and refactoring specialist. Use for code maintenance, removing unused code.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a refactoring expert. Focus on:\n- Removing dead code\n- Improving code organization\n- Extracting utilities\n- Reducing complexity\n- Improving readability\n\nProcess:\n1. Identify dead/unused code\n2. Extract common utilities\n3. Simplify complex logic\n4. Improve naming\n5. Ensure tests still pass",
+      "tools": {
+        "Read": true,
+        "Write": true,
+        "Edit": true,
+        "Bash": true,
+        "Grep": true,
+        "Glob": true
+      }
+    },
+    
+    "doc-updater": {
+      "description": "Documentation synchronization specialist - keeps docs in sync with code changes.",
+      "model": "anthropic/claude-sonnet-4-5",
+      "prompt": "You are a documentation expert. Ensure:\n- README.md stays current\n- API documentation matches implementation\n- Code comments explain WHY not WHAT\n- Examples work and are accurate\n- Architecture docs reflect current state",
+      "tools": {
+        "Read": true,
+        "Write": true,
+        "Edit": true,
+        "Grep": true,
+        "Glob": true,
+        "Bash": false
+      }
+    }
+  },
+  
+  "command": {
+    "plan": {
+      "template": "Restate requirements, identify risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.\n\nOutput format:\n1. Requirements restatement\n2. Implementation phases\n3. Dependencies\n4. Risk assessment\n5. Complexity estimate\n6. WAITING FOR CONFIRMATION",
+      "description": "Create implementation plan before coding",
+      "agent": "planner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "tdd": {
+      "template": "Implement feature using test-driven development:\n1. Write user journeys and test cases\n2. Write failing tests (RED)\n3. Implement minimal code (GREEN)\n4. Refactor (IMPROVE)\n5. Verify 80%+ coverage\n\nFocus on: Unit tests, integration tests, E2E tests",
+      "description": "Test-driven development workflow",
+      "agent": "tdd-guide",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "e2e": {
+      "template": "Generate Playwright E2E tests for:\n1. Critical user flows\n2. Complete workflows\n3. Browser automation\n\nInclude: Proper selectors, async handling, assertions",
+      "description": "Generate E2E tests with Playwright",
+      "agent": "e2e-runner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "code-review": {
+      "template": "Review code for:\n1. Quality and readability\n2. Security vulnerabilities\n3. Performance issues\n4. Maintainability\n5. Error handling\n6. Consistency\n\nUse multiple reviewer perspectives",
+      "description": "Comprehensive code review",
+      "agent": "code-reviewer",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "build-fix": {
+      "template": "Fix build errors with minimal changes:\n1. Collect all errors\n2. Categorize by type\n3. Fix with smallest possible diffs\n4. Verify build passes\n\nCRITICAL: No architectural changes, no refactoring",
+      "description": "Fix build and TypeScript errors",
+      "agent": "build-error-resolver",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "refactor-clean": {
+      "template": "Clean up dead code and refactor:\n1. Find unused code\n2. Extract common utilities\n3. Simplify complex logic\n4. Improve naming\n5. Verify tests pass",
+      "description": "Dead code cleanup and refactoring",
+      "agent": "refactor-cleaner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "orchestrate": {
+      "template": "Execute sequential agent workflow:\n- feature: planner -> tdd-guide -> code-reviewer -> security-reviewer\n- bugfix: explorer -> tdd-guide -> code-reviewer\n- refactor: architect -> code-reviewer -> tdd-guide\n- security: security-reviewer -> code-reviewer -> architect\n\nCreate handoff documents between agents",
+      "description": "Sequential agent workflow for complex tasks",
+      "agent": "planner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "checkpoint": {
+      "template": "Save verification state:\n1. Current progress\n2. Test results\n3. Files modified\n4. Open questions\n5. Next steps\n\nUseful for complex multi-session tasks",
+      "description": "Save verification state",
+      "agent": "planner",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    
+    "verify": {
+      "template": "Run verification loop:\n1. Execute test suite\n2. Check coverage (80%+ required)\n3. Run linter\n4. Verify build\n5. Report pass/fail with evidence",
+      "description": "Run verification loop",
+      "agent": "build-error-resolver",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "test-coverage": {
+      "template": "Run test coverage report:\n1. Execute test suite with coverage\n2. Verify 80%+ coverage achieved\n3. Identify coverage gaps\n4. Suggest tests for uncovered areas",
+      "description": "Check test coverage",
+      "agent": "tdd-guide",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    
+    "eval": {
+      "template": "Run evaluation harness:\n1. Define success criteria\n2. Execute tests\n3. Measure pass@k metrics\n4. Generate eval report\n5. Identify areas for improvement",
+      "description": "Run evaluation tests",
+      "agent": "planner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "learn": {
+      "template": "Extract patterns from current session:\n1. Identify reusable patterns\n2. Document best practices\n3. Create skill or agent\n4. Save to skills directory",
+      "description": "Extract patterns mid-session",
+      "agent": "planner",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "update-docs": {
+      "template": "Update documentation:\n1. Review current docs\n2. Identify outdated sections\n3. Update to match implementation\n4. Verify examples work",
+      "description": "Update documentation",
+      "agent": "doc-updater",
+      "model": "anthropic/claude-sonnet-4-5"
+    },
+    
+    "update-codemaps": {
+      "template": "Update code maps:\n1. Analyze codebase structure\n2. Update component relationships\n3. Document dependencies\n4. Generate new code maps",
+      "description": "Update code structure maps",
+      "agent": "planner",
+      "model": "anthropic/claude-haiku-4-5"
+    }
+  },
+  
+  "mcp": {
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "environment": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_PAT}"
+      },
+      "enabled": true
+    },
+    
+    "supabase": {
+      "type": "local",
+      "command": ["npx", "-y", "@supabase/mcp-server-supabase@latest", "--project-ref=${env:SUPABASE_PROJECT_REF}"],
+      "enabled": true
+    },
+    
+    "memory": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    
+    "sequential-thinking": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "enabled": true
+    },
+    
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@context7/mcp-server"],
+      "enabled": true
+    },
+    
+    "filesystem": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "${env:PROJECT_PATHS}"],
+      "enabled": false
+    },
+    
+    "firecrawl": {
+      "type": "local",
+      "command": ["npx", "-y", "firecrawl-mcp"],
+      "environment": {
+        "FIRECRAWL_API_KEY": "${env:FIRECRAWL_API_KEY}"
+      },
+      "enabled": false
+    },
+    
+    "vercel": {
+      "type": "remote",
+      "url": "https://mcp.vercel.com",
+      "enabled": false
+    },
+    
+    "railway": {
+      "type": "local",
+      "command": ["npx", "-y", "@railway/mcp-server"],
+      "enabled": false
+    },
+    
+    "clickhouse": {
+      "type": "remote",
+      "url": "https://mcp.clickhouse.cloud/mcp",
+      "enabled": false
+    },
+    
+    "cloudflare-workers-builds": {
+      "type": "remote",
+      "url": "https://builds.mcp.cloudflare.com/mcp",
+      "enabled": false
+    },
+    
+    "magic": {
+      "type": "local",
+      "command": ["npx", "-y", "@magicuidesign/mcp@latest"],
+      "enabled": false
+    }
+  },
+  
+  "plugin": [],
+  
+  "experimental": {
+    "parallel_agents": true,
+    "memory_persistence": true,
+    "continuous_learning": true
+  }
+}
