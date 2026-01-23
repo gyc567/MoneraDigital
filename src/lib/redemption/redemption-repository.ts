@@ -1,4 +1,4 @@
-import { RedemptionRecord } from './redemption-model';
+import { RedemptionRecord } from './redemption-model.js';
 
 export interface IRedemptionRepository {
   create(record: RedemptionRecord): Promise< RedemptionRecord >;

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import handler from '../api/wallet/[...route]';
-import { WalletService } from '../src/lib/wallet-service';
-import { verifyToken } from '../src/lib/auth-middleware';
+import { WalletService } from '../src/lib/wallet-service.js';
+import { verifyToken } from '../src/lib/auth-middleware.js';
 
-vi.mock('../src/lib/wallet-service');
-vi.mock('../src/lib/auth-middleware');
-vi.mock('../src/lib/rate-limit', () => ({
+vi.mock('../src/lib/wallet-service.js');
+vi.mock('../src/lib/auth-middleware.js');
+vi.mock('../src/lib/rate-limit.js', () => ({
   rateLimit: vi.fn().mockResolvedValue(true)
 }));
 
