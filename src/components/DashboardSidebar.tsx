@@ -11,7 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
-  ArrowDownCircle
+  ArrowDownCircle,
+  PiggyBank
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -28,7 +29,7 @@ const DashboardSidebar = () => {
     { icon: ArrowDownCircle, label: t("dashboard.nav.deposit"), href: "/dashboard/deposit" },
     { icon: ArrowLeftRight, label: t("dashboard.nav.lending"), href: "/dashboard/lending" },
     { icon: ArrowUpCircle, label: t("dashboard.nav.withdraw"), href: "/dashboard/withdraw" },
-    { icon: TrendingUp, label: t("dashboard.nav.investments"), href: "/dashboard/investments" },
+    { icon: PiggyBank, label: t("dashboard.nav.fixedDeposit"), href: "/dashboard/fixed-deposit" },
     { icon: ShieldCheck, label: t("dashboard.nav.security"), href: "/dashboard/security" },
     { icon: FileText, label: t("dashboard.nav.statements"), href: "/dashboard/statements" },
   ];

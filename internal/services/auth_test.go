@@ -174,8 +174,8 @@ func TestAuthService_Login_UserNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for invalid credentials, got nil")
 	}
-	if err.Error() != "invalid credentials" {
-		t.Errorf("Expected 'invalid credentials', got '%s'", err.Error())
+	if err.Error() != "email not found" {
+		t.Errorf("Expected 'email not found', got '%s'", err.Error())
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

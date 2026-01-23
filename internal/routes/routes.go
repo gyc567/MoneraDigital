@@ -34,6 +34,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		cont.WithdrawalService,
 		cont.DepositService,
 		cont.WalletService,
+		cont.WealthService,
 	)
 
 	// Account System Client
@@ -73,7 +74,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 
 	// Protected routes
 	protected := router.Group("/api")
-	protected.Use(middleware.AuthMiddleware())
+	protected.Use(middleware.AuthMiddleware(cont.JWTSecret))
 	{
 		auth := protected.Group("/auth")
 		{
@@ -112,6 +113,20 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			withdrawals.POST("", h.CreateWithdrawal)
 			withdrawals.GET("/fees", h.GetWithdrawalFees)
 			withdrawals.GET("/:id", h.GetWithdrawalByID)
+		}
+
+		assets := protected.Group("/assets")
+		{
+			assets.GET("", h.GetAssets)
+			assets.POST("/refresh-prices", h.RefreshPrices)
+		}
+
+		wealth := protected.Group("/wealth")
+		{
+			wealth.GET("/products", h.GetProducts)
+			wealth.POST("/subscribe", h.Subscribe)
+			wealth.GET("/orders", h.GetOrders)
+			wealth.POST("/redeem", h.Redeem)
 		}
 	}
 

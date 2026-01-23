@@ -68,7 +68,7 @@ export default function Login() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || data.message);
 
-        localStorage.setItem("token", data.token);
+        localStorage.setItem("token", data.access_token || data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
         toast.success(t("auth.login.successMessage"));
         // Redirect to validated returnTo or default to /dashboard
@@ -107,7 +107,7 @@ export default function Login() {
         return;
       }
 
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", data.access_token || data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       toast.success(t("auth.login.successMessage"));
       // Redirect to validated returnTo or default to /dashboard
