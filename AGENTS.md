@@ -339,3 +339,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 - **Errors**: Always handle, no panic for business errors
 - **Logging**: Handler layer only, structured logging
 - **Tools**: Run `gofmt -w .` and `go vet ./...` before committing
+
+---
+
+## New Feature Development Rules
+
+**Mandatory rules for developing new features:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) for interfaces
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+
+3.  **Testing**
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate proposals for new features.
