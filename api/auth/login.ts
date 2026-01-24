@@ -22,13 +22,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       user: result.user,
       token: result.token,
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage }, 'Login failed');
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error({ error: errorMessage, stack: errorStack }, 'Login failed');
     if (errorMessage === 'Invalid email or password') {
       return res.status(401).json({ code: 'INVALID_CREDENTIALS', error: errorMessage });
     }

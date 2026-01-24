@@ -15,13 +15,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const user = await AuthService.register(email, password);
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Registration successful',
       user: { id: user.id, email: user.email },
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage }, 'Registration failed');
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error({ error: errorMessage, stack: errorStack }, 'Registration failed');
     if (errorMessage === 'User already exists') {
       return res.status(400).json({ error: errorMessage });
     }

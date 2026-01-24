@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       user: {
         id: userInfo.id,
         email: userInfo.email,
@@ -27,7 +27,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, userId: user.userId }, 'Failed to get user info');
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error({ error: errorMessage, stack: errorStack, userId: user.userId }, 'Failed to get user info');
     res.status(500).json({ error: 'Internal Server Error' });
   }
 }
