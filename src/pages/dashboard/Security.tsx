@@ -80,10 +80,11 @@ const Security = () => {
 
       const data = await res.json();
       if (res.ok) {
-        setQrCode(data.qrCodeUrl);
-        setOtpauth(data.otpauth);
-        setSecret(data.secret);
-        setBackupCodes(data.backupCodes);
+        const payload = data.data || data;
+        setQrCode(payload.qrCodeUrl);
+        setOtpauth(payload.otpauth);
+        setSecret(payload.secret);
+        setBackupCodes(payload.backupCodes);
         setStep(1);
         setOpen(true);
       } else {

@@ -234,7 +234,8 @@
     "delete": "删除",
     "edit": "编辑",
     "add": "添加",
-    "submit": "提交"
+    "submit": "提交",
+    "copied": "已复制"
   },
   "addresses": {
     "title": "地址管理",
@@ -287,9 +288,15 @@
     "security": {
       "title": "安全设置",
       "password": "登录密码",
+      "passwordDescription": "更新您的密码以保护账户安全",
+      "currentPassword": "当前密码",
+      "newPassword": "新密码",
       "twoFactor": "双因素认证 (2FA)",
+      "twoFactorDescription": "通过双因素认证（2FA）增强您的账户安全",
       "apiKeys": "API 密钥",
       "whitelist": "提币地址白名单",
+      "whitelistDescription": "管理允许提币的地址列表",
+      "manageAddresses": "管理地址",
       "enable2FA": "开启 2FA",
       "disable2FA": "关闭 2FA",
       "setup2FA": "设置 2FA",
@@ -300,7 +307,11 @@
       "verifying": "验证中...",
       "enabled": "已开启",
       "disabled": "未开启",
+      "status": "状态",
+      "secretKeyManual": "密钥（手动输入）",
       "openInApp": "在应用中打开",
+      "nextBackupCodes": "下一步：备用码",
+      "backupCodeInfo": "如果您丢失了 2FA 设备，可以使用这些备用码访问您的账户。请妥善保存。",
       "disable2FAConfirm": "您确定要关闭 2FA 吗？这会降低您的账户安全性。"
     },
     "lending": {
