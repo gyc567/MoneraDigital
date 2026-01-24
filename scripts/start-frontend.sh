@@ -40,8 +40,8 @@ if lsof -i :5001 > /dev/null 2>&1; then
 fi
 
 # 启动 Vite
-echo "启动前端 (端口 5001)..."
-npm run dev -- --port 5001 &
+echo "启动前端 (端口 5001, Vite 配置默认)..."
+npm run dev &
 
 # 等待启动
 sleep 5

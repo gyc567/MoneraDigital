@@ -123,8 +123,8 @@ start_frontend() {
         npm install
     fi
     
-    log_info "启动前端 (端口 5001)..."
-    npm run dev -- --port 5001 &
+    log_info "启动前端 (端口 5001, Vite 配置默认)..."
+    npm run dev &
     
     # 等待服务器启动
     sleep 5
