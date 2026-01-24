@@ -21,9 +21,9 @@ type User interface {
 type Account interface {
 	GetByUserIDAndType(ctx context.Context, userID int, accountType string) (*models.Account, error)
 	Create(ctx context.Context, account *models.Account) error
-	UpdateFrozenBalance(ctx context.Context, userID int, amount float64) error // Add to frozen
+	UpdateFrozenBalance(ctx context.Context, userID int, amount float64) error  // Add to frozen
 	ReleaseFrozenBalance(ctx context.Context, userID int, amount float64) error // Remove from frozen
-	DeductBalance(ctx context.Context, userID int, amount float64) error // Deduct from balance and frozen
+	DeductBalance(ctx context.Context, userID int, amount float64) error        // Deduct from balance and frozen
 }
 
 // Lending 借贷仓储接口
@@ -129,8 +129,8 @@ type WealthOrderModel struct {
 	UpdatedAt          string
 }
 
-// Account 账户仓储接口
-type Account interface {
+// AccountV2 账户仓储接口 (详细版本)
+type AccountV2 interface {
 	GetAccountByUserIDAndCurrency(ctx context.Context, userID int64, currency string) (*AccountModel, error)
 	GetAccountsByUserID(ctx context.Context, userID int64) ([]*AccountModel, error)
 	FreezeBalance(ctx context.Context, accountID int64, amount string) error
@@ -173,21 +173,21 @@ type JournalModel struct {
 // Repository 仓储容器
 type Repository struct {
 	User       User
-	Account    Account
+	Account    Account   // Legacy account interface
+	AccountV2  AccountV2 // New detailed account interface
 	Lending    Lending
 	Address    Address
 	Withdrawal Withdrawal
 	Deposit    Deposit
 	Wallet     Wallet
 	Wealth     Wealth
-	Account    Account
 	Journal    Journal
 }
 
 // Common errors
 var (
-	ErrNotFound      = errors.New("record not found")
-	ErrAlreadyExists = errors.New("record already exists")
-	ErrInvalidInput  = errors.New("invalid input")
+	ErrNotFound            = errors.New("record not found")
+	ErrAlreadyExists       = errors.New("record already exists")
+	ErrInvalidInput        = errors.New("invalid input")
 	ErrInsufficientBalance = errors.New("insufficient balance")
 )

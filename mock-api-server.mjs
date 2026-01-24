@@ -51,6 +51,22 @@ async function handleRequest(req, res) {
         userId: 1,
         email: req.body.email
       }));
+    } else if (urlParts === '/health' && method === 'GET') {
+      res.writeHead(200);
+      res.end('ok');
+    } else if (urlParts === '/api/core/health' && method === 'GET') {
+      res.writeHead(200);
+      res.end('healthy');
+    } else if (urlParts === '/api/core/accounts/create' && method === 'POST') {
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        data: { accountId: "mock_acc_1" }
+      }));
+    } else if (urlParts.startsWith('/api/core/accounts/') && method === 'GET') {
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        data: { status: "ACTIVE", kycStatus: "VERIFIED" }
+      }));
     } else if (urlParts === '/api/auth/login' && method === 'POST') {
       // Simulate login
       res.writeHead(200);

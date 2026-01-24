@@ -13,13 +13,13 @@ import (
 
 type InterestScheduler struct {
 	repo         repository.Wealth
-	accountRepo  repository.Account
+	accountRepo  repository.AccountV2
 	journalRepo  repository.Journal
 	priceService *binance.PriceService
 	metrics      *SchedulerMetrics
 }
 
-func NewInterestScheduler(wealthRepo repository.Wealth, accountRepo repository.Account, journalRepo repository.Journal) *InterestScheduler {
+func NewInterestScheduler(wealthRepo repository.Wealth, accountRepo repository.AccountV2, journalRepo repository.Journal) *InterestScheduler {
 	return &InterestScheduler{
 		repo:         wealthRepo,
 		accountRepo:  accountRepo,

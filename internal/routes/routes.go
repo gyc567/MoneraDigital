@@ -53,14 +53,6 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/login", h.Login)
 			auth.POST("/refresh", h.RefreshToken)
 			auth.POST("/logout", h.Logout)
-			twofa := auth.Group("/2fa")
-			{
-				twofa.POST("/setup", twofaHandler.Setup2FA)
-				twofa.POST("/enable", twofaHandler.Enable2FA)
-				twofa.POST("/verify", twofaHandler.Verify2FA)
-				twofa.POST("/disable", twofaHandler.Disable2FA)
-				twofa.GET("/status", twofaHandler.Get2FAStatus)
-			}
 		}
 
 		webhooks := public.Group("/webhooks")
@@ -87,6 +79,14 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		auth := protected.Group("/auth")
 		{
 			auth.GET("/me", h.GetMe)
+			twofa := auth.Group("/2fa")
+			{
+				twofa.POST("/setup", twofaHandler.Setup2FA)
+				twofa.POST("/enable", twofaHandler.Enable2FA)
+				twofa.POST("/verify", twofaHandler.Verify2FA)
+				twofa.POST("/disable", twofaHandler.Disable2FA)
+				twofa.GET("/status", twofaHandler.Get2FAStatus)
+			}
 		}
 
 		lending := protected.Group("/lending")

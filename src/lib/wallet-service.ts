@@ -45,7 +45,7 @@ export type DepositAddressesResult = {
 };
 
 export class WalletService {
-  async createWallet(userId: number, requestId: string): Promise<WalletCreationResult> {
+  static async createWallet(userId: number, requestId: string): Promise<WalletCreationResult> {
     try {
       createWalletSchema.parse({ request_id: requestId, user_id: userId });
 
@@ -207,7 +207,7 @@ export class WalletService {
     }
   }
 
-  private async callSafeheronCreateWallet(userId: number): Promise<{
+  private static async callSafeheronCreateWallet(userId: number): Promise<{
     walletId: string;
     address: string;
     addresses: DepositAddress[];

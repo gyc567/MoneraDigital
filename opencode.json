@@ -368,8 +368,6 @@
     }
   },
   
-  "plugin": [],
-  
   "experimental": {
     "parallel_agents": true,
     "memory_persistence": true,

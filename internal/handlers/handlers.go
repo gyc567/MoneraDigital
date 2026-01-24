@@ -35,10 +35,42 @@ type Handler struct {
 	WithdrawalService *services.WithdrawalService
 	DepositService    *services.DepositService
 	WalletService     *services.WalletService
+	WealthService     *services.WealthService
 	Validator         validator.Validator
 }
 
-func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService) *Handler {
+// Wealth handlers
+func (h *Handler) GetAssets(c *gin.Context) {
+	// TODO: Implement wealth GetAssets handler
+	c.JSON(200, gin.H{"message": "GetAssets not implemented yet"})
+}
+
+func (h *Handler) RefreshPrices(c *gin.Context) {
+	// TODO: Implement wealth RefreshPrices handler
+	c.JSON(200, gin.H{"message": "RefreshPrices not implemented yet"})
+}
+
+func (h *Handler) GetProducts(c *gin.Context) {
+	// TODO: Implement wealth GetProducts handler
+	c.JSON(200, gin.H{"message": "GetProducts not implemented yet"})
+}
+
+func (h *Handler) Subscribe(c *gin.Context) {
+	// TODO: Implement wealth Subscribe handler
+	c.JSON(200, gin.H{"message": "Subscribe not implemented yet"})
+}
+
+func (h *Handler) GetOrders(c *gin.Context) {
+	// TODO: Implement wealth GetOrders handler
+	c.JSON(200, gin.H{"message": "GetOrders not implemented yet"})
+}
+
+func (h *Handler) Redeem(c *gin.Context) {
+	// TODO: Implement wealth Redeem handler
+	c.JSON(200, gin.H{"message": "Redeem not implemented yet"})
+}
+
+func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService, wealth *services.WealthService) *Handler {
 	return &Handler{
 		AuthService:       auth,
 		LendingService:    lending,
@@ -46,6 +78,7 @@ func NewHandler(auth *services.AuthService, lending *services.LendingService, ad
 		WithdrawalService: withdrawal,
 		DepositService:    deposit,
 		WalletService:     wallet,
+		WealthService:     wealth,
 		Validator:         validator.NewValidator(),
 	}
 }

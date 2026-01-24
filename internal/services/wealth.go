@@ -26,11 +26,11 @@ var (
 
 type WealthService struct {
 	repo        repository.Wealth
-	accountRepo repository.Account
+	accountRepo repository.AccountV2
 	journalRepo repository.Journal
 }
 
-func NewWealthService(wealthRepo repository.Wealth, accountRepo repository.Account, journalRepo repository.Journal) *WealthService {
+func NewWealthService(wealthRepo repository.Wealth, accountRepo repository.AccountV2, journalRepo repository.Journal) *WealthService {
 	return &WealthService{
 		repo:        wealthRepo,
 		accountRepo: accountRepo,

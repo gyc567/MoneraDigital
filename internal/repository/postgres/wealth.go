@@ -194,7 +194,7 @@ type AccountRepository struct {
 	db *sql.DB
 }
 
-func NewAccountRepository(db *sql.DB) *AccountRepository {
+func NewAccountRepository(db *sql.DB) repository.AccountV2 {
 	return &AccountRepository{db: db}
 }
 

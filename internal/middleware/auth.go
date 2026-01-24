@@ -7,12 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"monera-digital/internal/config"
 	"monera-digital/internal/models"
 )
 
 // AuthMiddleware validates JWT tokens in Authorization header
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -29,20 +28,13 @@ func AuthMiddleware() gin.HandlerFunc {
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{
 				Code:    "INVALID_TOKEN_FORMAT",
-				Message: "Authorization header must be in format: Bearer <token>",
+				Message: "Authorization header must be in 'Bearer <token>' format",
 			})
 			c.Abort()
 			return
 		}
 
 		token := parts[1]
-
-		// Get JWT secret from config
-		cfg := config.Load()
-		jwtSecret := cfg.JWTSecret
-		if jwtSecret == "" {
-			jwtSecret = "your-jwt-secret" // Fallback for development
-		}
 
 		// Parse and validate token
 		claims := &models.TokenClaims{}

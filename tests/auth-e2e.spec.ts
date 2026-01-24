@@ -102,18 +102,18 @@ test.describe('Registration and Login Flow', () => {
       await page.fill('input[type="email"]', uniqueEmail);
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
-      
+
       // Wait for registration to complete
       await page.waitForTimeout(2000);
-      
+
       // Should show success toast or redirect to login
       const successToast = page.getByText('注册成功').or(page.getByText('Registration successful'));
       const url = page.url();
-      
+
       // Either success toast or redirect to login
       const hasSuccess = await successToast.isVisible().catch(() => false);
       const hasLoginUrl = url.includes('/login');
-      
+
       expect(hasSuccess || hasLoginUrl).toBeTruthy();
     });
 
@@ -122,12 +122,100 @@ test.describe('Registration and Login Flow', () => {
       await page.fill('input[type="email"]', uniqueEmail);
       await page.fill('input[type="password"]', strongPassword);
       await page.click('button[type="submit"]');
-      
+
       // Wait for login to complete and redirect
       await page.waitForTimeout(2000);
-      
+
       // Should redirect to dashboard or home
       await expect(page).toHaveURL(/.*dashboard.*|.*\/?$/, { timeout: 5000 });
+    });
+  });
+
+  test.describe('Session Management & Protected Routes', () => {
+    test('should persist login session across page refreshes', async ({ page }) => {
+      // Register and login first
+      const sessionEmail = `session.test.${timestamp}@example.com`;
+      await page.goto('/register');
+      await page.fill('input[type="email"]', sessionEmail);
+      await page.fill('input[type="password"]', strongPassword);
+      await page.click('button[type="submit"]');
+      await page.waitForTimeout(2000);
+
+      await page.goto('/login');
+      await page.fill('input[type="email"]', sessionEmail);
+      await page.fill('input[type="password"]', strongPassword);
+      await page.click('button[type="submit"]');
+      await page.waitForURL(/.*dashboard.*|.*\/?$/, { timeout: 5000 });
+
+      // Navigate to a protected route
+      await page.goto('/dashboard');
+      await expect(page.getByText(/Dashboard|仪表板/i)).toBeVisible();
+
+      // Refresh the page
+      await page.reload();
+      await page.waitForLoadState('networkidle');
+
+      // Should still be logged in and on dashboard
+      await expect(page.getByText(/Dashboard|仪表板/i)).toBeVisible();
+      await expect(page).toHaveURL(/.*dashboard.*|.*\/?$/);
+    });
+
+    test('should redirect unauthenticated users from protected routes', async ({ page }) => {
+      // Clear any existing session
+      await page.context().clearCookies();
+      await page.evaluate(() => localStorage.clear());
+
+      // Try to access protected route directly
+      await page.goto('/dashboard');
+      await page.waitForLoadState('networkidle');
+
+      // Should redirect to login
+      await expect(page).toHaveURL(/.*login.*|.*auth.*/, { timeout: 5000 });
+      await expect(page.getByRole('heading', { name: /Login|登录/i })).toBeVisible();
+    });
+
+    test('should handle logout properly', async ({ page }) => {
+      // Login first
+      const logoutEmail = `logout.test.${timestamp}@example.com`;
+      await page.goto('/register');
+      await page.fill('input[type="email"]', logoutEmail);
+      await page.fill('input[type="password"]', strongPassword);
+      await page.click('button[type="submit"]');
+      await page.waitForTimeout(2000);
+
+      await page.goto('/login');
+      await page.fill('input[type="email"]', logoutEmail);
+      await page.fill('input[type="password"]', strongPassword);
+      await page.click('button[type="submit"]');
+      await page.waitForURL(/.*dashboard.*|.*\/?$/, { timeout: 5000 });
+
+      // Find and click logout button
+      const logoutButton = page.getByRole('button', { name: /Logout|退出|Sign out/i });
+      await expect(logoutButton).toBeVisible();
+      await logoutButton.click();
+
+      // Should redirect to login or home
+      await page.waitForURL(/.*login.*|.*\/?$/, { timeout: 5000 });
+
+      // Try to access protected route - should redirect again
+      await page.goto('/dashboard');
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/.*login.*|.*auth.*/, { timeout: 5000 });
+    });
+
+    test('should handle expired JWT tokens gracefully', async ({ page }) => {
+      // Simulate login with expired token
+      await page.addInitScript(() => {
+        // Set an obviously expired token
+        localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c');
+      });
+
+      await page.goto('/dashboard');
+      await page.waitForLoadState('networkidle');
+
+      // Should redirect to login due to expired token
+      await expect(page).toHaveURL(/.*login.*|.*auth.*/, { timeout: 5000 });
+      await expect(page.getByRole('heading', { name: /Login|登录/i })).toBeVisible();
     });
   });
 });

@@ -18,7 +18,14 @@ type ContainerOption func(*Container)
 // WithEncryption 配置加密服务和 2FA 服务
 func WithEncryption(key string) ContainerOption {
 	return func(c *Container) {
-		encryptionService, err := services.NewEncryptionService(key)
+		// Normalize encryption key (support hex-encoded or raw format)
+		normalizedKey, err := services.DecodeEncryptionKey(key)
+		if err != nil {
+			log.Printf("Warning: Invalid encryption key format: %v", err)
+			return
+		}
+
+		encryptionService, err := services.NewEncryptionService(normalizedKey)
 		if err != nil {
 			log.Printf("Warning: Failed to initialize encryption service: %v", err)
 			return
@@ -32,6 +39,9 @@ func WithEncryption(key string) ContainerOption {
 type Container struct {
 	// 基础设施
 	DB *sql.DB
+
+	// 配置
+	JWTSecret string
 
 	// 缓存
 	TokenBlacklist *cache.TokenBlacklist
@@ -47,6 +57,7 @@ type Container struct {
 	WithdrawalService *services.WithdrawalService
 	DepositService    *services.DepositService
 	WalletService     *services.WalletService
+	WealthService     *services.WealthService
 	EncryptionService *services.EncryptionService
 	TwoFAService      *services.TwoFactorService
 
@@ -56,7 +67,7 @@ type Container struct {
 
 // NewContainer 创建依赖注入容器
 func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Container {
-	c := &Container{DB: db}
+	c := &Container{DB: db, JWTSecret: jwtSecret}
 
 	// 初始化缓存
 	c.TokenBlacklist = cache.NewTokenBlacklist()
@@ -67,7 +78,8 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 		User:       postgres.NewUserRepository(db),
 		Deposit:    postgres.NewDepositRepository(db),
 		Wallet:     postgres.NewWalletRepository(db),
-		Account:    postgres.NewAccountRepository(db),
+		Account:    postgres.NewAccountRepositoryV1(db), // Legacy interface
+		AccountV2:  postgres.NewAccountRepository(db),   // New detailed interface
 		Address:    postgres.NewAddressRepository(db),
 		Withdrawal: postgres.NewWithdrawalRepository(db),
 	}
@@ -81,6 +93,7 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	c.WithdrawalService = services.NewWithdrawalService(db, c.Repository, services.NewSafeheronService())
 	c.DepositService = services.NewDepositService(c.Repository.Deposit)
 	c.WalletService = services.NewWalletService(c.Repository.Wallet)
+	c.WealthService = services.NewWealthService(c.Repository.Wealth, c.Repository.AccountV2, c.Repository.Journal)
 
 	// 应用配置选项 (按顺序执行)
 	for _, opt := range opts {

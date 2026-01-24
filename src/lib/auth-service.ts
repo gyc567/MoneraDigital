@@ -95,6 +95,18 @@ export class AuthService {
   }
 
   /**
+   * 根据用户ID获取用户信息
+   */
+  static async getUserById(userId: number) {
+    const [user] = await db.select({
+      id: users.id,
+      email: users.email,
+    }).from(users).where(eq(users.id, userId));
+
+    return user || null;
+  }
+
+  /**
    * 验证 2FA 代码并完成登录
    */
   static async verify2FAAndLogin(userId: number, token: string) {

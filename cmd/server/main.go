@@ -72,7 +72,7 @@ func main() {
 	routes.SetupRoutes(r, cont)
 
 	// Start interest scheduler
-	interestScheduler := scheduler.NewInterestScheduler(cont.Repository.Wealth, cont.Repository.Account, cont.Repository.Journal)
+	interestScheduler := scheduler.NewInterestScheduler(cont.Repository.Wealth, cont.Repository.AccountV2, cont.Repository.Journal)
 	go interestScheduler.Start()
 	logger.Info("Interest scheduler started")
 
