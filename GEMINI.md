@@ -5,13 +5,12 @@ This file provides context and guidance for Gemini when working with the Monera 
 ## Project Overview
 
 **Monera Digital** is an institutional-grade digital asset platform focused on static finance and lending solutions.
-It is a **full-stack application** utilizing a TypeScript/Node.js ecosystem for both frontend and the primary backend (Serverless), with a legacy/parallel Go backend also present.
+It is a **full-stack application** utilizing a TypeScript frontend and a **Golang backend**.
 
 **Primary Stack:**
 *   **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Shadcn/Radix UI.
-*   **Backend (Active):** Vercel Serverless Functions (`api/` directory), Node.js.
-*   **Backend (Legacy/Parallel):** Go (Gin framework) in `cmd/` and `internal/`. *Note: The frontend primarily interacts with the Vercel functions.*
-*   **Database:** PostgreSQL (Neon) via Drizzle ORM.
+*   **Backend:** **Golang (Go)** - Mandatory for all interfaces, database access, and operations.
+*   **Database:** PostgreSQL (Neon).
 *   **Caching/State:** Redis (Upstash) for rate limiting and session management.
 *   **Testing:** Vitest (Unit/Integration), Playwright (E2E).
 
@@ -20,14 +19,10 @@ It is a **full-stack application** utilizing a TypeScript/Node.js ecosystem for 
 *   **`src/`**: Frontend source code and shared business logic.
     *   `src/components/`: React components (UI primitives in `ui/`, feature components elsewhere).
     *   `src/pages/`: Route components (Login, Register, Dashboard views).
-    *   `src/lib/`: **Core Service Layer**. Contains business logic (auth, lending, withdrawals) reused by *both* the frontend and the `api/` serverless functions.
-    *   `src/db/`: Drizzle ORM schema (`schema.ts`) and connection setup.
+    *   `src/lib/`: Frontend service layer and utilities.
     *   `src/i18n/`: Internationalization (English/Chinese).
-*   **`api/`**: Vercel Serverless Functions.
-    *   Maps directly to API endpoints (e.g., `api/auth/login.ts` -> `/api/auth/login`).
-    *   Handlers typically validate input (Zod) and delegate to `src/lib/` services.
+*   **`internal/` & `cmd/`**: **Primary Backend Code**. All API handlers, business logic, and database operations reside here.
 *   **`docs/`**: Extensive project documentation (Architecture, PRDs, Security).
-*   **`internal/` & `cmd/`**: Go backend code. Consult this only if specifically tasked with Go-related changes.
 
 ## Development Workflow
 
@@ -60,4 +55,50 @@ It is a **full-stack application** utilizing a TypeScript/Node.js ecosystem for 
 ## Important Context (Recent Changes)
 
 *   **Fixed Deposit vs. Lending:** As of Jan 2026, the UI term "Lending" has been renamed to "Fixed Deposit" to clarify the product offering. The internal routes (`/dashboard/lending`) and API paths (`api/lending`) remain unchanged.
-*   **Legacy Go Backend:** The `internal/` directory contains a Go implementation that is not currently the primary backend for the frontend application. Assume Node.js/Vercel functions for backend tasks unless specified otherwise.
+*   **Mandatory Go Backend:** The project has shifted to a strict **Golang backend** architecture. All new features and bug fixes regarding backend logic, database interactions, and API interfaces **must** be implemented in Go (residing in `internal/` and `cmd/`). Node.js/Vercel functions should only be used for frontend-specific proxying if absolutely necessary, but core logic belongs in Go.
+
+## New Feature Development Rules
+
+**Mandatory rules for developing new features:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+
+3.  **Testing**
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate proposals for new features.
+
+## Bug Fixing Rules
+
+**Mandatory rules for fixing bugs:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+
+3.  **Testing**
+    - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+    - **Regression**: Perform regression testing after fixes.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate new bug proposals.

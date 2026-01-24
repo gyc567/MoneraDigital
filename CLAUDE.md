@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**MoneraDigital** is an institutional-grade digital asset platform offering secure, transparent static finance and lending solutions. It's a full-stack application with React frontend (TypeScript, Vite) and Node.js backend (Vercel Serverless Functions) with PostgreSQL and Redis.
+**MoneraDigital** is an institutional-grade digital asset platform offering secure, transparent static finance and lending solutions. It's a full-stack application with React frontend (TypeScript, Vite) and Golang backend.
 
 **Key Stack:**
 - Frontend: React 18, TypeScript, Vite, Tailwind CSS, Radix UI (51 components)
-- Backend: Vercel Functions, Drizzle ORM, PostgreSQL (Neon), Upstash Redis
+- Backend: **Golang (Go)** - Mandatory for all backend interfaces, database access, and operations.
 - Testing: Vitest, Playwright
 - i18n: English and Chinese support via i18next
 
@@ -41,6 +41,54 @@ npm run test -- src/lib/auth-service.test.ts          # Specific file
 npm run test -- --reporter=verbose                      # Verbose output
 npm run test -- --watch                                 # Watch mode
 ```
+
+---
+
+## New Feature Development Rules
+
+**Mandatory rules for developing new features:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+
+3.  **Testing**
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate proposals for new features.
+
+## Bug Fixing Rules
+
+**Mandatory rules for fixing bugs:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+
+3.  **Testing**
+    - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+    - **Regression**: Perform regression testing after fixes.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate new bug proposals.
 
 ---
 

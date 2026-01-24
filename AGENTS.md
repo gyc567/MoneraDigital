@@ -9,11 +9,11 @@
 ## Tech Stack
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Shadcn UI (Radix Primitives)
-- **Backend**: Vercel Serverless Functions (`api/` directory), Node.js environment
-- **Database**: PostgreSQL (Neon), Drizzle ORM
+- **Backend**: Golang (Go) - **Mandatory for all interfaces, database access, and operations.**
+- **Database**: PostgreSQL (Neon)
 - **State/Cache**: Redis (Upstash)
 - **Testing**: Vitest (Unit/Integration), Playwright (E2E)
-- **Language**: TypeScript (Primary), Go (Legacy/Parallel backend in `internal/`)
+- **Language**: TypeScript (Frontend), Go (Backend)
 
 ---
 
@@ -348,7 +348,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 1.  **Technology Stack**
     - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) for interfaces
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
 2.  **Design Principles**
     - **KISS**: Keep code clean and simple.
@@ -370,7 +370,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 1.  **Technology Stack**
     - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) for interfaces
+    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
 2.  **Design Principles**
     - **KISS**: Keep code clean and simple.
