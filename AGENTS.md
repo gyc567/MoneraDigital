@@ -363,3 +363,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 5.  **Proposal Process**
     - Use **openspec** to generate proposals for new features.
+
+## Bug Fixing Rules
+
+**Mandatory rules for fixing bugs:**
+
+1.  **Technology Stack**
+    - **Frontend**: TypeScript
+    - **Backend**: Golang (Go) for interfaces
+
+2.  **Design Principles**
+    - **KISS**: Keep code clean and simple.
+    - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+
+3.  **Testing**
+    - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
+    - **Requirement**: All new functional code must be tested.
+    - **Coverage**: Maintain **100% test coverage**.
+    - **Regression**: Perform regression testing after fixes.
+
+4.  **Isolation**
+    - Changes must **not** affect unrelated functions.
+
+5.  **Proposal Process**
+    - Use **openspec** to generate new bug proposals.

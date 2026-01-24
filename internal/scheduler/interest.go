@@ -30,7 +30,7 @@ func NewInterestScheduler(wealthRepo repository.Wealth, accountRepo repository.A
 }
 
 func (s *InterestScheduler) Start() {
-	loc, _ := time.LoadLocation("Asia/Shanghai")
+	loc := GetShanghaiLocation()
 
 	nextMidnight := time.Now().In(loc)
 	if nextMidnight.Hour() >= 0 {
@@ -51,8 +51,7 @@ func (s *InterestScheduler) Start() {
 	logger.Info("[InterestScheduler] Started - running daily at 00:00 Asia/Shanghai")
 
 	for range ticker.C {
-		loc, _ := time.LoadLocation("Asia/Shanghai")
-		now := time.Now().In(loc)
+		now := NowInShanghai()
 		logger.Info("[InterestScheduler] Execution started", "timestamp", now.Format("2006-01-02 15:04:05"))
 
 		ctx := context.Background()
@@ -91,8 +90,7 @@ func (s *InterestScheduler) Start() {
 func (s *InterestScheduler) CalculateDailyInterest(ctx context.Context) (int, float64, error) {
 	logger.Info("[InterestScheduler] Calculating daily interest...")
 
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	today := time.Now().In(loc).Format("2006-01-02")
+	today := TodayInShanghai()
 
 	orders, err := s.repo.GetActiveOrders(ctx)
 	if err != nil {
@@ -244,8 +242,7 @@ func (s *InterestScheduler) SettleOrder(ctx context.Context, orderID int64) erro
 
 // SettleExpiredOrders Find and settle all orders that have expired
 func (s *InterestScheduler) SettleExpiredOrders(ctx context.Context) (int, error) {
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	today := time.Now().In(loc).Format("2006-01-02")
+	today := TodayInShanghai()
 
 	logger.Info("[InterestScheduler] Settling expired orders", "date", today)
 
