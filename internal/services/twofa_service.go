@@ -10,6 +10,7 @@ import (
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"monera-digital/internal/models"
 )
 
 // EncryptionProvider interface for dependency injection (KISS: testable)
@@ -222,6 +223,35 @@ func (s *TwoFactorService) getBackupCodes(userID int) ([]string, error) {
 		return nil, err
 	}
 	return codes, nil
+}
+
+// VerifyAndLogin verifies 2FA token and returns login response data
+func (s *TwoFactorService) VerifyAndLogin(userID int, token string) (*LoginResponse, error) {
+	// 验证2FA令牌
+	valid, err := s.Verify(userID, token)
+	if err != nil {
+		return nil, fmt.Errorf("2FA verification failed: %w", err)
+	}
+	if !valid {
+		return nil, fmt.Errorf("invalid 2FA token")
+	}
+
+	// 获取用户信息用于生成JWT
+	var email string
+	var twoFactorEnabled bool
+	query := `SELECT email, two_factor_enabled FROM users WHERE id = $1`
+	err = s.DB.QueryRow(query, userID).Scan(&email, &twoFactorEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// 这里只返回验证成功的用户信息，JWT生成在AuthService中处理
+	return &LoginResponse{
+		User: &models.User{
+			ID:    userID,
+			Email: email,
+		},
+	}, nil
 }
 
 // generateTOTPToken generates a valid TOTP token for testing

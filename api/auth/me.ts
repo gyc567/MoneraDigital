@@ -1,34 +1,37 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '../../src/lib/auth-middleware.js';
-import { AuthService } from '../../src/lib/auth-service.js';
-import logger from '../../src/lib/logger.js';
+
+// Go后端地址
+const GO_BACKEND_URL = process.env.GO_BACKEND_URL || 'http://localhost:8081';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // 验证JWT令牌
   const user = verifyToken(req);
   if (!user) {
     return res.status(401).json({ code: 'MISSING_TOKEN', message: 'Authentication required' });
   }
 
   try {
-    const userInfo = await AuthService.getUserById(user.userId);
-    if (!userInfo) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({
-      user: {
-        id: userInfo.id,
-        email: userInfo.email,
+    // 纯转发到Go后端
+    const response = await fetch(`${GO_BACKEND_URL}/api/auth/me`, {
+      method: 'GET',
+      headers: {
+        'Authorization': req.headers.authorization || '',
+        'Content-Type': 'application/json',
       },
     });
+
+    const data = await response.json();
+
+    // 转发响应状态和内容
+    return res.status(response.status).json(data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    logger.error({ error: errorMessage, stack: errorStack, userId: user.userId }, 'Failed to get user info');
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('Proxy error:', errorMessage);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

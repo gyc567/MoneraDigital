@@ -18,9 +18,10 @@ import (
 
 // AuthService provides authentication functionality
 type AuthService struct {
-	DB             *sql.DB
-	jwtSecret      string
-	tokenBlacklist *cache.TokenBlacklist
+	DB               *sql.DB
+	jwtSecret        string
+	tokenBlacklist   *cache.TokenBlacklist
+	twoFactorService *TwoFactorService
 }
 
 // NewAuthService creates a new AuthService instance
@@ -29,6 +30,11 @@ func NewAuthService(db *sql.DB, jwtSecret string) *AuthService {
 		DB:        db,
 		jwtSecret: jwtSecret,
 	}
+}
+
+// SetTwoFactorService injects TwoFactorService dependency
+func (s *AuthService) SetTwoFactorService(twoFactor *TwoFactorService) {
+	s.twoFactorService = twoFactor
 }
 
 // SetTokenBlacklist sets the token blacklist for logout functionality
@@ -181,8 +187,37 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 
 // Verify2FAAndLogin verifies 2FA token and completes login
 func (s *AuthService) Verify2FAAndLogin(userID int, token string) (*LoginResponse, error) {
-	// TODO: Implement 2FA verification
-	return &LoginResponse{}, nil
+	// 获取用户信息
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	// 验证2FA令牌
+	valid, err := s.twoFactorService.Verify(userID, token)
+	if err != nil {
+		return nil, fmt.Errorf("2FA verification failed: %w", err)
+	}
+	if !valid {
+		return nil, fmt.Errorf("invalid 2FA token")
+	}
+
+	// 生成JWT令牌
+	jwtToken, err := utils.GenerateJWT(user.ID, user.Email, s.jwtSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(24 * time.Hour)
+
+	return &LoginResponse{
+		User:        user,
+		Token:       jwtToken,
+		AccessToken: jwtToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   86400,
+		ExpiresAt:   expiresAt,
+	}, nil
 }
 
 // GetUserByID retrieves a user by their ID

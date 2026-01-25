@@ -128,6 +128,25 @@ func (h *TwoFAHandler) Verify2FA(c *gin.Context) {
 	})
 }
 
+// Verify2FALogin verifies 2FA token during login and issues JWT
+// POST /api/auth/2fa/verify-login
+func (h *TwoFAHandler) Verify2FALogin(c *gin.Context) {
+	var req struct {
+		UserID int    `json:"userId" binding:"required"`
+		Token  string `json:"token" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.base.errorResponse(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	// 验证2FA令牌并生成JWT - 需要通过AuthService调用
+	// 因为TwoFAHandler没有直接访问AuthService的权限
+	// 这需要在路由配置中处理，或者重构Handler结构
+	h.base.errorResponse(c, http.StatusNotImplemented, "NOT_IMPLEMENTED", "This endpoint should be handled by AuthService")
+}
+
 // Get2FAStatus returns whether 2FA is enabled for the user
 // GET /api/auth/2fa/status
 func (h *TwoFAHandler) Get2FAStatus(c *gin.Context) {

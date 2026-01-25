@@ -34,15 +34,22 @@ It is a **full-stack application** utilizing a TypeScript frontend and a **Golan
 
 ### Architecture & Patterns
 
-1.  **Service Layer Pattern (`src/lib/`)**:
-    *   Business logic is centralized here, *not* in the API handlers or React components.
-    *   Services are dependency-injected (accept `db`, `redis` instances).
-    *   Example: `auth-service.ts` handles the actual login logic, used by `api/auth/login.ts`.
+1.  **Architecture Principle: Backend-Only Business Logic**:
+    *   **Frontend API Routes (`api/`)**: MUST be pure HTTP proxies only - NO business logic
+    *   **Go Backend (`internal/`)**: MUST handle ALL business logic, database operations, and authentication
+    *   **Frontend Service Layer (`src/lib/`)**: MUST NOT contain direct database access or authentication logic
+    *   **All API calls**: Frontend → Vercel API (proxy only) → Go Backend (business logic)
+    *   **Exception**: Simple UI utilities and form validation are allowed in frontend
 
 2.  **Authentication**:
     *   JWT-based. Tokens are stored in `localStorage` (known limitation/choice).
-    *   Flow: Login -> JWT -> LocalStorage -> Attached to headers in API calls.
+    *   Flow: Login → Vercel API (proxy) → Go Backend → JWT → LocalStorage → Headers in API calls.
     *   Includes 2FA (TOTP) support.
+
+3.  **Service Layer Pattern (`src/lib/`)** (Legacy - Deprecated for business logic):
+    *   UI utilities and form validation are allowed here
+    *   NO direct database access or authentication logic
+    *   Example: Simple validation helpers, UI state management
 
 3.  **Database (Drizzle)**:
     *   Schema defined in `src/db/schema.ts`.
@@ -62,43 +69,59 @@ It is a **full-stack application** utilizing a TypeScript frontend and a **Golan
 **Mandatory rules for developing new features:**
 
 1.  **Technology Stack**
-    - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+     - **Frontend**: TypeScript
+     - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
-2.  **Design Principles**
-    - **KISS**: Keep code clean and simple.
-    - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+2.  **Architecture Principle: Backend-Only Business Logic**
+     - **Frontend API Route (`api/`)**: MUST be pure HTTP proxies only - NO business logic
+     - **Go Backend (`internal/`)**: MUST handle ALL business logic, database operations, and authentication
+     - **Frontend Service Layer (`src/lib/`)**: MUST NOT contain direct database access or authentication logic
+     - **All API calls**: Frontend → Vercel API (proxy only) → Go Backend (business logic)
+     - **Exception**: Simple UI utilities and form validation are allowed in frontend
 
-3.  **Testing**
-    - **Requirement**: All new functional code must be tested.
-    - **Coverage**: Maintain **100% test coverage**.
+3.  **Design Principles**
+     - **KISS**: Keep code clean and simple.
+     - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+     - **Single Source of Truth**: Go backend is the only source for business logic.
 
-4.  **Isolation**
-    - Changes must **not** affect unrelated functions.
+4.  **Testing**
+     - **Requirement**: All new functional code must be tested.
+     - **Coverage**: Maintain **100% test coverage**.
 
-5.  **Proposal Process**
-    - Use **openspec** to generate proposals for new features.
+5.  **Isolation**
+     - Changes must **not** affect unrelated functions.
+
+6.  **Proposal Process**
+     - Use **openspec** to generate proposals for new features.
 
 ## Bug Fixing Rules
 
 **Mandatory rules for fixing bugs:**
 
 1.  **Technology Stack**
-    - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+     - **Frontend**: TypeScript
+     - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
-2.  **Design Principles**
-    - **KISS**: Keep code clean and simple.
-    - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+2.  **Architecture Principle: Backend-Only Business Logic**
+     - **Frontend API Routes (`api/`)**: MUST be pure HTTP proxies only - NO business logic
+     - **Go Backend (`internal/`)**: MUST handle ALL business logic, database operations, and authentication
+     - **Frontend Service Layer (`src/lib/`)**: MUST NOT contain direct database access or authentication logic
+     - **All API calls**: Frontend → Vercel API (proxy only) → Go Backend (business logic)
+     - **Exception**: Simple UI utilities and form validation are allowed in frontend
 
-3.  **Testing**
-    - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
-    - **Requirement**: All new functional code must be tested.
-    - **Coverage**: Maintain **100% test coverage**.
-    - **Regression**: Perform regression testing after fixes.
+3.  **Design Principles**
+     - **KISS**: Keep code clean and simple.
+     - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+     - **Single Source of Truth**: Go backend is the only source for business logic.
 
-4.  **Isolation**
-    - Changes must **not** affect unrelated functions.
+4.  **Testing**
+     - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
+     - **Requirement**: All new functional code must be tested.
+     - **Coverage**: Maintain **100% test coverage**.
+     - **Regression**: Perform regression testing after fixes.
 
-5.  **Proposal Process**
-    - Use **openspec** to generate new bug proposals.
+5.  **Isolation**
+     - Changes must **not** affect unrelated functions.
+
+6.  **Proposal Process**
+     - Use **openspec** to generate new bug proposals.

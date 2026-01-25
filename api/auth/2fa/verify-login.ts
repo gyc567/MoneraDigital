@@ -9,8 +9,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 纯转发到Go后端
-    const response = await fetch(`${GO_BACKEND_URL}/api/auth/login`, {
+    // 纯转发到Go后端的2FA验证端点
+    const response = await fetch(`${GO_BACKEND_URL}/api/auth/2fa/verify-login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

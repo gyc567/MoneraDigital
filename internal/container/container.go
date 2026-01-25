@@ -88,6 +88,11 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	c.AuthService = services.NewAuthService(db, jwtSecret)
 	c.AuthService.SetTokenBlacklist(c.TokenBlacklist)
 
+	// 注入TwoFactorService依赖（如果已初始化）
+	if c.TwoFAService != nil {
+		c.AuthService.SetTwoFactorService(c.TwoFAService)
+	}
+
 	c.LendingService = services.NewLendingService(db)
 	c.AddressService = services.NewAddressService(c.Repository.Address)
 	c.WithdrawalService = services.NewWithdrawalService(db, c.Repository, services.NewSafeheronService())

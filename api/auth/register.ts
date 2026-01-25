@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { AuthService } from '../../src/lib/auth-service.js';
-import logger from '../../src/lib/logger.js';
+
+// Go后端地址
+const GO_BACKEND_URL = process.env.GO_BACKEND_URL || 'http://localhost:8081';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -8,24 +9,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
-
-    const user = await AuthService.register(email, password);
-
-    return res.status(201).json({
-      message: 'Registration successful',
-      user: { id: user.id, email: user.email },
+    // 纯转发到Go后端
+    const response = await fetch(`${GO_BACKEND_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body),
     });
+
+    const data = await response.json();
+
+    // 转发响应状态和内容
+    return res.status(response.status).json(data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    logger.error({ error: errorMessage, stack: errorStack }, 'Registration failed');
-    if (errorMessage === 'User already exists') {
-      return res.status(400).json({ error: errorMessage });
-    }
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('Proxy error:', errorMessage);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

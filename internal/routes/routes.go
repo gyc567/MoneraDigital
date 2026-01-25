@@ -53,6 +53,8 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/login", h.Login)
 			auth.POST("/refresh", h.RefreshToken)
 			auth.POST("/logout", h.Logout)
+			// 2FA验证登录 - 公开端点，因为此时还没有JWT
+			auth.POST("/2fa/verify-login", h.Verify2FALogin)
 		}
 
 		webhooks := public.Group("/webhooks")

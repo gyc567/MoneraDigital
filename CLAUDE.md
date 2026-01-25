@@ -49,46 +49,62 @@ npm run test -- --watch                                 # Watch mode
 **Mandatory rules for developing new features:**
 
 1.  **Technology Stack**
-    - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+     - **Frontend**: TypeScript
+     - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
-2.  **Design Principles**
-    - **KISS**: Keep code clean and simple.
-    - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+2.  **Architecture Principle: Backend-Only Business Logic**
+     - **Frontend API Route (`api/`)**: MUST be pure HTTP proxies only - NO business logic
+     - **Go Backend (`internal/`)**: MUST handle ALL business logic, database operations, and authentication
+     - **Frontend Service Layer (`src/lib/`)**: MUST NOT contain direct database access or authentication logic
+     - **All API calls**: Frontend → Vercel API (proxy only) → Go Backend (business logic)
+     - **Exception**: Simple UI utilities and form validation are allowed in frontend
 
-3.  **Testing**
-    - **Requirement**: All new functional code must be tested.
-    - **Coverage**: Maintain **100% test coverage**.
+3.  **Design Principles**
+     - **KISS**: Keep code clean and simple.
+     - **Architecture**: High Cohesion, Low Coupling. Use streamlined design patterns.
+     - **Single Source of Truth**: Go backend is the only source for business logic.
 
-4.  **Isolation**
-    - Changes must **not** affect unrelated functions.
+4.  **Testing**
+     - **Requirement**: All new functional code must be tested.
+     - **Coverage**: Maintain **100% test coverage**.
 
-5.  **Proposal Process**
-    - Use **openspec** to generate proposals for new features.
+5.  **Isolation**
+     - Changes must **not** affect unrelated functions.
+
+6.  **Proposal Process**
+     - Use **openspec** to generate proposals for new features.
 
 ## Bug Fixing Rules
 
 **Mandatory rules for fixing bugs:**
 
 1.  **Technology Stack**
-    - **Frontend**: TypeScript
-    - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
+     - **Frontend**: TypeScript
+     - **Backend**: Golang (Go) - **MUST** be used for all backend interfaces, database access, and operations.
 
-2.  **Design Principles**
-    - **KISS**: Keep code clean and simple.
-    - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+2.  **Architecture Principle: Backend-Only Business Logic**
+     - **Frontend API Routes (`api/`)**: MUST be pure HTTP proxies only - NO business logic
+     - **Go Backend (`internal/`)**: MUST handle ALL business logic, database operations, and authentication
+     - **Frontend Service Layer (`src/lib/`)**: MUST NOT contain direct database access or authentication logic
+     - **All API calls**: Frontend → Vercel API (proxy only) → Go Backend (business logic)
+     - **Exception**: Simple UI utilities and form validation are allowed in frontend
 
-3.  **Testing**
-    - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
-    - **Requirement**: All new functional code must be tested.
-    - **Coverage**: Maintain **100% test coverage**.
-    - **Regression**: Perform regression testing after fixes.
+3.  **Design Principles**
+     - **KISS**: Keep code clean and simple.
+     - **Architecture**: High Cohesion, Low Coupling. Use concise design patterns.
+     - **Single Source of Truth**: Go backend is the only source for business logic.
 
-4.  **Isolation**
-    - Changes must **not** affect unrelated functions.
+4.  **Testing**
+     - **Methodology**: Test-Driven Development (TDD) - **write tests first**.
+     - **Requirement**: All new functional code must be tested.
+     - **Coverage**: Maintain **100% test coverage**.
+     - **Regression**: Perform regression testing after fixes.
 
-5.  **Proposal Process**
-    - Use **openspec** to generate new bug proposals.
+5.  **Isolation**
+     - Changes must **not** affect unrelated functions.
+
+6.  **Proposal Process**
+     - Use **openspec** to generate new bug proposals.
 
 ---
 

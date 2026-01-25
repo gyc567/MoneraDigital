@@ -162,6 +162,33 @@ func (h *Handler) GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.UserInfo{ID: userID.(int), Email: email.(string)})
 }
 
+// Verify2FALogin verifies 2FA token during login and completes authentication
+func (h *Handler) Verify2FALogin(c *gin.Context) {
+	var req models.Verify2FARequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.AuthService.Verify2FAAndLogin(req.UserID, req.Token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	dtoResp := dto.LoginResponse{
+		AccessToken:  resp.AccessToken,
+		RefreshToken: resp.RefreshToken,
+		TokenType:    resp.TokenType,
+		ExpiresIn:    resp.ExpiresIn,
+		ExpiresAt:    resp.ExpiresAt,
+		Token:        resp.Token,
+		User:         &dto.UserInfo{ID: resp.User.ID, Email: resp.User.Email},
+	}
+
+	c.JSON(http.StatusOK, dtoResp)
+}
+
 func (h *Handler) RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "Token refresh not yet implemented"})
 }
