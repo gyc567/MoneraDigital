@@ -6,7 +6,8 @@
  */
 
 // API base URL configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+// API基础URL配置 - 临时修复：使用可用的Replit后端
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://monera-digital--gyc567.replit.app';
 
 // Helper function to build full API URLs
 export function getApiUrl(path: string): string {

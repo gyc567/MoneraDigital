@@ -36,3 +36,4 @@ server
 nohup.out
 /coverage
 /.sisyphus
+.env*.local

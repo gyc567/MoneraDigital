@@ -4,6 +4,26 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/auth/2fa/setup",
+      "destination": "https://www.moneradigital.com/api/auth/2fa/setup"
+    },
+    {
+      "source": "/api/auth/2fa/enable", 
+      "destination": "https://www.moneradigital.com/api/auth/2fa/enable"
+    },
+    {
+      "source": "/api/auth/2fa/disable",
+      "destination": "https://www.moneradigital.com/api/auth/2fa/disable"
+    },
+    {
+      "source": "/api/auth/2fa/verify-login",
+      "destination": "https://www.moneradigital.com/api/auth/2fa/verify-login"
+    },
+    {
+      "source": "/api/auth/2fa/verify",
+      "destination": "https://www.moneradigital.com/api/auth/2fa/verify"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
