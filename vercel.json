@@ -4,14 +4,6 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/auth/:path*",
-      "destination": "/api/v2-auth/:path*"
-    },
-    {
-      "source": "/api/(core|lending|addresses|withdrawals|deposits|accounts|webhooks|wallet|health|redemption)(.*)",
-      "destination": "https://monera-digital--gyc567.replit.app/api/$1$2"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

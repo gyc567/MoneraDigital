@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '../../src/lib/auth-middleware.js';
 
-// Go后端地址
-const GO_BACKEND_URL = process.env.GO_BACKEND_URL || 'http://localhost:8081';
+// Go后端地址 - 统一使用VITE_API_BASE_URL
+const BACKEND_URL = process.env.VITE_API_BASE_URL || 'http://localhost:8081';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -17,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // 纯转发到Go后端
-    const response = await fetch(`${GO_BACKEND_URL}/api/auth/me`, {
+    const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
       method: 'GET',
       headers: {
         'Authorization': req.headers.authorization || '',
