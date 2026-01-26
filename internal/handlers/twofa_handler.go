@@ -42,13 +42,20 @@ func (h *TwoFAHandler) Setup2FA(c *gin.Context) {
 		return
 	}
 
+	// Ensure otpauth URL is always set (same as qrCodeUrl)
+	otpauth := setup.OTPAuth
+	if otpauth == "" {
+		otpauth = setup.QRCode
+	}
+
 	h.base.successResponse(c, gin.H{
 		"secret":      setup.Secret,
 		"qrCodeUrl":   setup.QRCode,
-		"otpauth":     setup.OTPAuth,
+		"otpauth":     otpauth,
 		"backupCodes": setup.BackupCodes,
 		"message":     "2FA setup successful. Scan the QR code with your authenticator app.",
 	})
+
 }
 
 // Enable2FA verifies the TOTP token and enables 2FA for the user
