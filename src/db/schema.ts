@@ -17,12 +17,22 @@ export const users = pgTable('users', {
   twoFactorSecret: text('two_factor_secret'),
   twoFactorEnabled: boolean('two_factor_enabled').default(false).notNull(),
   twoFactorBackupCodes: text('two_factor_backup_codes'),
+  twoFactorLastUsedAt: timestamp('two_factor_last_used_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// ====================================================================
-// Legacy/Simple Lending (Existing)
-// ====================================================================
+/**
+ * Pending login sessions for two-factor authentication.
+ * Used to track incomplete 2FA verification attempts during login.
+ * Sessions automatically expire after TTL period (15 minutes).
+ */
+export const pendingLoginSessions = pgTable('pending_login_sessions', {
+  id: serial('id').primaryKey(),
+  sessionId: text('session_id').notNull().unique(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+});
 
 export const lendingPositions = pgTable('lending_positions', {
   id: serial('id').primaryKey(),
@@ -394,6 +404,7 @@ export const businessFreezeStatuses = pgTable('business_freeze_status', {
 });
 
 export type User = typeof users.$inferSelect;
+export type PendingLoginSession = typeof pendingLoginSessions.$inferSelect;
 export type LendingPosition = typeof lendingPositions.$inferSelect;
 export type NewLendingPosition = typeof lendingPositions.$inferInsert;
 export type WithdrawalAddress = typeof withdrawalAddresses.$inferSelect;

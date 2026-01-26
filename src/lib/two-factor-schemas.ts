@@ -126,3 +126,32 @@ export type TwoFactorVerifyLoginRequest = z.infer<typeof TwoFactorVerifyLoginReq
 export type TwoFactorVerifyLoginResponse = z.infer<typeof TwoFactorVerifyLoginResponseSchema>;
 export type TwoFactorStatusRequest = z.infer<typeof TwoFactorStatusRequestSchema>;
 export type TwoFactorStatusResponse = z.infer<typeof TwoFactorStatusResponseSchema>;
+
+/**
+ * Schema for login response that includes 2FA detection.
+ * The response is one of two types:
+ * 1. Successful login without 2FA: includes JWT token
+ * 2. Requires 2FA verification: includes sessionId for 2FA endpoint
+ */
+export const LoginResponseSchema = z.union([
+  z.object({
+    success: z.literal(true),
+    token: z.string().min(1, 'Token must not be empty'),
+    user: z.object({
+      id: z.number(),
+      email: z.string().email(),
+    }),
+    requires2FA: z.literal(false).optional(),
+  }),
+  z.object({
+    requires2FA: z.literal(true),
+    sessionId: z.string().uuid('Session ID must be a valid UUID'),
+    user: z.object({
+      id: z.number(),
+      email: z.string().email(),
+    }),
+    success: z.literal(false).optional(),
+  }),
+]);
+
+export type LoginResponse = z.infer<typeof LoginResponseSchema>;
