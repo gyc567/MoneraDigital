@@ -45,6 +45,7 @@ func (h *TwoFAHandler) Setup2FA(c *gin.Context) {
 	h.base.successResponse(c, gin.H{
 		"secret":      setup.Secret,
 		"qrCodeUrl":   setup.QRCode,
+		"otpauth":     setup.OTPAuth,
 		"backupCodes": setup.BackupCodes,
 		"message":     "2FA setup successful. Scan the QR code with your authenticator app.",
 	})

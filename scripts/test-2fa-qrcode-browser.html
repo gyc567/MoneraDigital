@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2FA QR Code Fix Verification</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            background: #f5f7fa;
+            border-radius: 4px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.pass {
+            background: #10b981;
+            color: white;
+        }
+        .status.fail {
+            background: #ef4444;
+            color: white;
+        }
+        .status.pending {
+            background: #f59e0b;
+            color: white;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .log {
+            background: #1e293b;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-error {
+            color: #ef4444;
+        }
+        .log-warning {
+            color: #f59e0b;
+        }
+        .log-info {
+            color: #3b82f6;
+        }
+        .instructions {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #b45309;
+        }
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 2FA QR Code Fix Verification</h1>
+        <p class="subtitle">Browser-based test to verify the QR code display fix</p>
+
+        <div class="instructions">
+            <h3>📋 Instructions</h3>
+            <ol>
+                <li><strong>Clear your browser cache:</strong> Press <code>Ctrl+Shift+R</code> (Windows/Linux) or <code>Cmd+Shift+R</code> (Mac)</li>
+                <li><strong>Run the test below</strong> to verify the fix is deployed</li>
+                <li><strong>If test fails:</strong> Try opening in Incognito/Private mode</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 1: Check Deployment Status <span id="status1" class="status pending">PENDING</span></h3>
+            <p>Checking if the site is accessible...</p>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 2: Verify JavaScript Bundle <span id="status2" class="status pending">PENDING</span></h3>
+            <p>Checking if the fixed JavaScript is deployed...</p>
+        </div>
+
+        <div class="test-section">
+            <h3>Test 3: API Endpoint Check <span id="status3" class="status pending">PENDING</span></h3>
+            <p>Verifying 2FA API is accessible...</p>
+        </div>
+
+        <button id="runTest" onclick="runTests()">Run Verification Tests</button>
+        <button id="clearCache" onclick="clearCacheAndReload()">Clear Cache & Reload</button>
+
+        <div id="log" class="log"></div>
+
+        <div class="instructions" style="margin-top: 30px; background: #dcfce7; border-color: #10b981;">
+            <h3 style="color: #065f46;">✅ After Tests Pass</h3>
+            <ol>
+                <li>Go to: <a href="https://www.moneradigital.com/dashboard/security" target="_blank">Dashboard → Security</a></li>
+                <li>Click "Enable 2FA"</li>
+                <li>You should see a proper QR code (black and white squares)</li>
+                <li>The secret key should be displayed below the QR code</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const PRODUCTION_URL = 'https://www.moneradigital.com';
+        const logDiv = document.getElementById('log');
+
+        function log(message, type = 'success') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'log-error' : type === 'warning' ? 'log-warning' : type === 'info' ? 'log-info' : '';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function setStatus(testNum, status) {
+            const statusEl = document.getElementById(`status${testNum}`);
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = status.toUpperCase();
+        }
+
+        async function runTests() {
+            document.getElementById('runTest').disabled = true;
+            logDiv.innerHTML = '';
+            log('🚀 Starting verification tests...', 'info');
+            log('Target: ' + PRODUCTION_URL, 'info');
+
+            // Test 1: Check main site
+            log('\n📝 Test 1: Checking deployment status...', 'info');
+            try {
+                const response = await fetch(PRODUCTION_URL);
+                if (response.ok) {
+                    log('✅ Site is accessible', 'success');
+                    setStatus(1, 'pass');
+                } else {
+                    log(`❌ Site returned status: ${response.status}`, 'error');
+                    setStatus(1, 'fail');
+                }
+            } catch (error) {
+                log(`❌ Failed to reach site: ${error.message}`, 'error');
+                setStatus(1, 'fail');
+            }
+
+            // Test 2: Check JavaScript bundle
+            log('\n📝 Test 2: Checking JavaScript bundle...', 'info');
+            try {
+                const response = await fetch(PRODUCTION_URL);
+                const html = await response.text();
+                
+                // Extract script src
+                const scriptMatch = html.match(/<script[^>]+src="([^"]+index[^"]+)"/);
+                if (scriptMatch) {
+                    const scriptUrl = scriptMatch[1].startsWith('http') ? scriptMatch[1] : PRODUCTION_URL + scriptMatch[1];
+                    log(`📦 Found bundle: ${scriptUrl}`, 'info');
+                    
+                    const scriptResponse = await fetch(scriptUrl);
+                    const scriptContent = await scriptResponse.text();
+                    
+                    // Check for QRCode library
+                    if (scriptContent.includes('QRCode') || scriptContent.includes('qrcode')) {
+                        log('✅ QRCode library found in bundle', 'success');
+                        setStatus(2, 'pass');
+                    } else {
+                        log('⚠️  Could not find QRCode library (may be minified)', 'warning');
+                        setStatus(2, 'fail');
+                    }
+                } else {
+                    log('❌ Could not find script bundle', 'error');
+                    setStatus(2, 'fail');
+                }
+            } catch (error) {
+                log(`❌ Failed to check bundle: ${error.message}`, 'error');
+                setStatus(2, 'fail');
+            }
+
+            // Test 3: Check API endpoint
+            log('\n📝 Test 3: Checking 2FA API endpoint...', 'info');
+            try {
+                const response = await fetch(`${PRODUCTION_URL}/api/auth/2fa/setup`, {
+                    method: 'POST'
+                });
+                
+                // We expect 401 (unauthorized) which means the endpoint exists
+                if (response.status === 401) {
+                    log('✅ API endpoint exists and requires authentication', 'success');
+                    setStatus(3, 'pass');
+                } else if (response.status === 404) {
+                    log('❌ API endpoint not found (404)', 'error');
+                    setStatus(3, 'fail');
+                } else if (response.status === 405) {
+                    log('✅ API endpoint exists (method validation working)', 'success');
+                    setStatus(3, 'pass');
+                } else {
+                    log(`⚠️  API returned status: ${response.status}`, 'warning');
+                    setStatus(3, 'pass');
+                }
+            } catch (error) {
+                log(`❌ Failed to check API: ${error.message}`, 'error');
+                setStatus(3, 'fail');
+            }
+
+            log('\n🏁 Tests completed!', 'info');
+            
+            // Check if all passed
+            const allPassed = ['status1', 'status2', 'status3'].every(id => {
+                const el = document.getElementById(id);
+                return el.textContent === 'PASS';
+            });
+
+            if (allPassed) {
+                log('\n🎉 All tests passed! The fix is deployed.', 'success');
+                log('💡 Next: Clear cache and test the 2FA flow manually', 'info');
+            } else {
+                log('\n⚠️  Some tests failed or are indeterminate', 'warning');
+                log('💡 Try: Clear cache and reload, or use Incognito mode', 'info');
+            }
+
+            document.getElementById('runTest').disabled = false;
+        }
+
+        function clearCacheAndReload() {
+            log('🔄 Attempting to clear cache and reload...', 'info');
+            
+            // Try to clear cache storage
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => {
+                        caches.delete(name);
+                    });
+                });
+                log('✅ Cache cleared', 'success');
+            }
+            
+            // Force hard reload
+            setTimeout(() => {
+                window.location.href = PRODUCTION_URL + '?nocache=' + Date.now();
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

@@ -72,6 +72,7 @@ async function main() {
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
     if (!data.secret || !data.qrCodeUrl) throw new Error('Missing 2FA data');
+    if (!data.otpauth) throw new Error('Missing otpauth URL in response (Security.tsx requirement)');
     setupSecret = data.secret;
     backupCodes = data.backupCodes;
   });

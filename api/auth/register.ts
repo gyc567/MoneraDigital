@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Go后端地址 - 统一使用VITE_API_BASE_URL
-const BACKEND_URL = process.env.VITE_API_BASE_URL || 'http://localhost:8081';
+// Go后端地址 - Use BACKEND_URL for Vercel functions, fallback to VITE_API_BASE_URL for dev
+const BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_API_BASE_URL || 'http://localhost:8081';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
