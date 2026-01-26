@@ -1,46 +1,40 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { TwoFactorService } from '../../../src/lib/two-factor-service.js';
-import { verifyToken } from '../../../src/lib/auth-middleware.js';
-import { TwoFactorStatusResponseSchema } from '../../../src/lib/two-factor-schemas.js';
-import logger from '../../../src/lib/logger.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // Go 后端地址
+  const backendUrl = process.env.BACKEND_URL;
+
+  if (!backendUrl) {
+    return res.status(500).json({
+      error: 'Server configuration error',
+      message: 'Backend URL not configured. Please set BACKEND_URL environment variable.'
+    });
+  }
+
   try {
-    // Verify JWT authentication
-    const user = verifyToken(req);
-    if (!user) {
-      return res.status(401).json({
-        error: 'AUTH_REQUIRED',
-        message: 'Authentication required'
-      });
-    }
-
-    // Get 2FA status
-    const status = await TwoFactorService.getStatus(user.userId);
-
-    // Validate response
-    const validated = TwoFactorStatusResponseSchema.safeParse({
-      enabled: status.enabled,
-      remainingBackupCodes: status.remainingBackupCodes,
+    // 纯转发到 Go 后端
+    const response = await fetch(`${backendUrl}/api/auth/2fa/status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': req.headers.authorization || '',
+        'Content-Type': 'application/json',
+      },
     });
 
-    if (!validated.success) {
-      return res.status(500).json({
-        error: 'Internal Server Error'
-      });
-    }
+    const data = await response.json();
 
-    return res.status(200).json(validated.data);
+    // 转发响应状态和内容
+    return res.status(response.status).json(data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage }, '2FA Status error');
+    console.error('Proxy error:', errorMessage);
     return res.status(500).json({
       error: 'Internal Server Error',
-      message: errorMessage
+      message: 'Failed to connect to backend service'
     });
   }
 }
