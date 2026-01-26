@@ -222,6 +222,14 @@ func (s *AuthService) Verify2FAAndLogin(userID int, token string) (*LoginRespons
 
 // GetUserByID retrieves a user by their ID
 func (s *AuthService) GetUserByID(userID int) (*models.User, error) {
-	// TODO: Implement user retrieval
-	return &models.User{}, nil
+	var user models.User
+	query := `SELECT id, email, two_factor_enabled FROM users WHERE id = $1`
+	err := s.DB.QueryRow(query, userID).Scan(&user.ID, &user.Email, &user.TwoFactorEnabled)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+	return &user, nil
 }

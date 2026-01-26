@@ -117,7 +117,11 @@ func (h *Handler) Login(c *gin.Context) {
 		UserID:       resp.UserID,
 	}
 	if resp.User != nil {
-		dtoResp.User = &dto.UserInfo{ID: resp.User.ID, Email: resp.User.Email}
+		dtoResp.User = &dto.UserInfo{
+			ID:               resp.User.ID,
+			Email:            resp.User.Email,
+			TwoFactorEnabled: resp.User.TwoFactorEnabled,
+		}
 	}
 
 	c.JSON(http.StatusOK, dtoResp)
@@ -148,7 +152,11 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, dto.UserInfo{ID: user.ID, Email: user.Email})
+	c.JSON(http.StatusCreated, dto.UserInfo{
+		ID:               user.ID,
+		Email:            user.Email,
+		TwoFactorEnabled: user.TwoFactorEnabled,
+	})
 }
 
 func (h *Handler) GetMe(c *gin.Context) {
@@ -158,8 +166,17 @@ func (h *Handler) GetMe(c *gin.Context) {
 		return
 	}
 
-	email, _ := c.Get("email")
-	c.JSON(http.StatusOK, dto.UserInfo{ID: userID.(int), Email: email.(string)})
+	user, err := h.AuthService.GetUserByID(userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.UserInfo{
+		ID:               user.ID,
+		Email:            user.Email,
+		TwoFactorEnabled: user.TwoFactorEnabled,
+	})
 }
 
 // Verify2FALogin verifies 2FA token during login and completes authentication
@@ -183,7 +200,11 @@ func (h *Handler) Verify2FALogin(c *gin.Context) {
 		ExpiresIn:    resp.ExpiresIn,
 		ExpiresAt:    resp.ExpiresAt,
 		Token:        resp.Token,
-		User:         &dto.UserInfo{ID: resp.User.ID, Email: resp.User.Email},
+		User: &dto.UserInfo{
+			ID:               resp.User.ID,
+			Email:            resp.User.Email,
+			TwoFactorEnabled: resp.User.TwoFactorEnabled,
+		},
 	}
 
 	c.JSON(http.StatusOK, dtoResp)

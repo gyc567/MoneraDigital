@@ -30,8 +30,9 @@ type LoginResponse struct {
 
 // UserInfo DTO for user information
 type UserInfo struct {
-	ID    int    `json:"id"`
-	Email string `json:"email"`
+	ID               int    `json:"id"`
+	Email            string `json:"email"`
+	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
 }
 
 // RefreshTokenRequest DTO for token refresh

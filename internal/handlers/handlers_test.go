@@ -60,6 +60,7 @@ func newTestHandler() *Handler {
 		WithdrawalService: &services.WithdrawalService{},
 		DepositService:    &services.DepositService{},
 		WalletService:     &services.WalletService{},
+		WealthService:     &services.WealthService{},
 		Validator:         validator.NewValidator(),
 	}
 }
@@ -298,8 +299,9 @@ func TestNewHandler(t *testing.T) {
 	withdrawal := &services.WithdrawalService{}
 	deposit := &services.DepositService{}
 	wallet := &services.WalletService{}
+	wealth := &services.WealthService{}
 
-	h := NewHandler(auth, lending, address, withdrawal, deposit, wallet)
+	h := NewHandler(auth, lending, address, withdrawal, deposit, wallet, wealth)
 
 	if h.AuthService != auth {
 		t.Error("AuthService not set correctly")
@@ -318,6 +320,9 @@ func TestNewHandler(t *testing.T) {
 	}
 	if h.WalletService != wallet {
 		t.Error("WalletService not set correctly")
+	}
+	if h.WealthService != wealth {
+		t.Error("WealthService not set correctly")
 	}
 	if h.Validator == nil {
 		t.Error("Validator should not be nil")
