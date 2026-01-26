@@ -1,12 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyToken } from '../../src/lib/auth-middleware.js';
 
-// Go后端地址 - Use BACKEND_URL for Vercel functions, fallback to VITE_API_BASE_URL for dev
-const BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_API_BASE_URL || 'http://localhost:8081';
+// Go后端地址
+const BACKEND_URL = process.env.BACKEND_URL;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  if (!BACKEND_URL) {
+    return res.status(500).json({
+      error: 'Server configuration error',
+      message: 'Backend URL not configured. Please set BACKEND_URL environment variable.'
+    });
   }
 
   // 验证JWT令牌

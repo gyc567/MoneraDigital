@@ -28,40 +28,9 @@ describe('/api/auth/login', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Method Not Allowed' });
   });
 
-  it('should return 500 when BACKEND_URL is not configured in production', async () => {
-    // Mock production environment without BACKEND_URL
+  it('should return 500 when BACKEND_URL is not configured', async () => {
+    // Mock environment without BACKEND_URL
     process.env.BACKEND_URL = undefined;
-    process.env.VITE_API_BASE_URL = undefined;
-    process.env.NODE_ENV = 'production';
-    process.env.VERCEL_ENV = 'production';
-
-    const handler = await import('./login').then(m => m.default);
-
-    const req = {
-      method: 'POST',
-      body: { email: 'test@example.com', password: 'password' },
-    } as any;
-
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn().mockReturnThis(),
-    } as any;
-
-    await handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Server configuration error',
-      message: 'Backend URL not configured. Please set BACKEND_URL environment variable.',
-    });
-  });
-
-  it('should return 500 when BACKEND_URL defaults to localhost in production', async () => {
-    // Mock production environment with default localhost URL
-    process.env.BACKEND_URL = undefined;
-    process.env.VITE_API_BASE_URL = 'http://localhost:8081';
-    process.env.NODE_ENV = 'production';
-    process.env.VERCEL_ENV = 'production';
 
     const handler = await import('./login').then(m => m.default);
 
@@ -87,7 +56,6 @@ describe('/api/auth/login', () => {
   it('should proxy valid login request to configured backend', async () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
-    process.env.VITE_API_BASE_URL = undefined;
 
     const handler = await import('./login').then(m => m.default);
 
@@ -127,7 +95,6 @@ describe('/api/auth/login', () => {
   it('should proxy authentication error from backend', async () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
-    process.env.VITE_API_BASE_URL = undefined;
 
     const handler = await import('./login').then(m => m.default);
 
@@ -161,7 +128,6 @@ describe('/api/auth/login', () => {
   it('should return 500 when backend connection fails', async () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
-    process.env.VITE_API_BASE_URL = undefined;
 
     const handler = await import('./login').then(m => m.default);
 
@@ -185,45 +151,5 @@ describe('/api/auth/login', () => {
       error: 'Internal Server Error',
       message: 'Failed to connect to backend service',
     });
-  });
-
-  it('should allow localhost in development environment', async () => {
-    // Mock development environment with localhost
-    process.env.BACKEND_URL = undefined;
-    process.env.VITE_API_BASE_URL = 'http://localhost:8081';
-    process.env.NODE_ENV = 'development';
-    process.env.VERCEL_ENV = undefined;
-
-    const handler = await import('./login').then(m => m.default);
-
-    // Mock fetch
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: vi.fn().mockResolvedValue({
-        token: 'test-token',
-        user: { id: 1, email: 'test@example.com' },
-      }),
-    });
-
-    const req = {
-      method: 'POST',
-      body: { email: 'test@example.com', password: 'password' },
-    } as any;
-
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn().mockReturnThis(),
-    } as any;
-
-    await handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(global.fetch).toHaveBeenCalledWith(
-      'http://localhost:8081/api/auth/login',
-      expect.objectContaining({
-        method: 'POST',
-      })
-    );
   });
 });

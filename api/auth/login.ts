@@ -5,12 +5,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Go后端地址 - Use BACKEND_URL for Vercel functions, fallback to VITE_API_BASE_URL for dev
-  const backendUrl = process.env.BACKEND_URL || process.env.VITE_API_BASE_URL || 'http://localhost:8081';
+  // Go后端地址
+  const backendUrl = process.env.BACKEND_URL;
 
-  // Allow localhost in development, but require proper URL in production
-  const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  if (isProduction && (!backendUrl || backendUrl === 'http://localhost:8081')) {
+  if (!backendUrl) {
     return res.status(500).json({
       error: 'Server configuration error',
       message: 'Backend URL not configured. Please set BACKEND_URL environment variable.'
