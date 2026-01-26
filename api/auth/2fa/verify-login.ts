@@ -1,7 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-// Go后端地址 - 统一使用VITE_API_BASE_URL
-const BACKEND_URL = process.env.VITE_API_BASE_URL || 'http://localhost:8081';
+import { TwoFactorVerifyLoginRequestSchema } from '../../../src/lib/two-factor-schemas.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,22 +7,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 纯转发到Go后端的2FA验证端点
-    const response = await fetch(`${BACKEND_URL}/api/auth/2fa/verify-login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(req.body),
+    // Validate request body
+    const validated = TwoFactorVerifyLoginRequestSchema.safeParse(req.body);
+    if (!validated.success) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Token and sessionId are required'
+      });
+    }
+
+    // TODO: Implement proper session tracking:
+    // 1. Look up pending login session by sessionId (Redis or database)
+    // 2. Get userId from session
+    // 3. Call TwoFactorService.verify(userId, token)
+    // 4. If valid, clear session and return JWT token
+    // For now, return error indicating implementation needed
+
+    return res.status(400).json({
+      error: 'Not implemented',
+      message: 'Session tracking required for login 2FA verification'
     });
-
-    const data = await response.json();
-
-    // 转发响应状态和内容
-    return res.status(response.status).json(data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Proxy error:', errorMessage);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error('2FA Verify Login error:', errorMessage);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: errorMessage
+    });
   }
 }

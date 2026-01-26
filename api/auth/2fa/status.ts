@@ -1,37 +1,45 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { TwoFactorService } from '../../../src/lib/two-factor-service.js';
 import { verifyToken } from '../../../src/lib/auth-middleware.js';
-
-// Go后端地址 - 统一使用VITE_API_BASE_URL
-const BACKEND_URL = process.env.VITE_API_BASE_URL || 'http://localhost:8081';
+import { TwoFactorStatusResponseSchema } from '../../../src/lib/two-factor-schemas.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // 验证JWT令牌
-  const user = verifyToken(req);
-  if (!user) {
-    return res.status(401).json({ code: 'AUTH_REQUIRED', message: 'Authentication required' });
-  }
-
   try {
-    // 纯转发到Go后端
-    const response = await fetch(`${BACKEND_URL}/api/auth/2fa/status`, {
-      method: 'GET',
-      headers: {
-        'Authorization': req.headers.authorization || '',
-        'Content-Type': 'application/json',
-      },
+    // Verify JWT authentication
+    const user = verifyToken(req);
+    if (!user) {
+      return res.status(401).json({
+        code: 'AUTH_REQUIRED',
+        message: 'Authentication required'
+      });
+    }
+
+    // Get 2FA status
+    const status = await TwoFactorService.getStatus(user.userId);
+
+    // Validate response
+    const validated = TwoFactorStatusResponseSchema.safeParse({
+      enabled: status.enabled,
+      remainingBackupCodes: status.remainingBackupCodes,
     });
 
-    const data = await response.json();
+    if (!validated.success) {
+      return res.status(500).json({
+        error: 'Internal Server Error'
+      });
+    }
 
-    // 转发响应状态和内容
-    return res.status(response.status).json(data);
+    return res.status(200).json(validated.data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('2FA Status proxy error:', errorMessage);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error('2FA Status error:', errorMessage);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: errorMessage
+    });
   }
 }
