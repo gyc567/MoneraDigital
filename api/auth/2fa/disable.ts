@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { TwoFactorService } from '../../../src/lib/two-factor-service.js';
 import { verifyToken } from '../../../src/lib/auth-middleware.js';
-import { TwoFactorDisableRequestSchema, TwoFactorDisableResponseSchema } from '../../../src/lib/two-factor-schemas.js';
+import { TwoFactorDisableRequestSchema } from '../../../src/lib/two-factor-schemas.js';
+import logger from '../../../src/lib/logger.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -13,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = verifyToken(req);
     if (!user) {
       return res.status(401).json({
-        code: 'AUTH_REQUIRED',
+        error: 'AUTH_REQUIRED',
         message: 'Authentication required'
       });
     }
@@ -32,12 +33,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Call service to disable 2FA
     await TwoFactorService.disable(user.userId, token);
 
-    const response = TwoFactorDisableResponseSchema.safeParse({
+    return res.status(200).json({
       success: true,
       message: '2FA disabled successfully',
     });
-
-    return res.status(200).json(response.data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
@@ -55,7 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    console.error('2FA Disable error:', errorMessage);
+    logger.error({ error: errorMessage }, '2FA Disable error');
     return res.status(500).json({
       error: 'Internal Server Error',
       message: errorMessage
