@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifyToken } from '../../src/lib/auth-middleware.js';
 import logger from '../../src/lib/logger.js';
 
 /**
@@ -16,6 +17,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({
       error: 'Server configuration error',
       message: 'Backend URL not configured',
+    });
+  }
+
+  // Verify authentication token
+  const user = verifyToken(req);
+  if (!user) {
+    return res.status(401).json({
+      code: 'MISSING_TOKEN',
+      message: 'Authentication required',
     });
   }
 

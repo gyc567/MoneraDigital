@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import jwt from 'jsonwebtoken';
 
 // Must set env before importing handler
+process.env.JWT_SECRET = 'test-secret-key-for-jwt-verification-minimum-32-bytes';
+
 const originalEnv = { ...process.env };
+
+// Helper to generate valid JWT token for testing
+function generateTestToken() {
+  return jwt.sign({ userId: 1, email: 'test@example.com' }, process.env.JWT_SECRET || '', {
+    expiresIn: '24h',
+  });
+}
 
 describe('/api/addresses', () => {
   beforeEach(() => {
@@ -11,12 +21,36 @@ describe('/api/addresses', () => {
   });
 
   describe('index.ts (GET/POST)', () => {
-    it('should return 405 for DELETE requests (handled by index.ts)', async () => {
-      // Re-import handler to pick up env changes if any (though we reset env)
+    it('should return 401 when Authorization header is missing', async () => {
+      process.env.BACKEND_URL = 'http://localhost:8081';
       const handler = await import('./index.js').then(m => m.default);
-      
+
+      const req = {
+        method: 'GET',
+        headers: {},
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        code: 'MISSING_TOKEN',
+        message: 'Authentication required',
+      });
+    });
+
+    it('should return 405 for DELETE requests (handled by index.ts)', async () => {
+      process.env.BACKEND_URL = 'http://localhost:8081';
+      const handler = await import('./index.js').then(m => m.default);
+
       const req = {
         method: 'DELETE',
+        headers: { authorization: `Bearer ${generateTestToken()}` },
         body: {},
       } as any;
 
@@ -43,7 +77,7 @@ describe('/api/addresses', () => {
 
       const req = {
         method: 'POST',
-        headers: { authorization: 'Bearer token' },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
         body: { wallet_address: '0x123', chain_type: 'ETH' },
       } as any;
 
@@ -60,7 +94,7 @@ describe('/api/addresses', () => {
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
-            'Authorization': 'Bearer token',
+            'Authorization': expect.stringContaining('Bearer '),
           }),
           body: JSON.stringify({ wallet_address: '0x123', chain_type: 'ETH' }),
         })
@@ -79,7 +113,7 @@ describe('/api/addresses', () => {
 
       const req = {
         method: 'GET',
-        headers: { authorization: 'Bearer token' },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
       } as any;
 
       const res = {
@@ -100,6 +134,30 @@ describe('/api/addresses', () => {
   });
 
   describe('[...path].ts (Sub-resources)', () => {
+    it('should return 401 when Authorization header is missing', async () => {
+      process.env.BACKEND_URL = 'http://localhost:8081';
+      const handler = await import('./[...path].js').then(m => m.default);
+
+      const req = {
+        method: 'DELETE',
+        query: { path: ['123'] },
+        headers: {},
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        code: 'MISSING_TOKEN',
+        message: 'Authentication required',
+      });
+    });
+
     it('should proxy DELETE request with ID', async () => {
       process.env.BACKEND_URL = 'http://localhost:8081';
       const handler = await import('./[...path].js').then(m => m.default);
@@ -113,7 +171,7 @@ describe('/api/addresses', () => {
       const req = {
         method: 'DELETE',
         query: { path: ['123'] },
-        headers: { authorization: 'Bearer token' },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
       } as any;
 
       const res = {
@@ -145,7 +203,7 @@ describe('/api/addresses', () => {
       const req = {
         method: 'POST',
         query: { path: ['123', 'verify'] },
-        headers: { authorization: 'Bearer token' },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
         body: { token: '123456' },
       } as any;
 
