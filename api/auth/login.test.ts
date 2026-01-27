@@ -11,7 +11,7 @@ describe('/api/auth/login', () => {
   });
 
   it('should return 405 for non-POST requests', async () => {
-    const handler = await import('./login').then(m => m.default);
+    const handler = await import('./login.js').then(m => m.default);
     const req = {
       method: 'GET',
       body: {},
@@ -32,7 +32,7 @@ describe('/api/auth/login', () => {
     // Mock environment without BACKEND_URL
     process.env.BACKEND_URL = undefined;
 
-    const handler = await import('./login').then(m => m.default);
+    const handler = await import('./login.js').then(m => m.default);
 
     const req = {
       method: 'POST',
@@ -57,7 +57,7 @@ describe('/api/auth/login', () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
 
-    const handler = await import('./login').then(m => m.default);
+    const handler = await import('./login.js').then(m => m.default);
 
     // Mock fetch
     global.fetch = vi.fn().mockResolvedValue({
@@ -96,7 +96,7 @@ describe('/api/auth/login', () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
 
-    const handler = await import('./login').then(m => m.default);
+    const handler = await import('./login.js').then(m => m.default);
 
     // Mock fetch with 401 response
     global.fetch = vi.fn().mockResolvedValue({
@@ -129,7 +129,7 @@ describe('/api/auth/login', () => {
     // Mock environment with valid backend URL
     process.env.BACKEND_URL = 'https://monera-digital--gyc567.replit.app';
 
-    const handler = await import('./login').then(m => m.default);
+    const handler = await import('./login.js').then(m => m.default);
 
     // Mock fetch with network error
     global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));

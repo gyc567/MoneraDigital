@@ -13,7 +13,7 @@ describe('/api/addresses', () => {
   describe('index.ts (GET/POST)', () => {
     it('should return 405 for DELETE requests (handled by index.ts)', async () => {
       // Re-import handler to pick up env changes if any (though we reset env)
-      const handler = await import('./index').then(m => m.default);
+      const handler = await import('./index.js').then(m => m.default);
       
       const req = {
         method: 'DELETE',
@@ -33,7 +33,7 @@ describe('/api/addresses', () => {
 
     it('should proxy POST request to backend', async () => {
       process.env.BACKEND_URL = 'http://localhost:8081';
-      const handler = await import('./index').then(m => m.default);
+      const handler = await import('./index.js').then(m => m.default);
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -69,7 +69,7 @@ describe('/api/addresses', () => {
 
     it('should proxy GET request to backend', async () => {
       process.env.BACKEND_URL = 'http://localhost:8081';
-      const handler = await import('./index').then(m => m.default);
+      const handler = await import('./index.js').then(m => m.default);
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -102,7 +102,7 @@ describe('/api/addresses', () => {
   describe('[...path].ts (Sub-resources)', () => {
     it('should proxy DELETE request with ID', async () => {
       process.env.BACKEND_URL = 'http://localhost:8081';
-      const handler = await import('./[...path]').then(m => m.default);
+      const handler = await import('./[...path].js').then(m => m.default);
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -134,7 +134,7 @@ describe('/api/addresses', () => {
 
     it('should proxy POST verify request', async () => {
       process.env.BACKEND_URL = 'http://localhost:8081';
-      const handler = await import('./[...path]').then(m => m.default);
+      const handler = await import('./[...path].js').then(m => m.default);
 
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
