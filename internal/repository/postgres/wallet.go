@@ -29,7 +29,7 @@ func (r *WalletRepository) GetRequestByUserID(ctx context.Context, userID int) (
 	query := `
 		SELECT id, request_id, user_id, status, wallet_id, address, addresses, error_message, created_at, updated_at
 		FROM wallet_creation_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`
-	
+
 	var w models.WalletCreationRequest
 	err := r.db.QueryRowContext(ctx, query, userID).Scan(
 		&w.ID, &w.RequestID, &w.UserID, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
@@ -55,11 +55,11 @@ func (r *WalletRepository) UpdateRequest(ctx context.Context, req *models.Wallet
 }
 
 func (r *WalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
-    query := `
+	query := `
 		SELECT id, request_id, user_id, status, wallet_id, address, addresses, error_message, created_at, updated_at
 		FROM wallet_creation_requests WHERE user_id = $1 AND status = 'SUCCESS' ORDER BY created_at DESC LIMIT 1`
-    
-    var w models.WalletCreationRequest
+
+	var w models.WalletCreationRequest
 	err := r.db.QueryRowContext(ctx, query, userID).Scan(
 		&w.ID, &w.RequestID, &w.UserID, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
 	)

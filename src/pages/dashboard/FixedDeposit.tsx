@@ -391,6 +391,9 @@ const FixedDeposit = () => {
     if (typeof num === "string") {
       num = parseFloat(num);
     }
+    if (isNaN(num) || !isFinite(num)) {
+      return "0";
+    }
     return new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 8,
@@ -422,10 +425,12 @@ const FixedDeposit = () => {
   };
 
   const calculateInterest = (): string => {
-    if (!selectedProduct || !amount) return "0";
+    if (!selectedProduct || !amount) return "0.00";
     const principal = parseFloat(amount);
+    if (isNaN(principal) || principal <= 0) return "0.00";
     const interest = (principal * (selectedProduct.apy / 100) * selectedProduct.duration) / 365;
-    return interest.toFixed(2);
+    if (isNaN(interest) || !isFinite(interest)) return "0.00";
+    return formatNumber(interest);
   };
 
   const STATUS_MAP: Record<number, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
@@ -434,6 +439,23 @@ const FixedDeposit = () => {
     2: { label: "matured", variant: "outline" },
     3: { label: "redeemed", variant: "outline" },
     4: { label: "renewing", variant: "secondary" },
+  };
+
+  const validateAmount = (): { valid: boolean; error?: string } => {
+    if (!selectedProduct || !amount) {
+      return { valid: true };
+    }
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return { valid: false, error: t("dashboard.fixedDeposit.invalidAmount") };
+    }
+    if (amountNum < selectedProduct.minAmount) {
+      return { valid: false, error: `${t("dashboard.fixedDeposit.amountBelowMinError")} ${formatNumber(selectedProduct.minAmount)} ${selectedProduct.currency}` };
+    }
+    if (amountNum > selectedProduct.maxAmount) {
+      return { valid: false, error: `${t("dashboard.fixedDeposit.amountAboveMaxError")} ${formatNumber(selectedProduct.maxAmount)} ${selectedProduct.currency}` };
+    }
+    return { valid: true };
   };
 
   const getStatusInfo = (status: number) => {

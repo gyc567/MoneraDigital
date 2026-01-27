@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"monera-digital/internal/binance"
@@ -22,12 +23,16 @@ var (
 	ErrOrderAlreadyRedeemed  = errors.New("order already redeemed")
 	ErrInvalidRedemptionType = errors.New("invalid redemption type")
 	ErrPriceFetchFailed      = errors.New("failed to fetch price")
+	ErrJournalCreateFailed   = errors.New("failed to create journal record")
+	ErrDuplicateRequest      = errors.New("duplicate request, please try again later")
 )
 
 type WealthService struct {
 	repo        repository.Wealth
 	accountRepo repository.AccountV2
 	journalRepo repository.Journal
+	lockMap     map[string]bool
+	mu          map[string]*sync.Mutex
 }
 
 func NewWealthService(wealthRepo repository.Wealth, accountRepo repository.AccountV2, journalRepo repository.Journal) *WealthService {
@@ -35,7 +40,36 @@ func NewWealthService(wealthRepo repository.Wealth, accountRepo repository.Accou
 		repo:        wealthRepo,
 		accountRepo: accountRepo,
 		journalRepo: journalRepo,
+		lockMap:     make(map[string]bool),
+		mu:          make(map[string]*sync.Mutex),
 	}
+}
+
+// getLock returns a mutex for the given key
+func (s *WealthService) getLock(key string) *sync.Mutex {
+	if s.mu[key] == nil {
+		s.mu[key] = &sync.Mutex{}
+	}
+	return s.mu[key]
+}
+
+// generateIdempotencyKey generates a unique key for idempotency check
+func (s *WealthService) generateIdempotencyKey(userID int, productID int64, amount string) string {
+	return fmt.Sprintf("subscribe:%d:%d:%s", userID, productID, amount)
+}
+
+// isDuplicateCheck checks if this is a duplicate request
+func (s *WealthService) isDuplicateCheck(key string) bool {
+	if s.lockMap[key] {
+		return true
+	}
+	s.lockMap[key] = true
+	return false
+}
+
+// clearLock clears the lock for a key
+func (s *WealthService) clearLock(key string) {
+	delete(s.lockMap, key)
 }
 
 type Asset struct {
@@ -173,6 +207,19 @@ func (s *WealthService) GetProducts(ctx context.Context, page, pageSize int) ([]
 }
 
 func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int64, amount string, autoRenew bool) (string, error) {
+	idempotencyKey := s.generateIdempotencyKey(userID, productID, amount)
+	mu := s.getLock(idempotencyKey)
+
+	mu.Lock()
+	defer func() {
+		mu.Unlock()
+		s.clearLock(idempotencyKey)
+	}()
+
+	if s.isDuplicateCheck(idempotencyKey) {
+		return "", ErrDuplicateRequest
+	}
+
 	product, err := s.repo.GetProductByID(ctx, productID)
 	if err != nil {
 		return "", ErrProductNotFound
@@ -195,6 +242,12 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 	maxAmount, _ := strconv.ParseFloat(product.MaxAmount, 64)
 	if available > maxAmount {
 		return "", ErrAmountAboveMax
+	}
+
+	soldQuota, _ := strconv.ParseFloat(product.SoldQuota, 64)
+	totalQuota, _ := strconv.ParseFloat(product.TotalQuota, 64)
+	if soldQuota+available > totalQuota {
+		return "", ErrQuotaExceeded
 	}
 
 	account, err := s.accountRepo.GetAccountByUserIDAndCurrency(ctx, int64(userID), product.Currency)
@@ -248,6 +301,11 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 		return "", err
 	}
 
+	err = s.repo.UpdateProductSoldQuota(ctx, productID, amount)
+	if err != nil {
+		fmt.Printf("[WARNING] Failed to update product sold quota: %v\n", err)
+	}
+
 	serialNo := fmt.Sprintf("SUBSCRIBE-%s-%d", now.Format("20060102150405"), order.ID)
 	balanceAfterFreeze := balance - available
 	journalRecord := &repository.JournalModel{
@@ -264,6 +322,7 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 	err = s.journalRepo.CreateJournalRecord(ctx, journalRecord)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to create journal record: %v\n", err)
+		return "", ErrJournalCreateFailed
 	}
 
 	return interestExpected, nil

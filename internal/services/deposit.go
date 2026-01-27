@@ -20,9 +20,9 @@ func (s *DepositService) GetDeposits(ctx context.Context, userID int, limit, off
 
 func (s *DepositService) HandleWebhook(ctx context.Context, payload map[string]interface{}) error {
 	// Implement webhook handling logic
-    // 1. Verify signature (skipped for MVP, handled by middleware usually or here)
-    // 2. Extract data
-    // 3. Update or Insert deposit
-    // This requires implementing Upsert logic or Check-then-Insert
-    return nil
+	// 1. Verify signature (skipped for MVP, handled by middleware usually or here)
+	// 2. Extract data
+	// 3. Update or Insert deposit
+	// This requires implementing Upsert logic or Check-then-Insert
+	return nil
 }
