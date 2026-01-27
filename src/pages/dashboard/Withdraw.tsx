@@ -185,7 +185,7 @@ function Withdraw() {
 
       const data = await res.json();
       if (res.ok) {
-        toast.success("Address added successfully. Please verify it before first withdrawal.");
+        toast.success(t("addresses.addSuccessMessage"));
         setIsAddAddressOpen(false);
         setNewAddressAlias("");
         setNewAddress("");

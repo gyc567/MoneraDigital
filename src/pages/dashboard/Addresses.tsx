@@ -89,7 +89,7 @@ const Addresses = () => {
 
       const data = await res.json();
       if (res.ok) {
-        toast.success(data.message || "Address added successfully");
+        toast.success(data.message || t("addresses.addSuccessMessage"));
         setNewAddress("");
         setLabel("");
         setAddressType("ETH");
