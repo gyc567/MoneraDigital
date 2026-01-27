@@ -192,7 +192,11 @@ function Withdraw() {
         setNewAddressChain("Ethereum");
         await fetchAddresses();
       } else {
-        toast.error(data.error || "Failed to add address");
+        if (res.status === 409) {
+          toast.error(t("addresses.duplicateError"));
+        } else {
+          toast.error(data.error || "Failed to add address");
+        }
       }
     } catch (error) {
       console.error("Create address error:", error);

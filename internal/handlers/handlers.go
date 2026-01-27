@@ -322,6 +322,10 @@ func (h *Handler) AddAddress(c *gin.Context) {
 
 	addr, err := h.AddressService.AddAddress(c.Request.Context(), userID, req)
 	if err != nil {
+		if err.Error() == "address already exists" {
+			c.JSON(http.StatusConflict, gin.H{"error": "Address already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

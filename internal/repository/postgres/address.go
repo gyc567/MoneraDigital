@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/lib/pq"
+
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 )
@@ -29,6 +31,10 @@ func (r *AddressRepository) CreateAddress(ctx context.Context, address *models.W
 		time.Now(), time.Now(),
 	).Scan(&address.ID)
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			return nil, repository.ErrAlreadyExists
+		}
+		// Fallback legacy check just in case
 		if err.Error() == "pq: duplicate key value violates unique constraint \"withdrawal_address_whitelist_user_id_wallet_address_key\"" {
 			return nil, repository.ErrAlreadyExists
 		}

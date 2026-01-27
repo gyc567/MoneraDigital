@@ -255,7 +255,8 @@
     "deactivateConfirm": "Deactivate Address",
     "deactivateWarning": "This will permanently deactivate the address and you won't be able to use it for withdrawals. This action cannot be undone.",
     "noAddresses": "No addresses added yet. Click \"Add Address\" to get started.",
-    "addSuccessMessage": "Address added successfully. Please verify it before first withdrawal."
+    "addSuccessMessage": "Address added successfully. Please verify it before first withdrawal.",
+    "duplicateError": "This address has already been added."
   },
   "dashboard": {
     "nav": {

@@ -255,7 +255,8 @@
     "deactivateConfirm": "停用地址",
     "deactivateWarning": "这将永久停用该地址，您将无法使用它进行提现。此操作无法撤销。",
     "noAddresses": "尚未添加任何地址。点击\"添加地址\"开始。",
-    "addSuccessMessage": "地址添加成功。请在首次提现前完成验证。"
+    "addSuccessMessage": "地址添加成功。请在首次提现前完成验证。",
+    "duplicateError": "该地址已存在，请勿重复添加。"
   },
   "dashboard": {
     "nav": {
