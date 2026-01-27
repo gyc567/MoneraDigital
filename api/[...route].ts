@@ -87,21 +87,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Validate backend URL
     if (!BACKEND_URL) {
+      logger.error({}, 'BACKEND_URL not configured');
       return res.status(500).json({
         error: 'Server configuration error',
         message: 'Backend URL not configured',
+        code: 'BACKEND_URL_MISSING',
       });
     }
 
     // Parse request
     const { method, path } = parseRoute(req);
 
+    // Log incoming request for debugging
+    logger.debug({
+      method,
+      path,
+      hasAuth: !!req.headers.authorization,
+      query: req.query,
+    }, 'Handling API request');
+
     // Find matching route
     const routeMatch = findRoute(method, path);
     if (!routeMatch.found) {
+      logger.warn({ method, path }, `Route not found for ${method} ${path}`);
       return res.status(404).json({
         error: 'Not Found',
         message: `No route found for ${method} ${path}`,
+        code: 'ROUTE_NOT_FOUND',
       });
     }
 
@@ -112,16 +124,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (routeConfig.requiresAuth) {
       const user = verifyToken(req);
       if (!user) {
+        logger.warn({ path }, 'Authentication required but token missing');
         return res.status(401).json({
           code: 'MISSING_TOKEN',
           message: 'Authentication required',
+          error: 'Unauthorized',
         });
       }
     }
 
     // Validate HTTP method
     if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
-      return res.status(405).json({ error: 'Method Not Allowed' });
+      logger.error({ method, path }, `Method not allowed: ${method}`);
+      return res.status(405).json({
+        error: 'Method Not Allowed',
+        code: 'METHOD_NOT_ALLOWED',
+        message: `HTTP method ${method} not allowed for ${path}`,
+        allowedMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+      });
     }
 
     // Construct backend URL
@@ -142,8 +162,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Call backend
+    logger.debug({ backendUrl, method }, 'Calling backend');
     const response = await fetch(backendUrl, options);
-    const data = await response.json().catch(() => ({}));
+
+    // Parse response JSON with error handling
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      logger.warn(
+        { status: response.status, statusText: response.statusText },
+        'Failed to parse response as JSON'
+      );
+      // For non-2xx responses with invalid JSON, return status with error message
+      if (!response.ok) {
+        data = {
+          error: response.statusText || 'Backend error',
+          status: response.status,
+          message: `Backend returned status ${response.status} with invalid response body`,
+          code: 'BACKEND_ERROR',
+        };
+      }
+    }
 
     // Log audit trail for sensitive operations
     if (method === 'POST' && path === '/auth/2fa/skip') {
@@ -151,6 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Return backend response
+    logger.debug({ status: response.status, path }, 'Returning response');
     return res.status(response.status).json(data);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -158,6 +199,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to process request',
+      code: 'INTERNAL_ERROR',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
     });
   }
 }
