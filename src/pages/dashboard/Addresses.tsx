@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Check, Clock, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Check, Clock, AlertCircle, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 interface WithdrawalAddress {
@@ -37,6 +37,7 @@ const Addresses = () => {
   const [verificationToken, setVerificationToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteAddressId, setDeleteAddressId] = useState<number | null>(null);
+  const [userTwoFactorEnabled, setUserTwoFactorEnabled] = useState(false);
 
   // Fetch addresses
   const fetchAddresses = async () => {
@@ -62,6 +63,24 @@ const Addresses = () => {
 
   useEffect(() => {
     fetchAddresses();
+    
+    // Fetch user profile to check 2FA status
+    const fetchProfile = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Check for snake_case or camelCase just in case
+          setUserTwoFactorEnabled(!!(data.two_factor_enabled || data.twoFactorEnabled));
+        }
+      } catch (e) {
+        console.error("Failed to fetch user profile", e);
+      }
+    };
+    fetchProfile();
   }, []);
 
   // Add new address
@@ -375,21 +394,38 @@ const Addresses = () => {
       <Dialog open={isVerifyDialogOpen} onOpenChange={setIsVerifyDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>{t("dashboard.addresses.verifyDialogTitle")}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {userTwoFactorEnabled && <Shield className="h-5 w-5 text-yellow-500" />}
+              {userTwoFactorEnabled 
+                ? t("auth.2fa.required") || "2FA Verification" 
+                : t("dashboard.addresses.verifyDialogTitle")}
+            </DialogTitle>
             <DialogDescription>
-              {t("dashboard.addresses.verifyDialogDescription")}
+              {userTwoFactorEnabled 
+                ? t("auth.2fa.enterCode") || "Please enter the 6-digit code from your authenticator app."
+                : t("dashboard.addresses.verifyDialogDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="token">{t("dashboard.addresses.verificationCode")}</Label>
+              <Label htmlFor="token">
+                {userTwoFactorEnabled 
+                  ? t("auth.2fa.code") || "Verification Code"
+                  : t("dashboard.addresses.verificationCode")}
+              </Label>
               <Input
                 id="token"
-                placeholder={t("dashboard.addresses.verificationCodePlaceholder")}
+                placeholder={userTwoFactorEnabled ? "000000" : t("dashboard.addresses.verificationCodePlaceholder")}
                 value={verificationToken}
                 onChange={(e) => setVerificationToken(e.target.value)}
+                maxLength={userTwoFactorEnabled ? 6 : undefined}
               />
+              {userTwoFactorEnabled && (
+                <p className="text-xs text-muted-foreground">
+                  {t("auth.2fa.hint") || "Enter the code from your Google Authenticator app"}
+                </p>
+              )}
             </div>
           </div>
 

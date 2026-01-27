@@ -220,6 +220,14 @@ func (s *AuthService) Verify2FAAndLogin(userID int, token string) (*LoginRespons
 	}, nil
 }
 
+// Verify2FA verifies a 2FA token for a user
+func (s *AuthService) Verify2FA(userID int, token string) (bool, error) {
+	if s.twoFactorService == nil {
+		return false, errors.New("two factor service not initialized")
+	}
+	return s.twoFactorService.Verify(userID, token)
+}
+
 // GetUserByID retrieves a user by their ID
 func (s *AuthService) GetUserByID(userID int) (*models.User, error) {
 	var user models.User
