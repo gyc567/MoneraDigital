@@ -88,11 +88,6 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	c.AuthService = services.NewAuthService(db, jwtSecret)
 	c.AuthService.SetTokenBlacklist(c.TokenBlacklist)
 
-	// 注入TwoFactorService依赖（如果已初始化）
-	if c.TwoFAService != nil {
-		c.AuthService.SetTwoFactorService(c.TwoFAService)
-	}
-
 	c.LendingService = services.NewLendingService(db)
 	c.AddressService = services.NewAddressService(c.Repository.Address)
 	c.WithdrawalService = services.NewWithdrawalService(db, c.Repository, services.NewSafeheronService())
@@ -103,6 +98,11 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	// 应用配置选项 (按顺序执行)
 	for _, opt := range opts {
 		opt(c)
+	}
+
+	// 注入TwoFactorService依赖（如果在选项函数中已初始化）
+	if c.TwoFAService != nil {
+		c.AuthService.SetTwoFactorService(c.TwoFAService)
 	}
 
 	// 初始化中间件
