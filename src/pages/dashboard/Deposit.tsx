@@ -28,13 +28,14 @@ const Deposit = () => {
   const [qrCodeUrl, setQrCodeUrl] = useState("");
 
   const networkOptions = [
-    { value: "TRON", label: "TRON (TRC20)" },
-    { value: "ETH", label: "Ethereum (ERC20)" },
-    { value: "BSC", label: "BNB Smart Chain (BEP20)" },
+    { value: "TRON", label: "TRON (TRC20)", name: "TRON" },
+    { value: "ETH", label: "Ethereum (ERC20)", name: "Ethereum" },
+    { value: "BSC", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
   ];
 
   const selectedNetwork = networkOptions.find(option => option.value === network);
-  const networkLabel = selectedNetwork ? selectedNetwork.label : network;
+  const networkLabel = selectedNetwork?.label ?? network;
+  const networkName = selectedNetwork?.name ?? network;
 
   const { data: walletInfo, isLoading: isWalletLoading } = useQuery({
     queryKey: ["walletInfo"],
@@ -169,7 +170,7 @@ const Deposit = () => {
 
                     <div className="flex items-start gap-2 text-sm text-yellow-600 dark:text-yellow-500 bg-yellow-500/10 p-3 rounded-md w-full">
                         <AlertTriangle className="w-5 h-5 shrink-0" />
-                        <p>{t("deposit.warning", { network: networkLabel })}</p>
+                        <p>{t("deposit.warning", { network: networkName })}</p>
                     </div>
                     
                     <p className="text-xs text-muted-foreground">{t("deposit.minDeposit")}</p>
