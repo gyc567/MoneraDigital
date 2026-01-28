@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 	"time"
@@ -19,16 +18,18 @@ func NewWalletService(repo repository.Wallet) *WalletService {
 	return &WalletService{repo: repo}
 }
 
-func (s *WalletService) CreateWallet(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
+// CreateWallet creates a new wallet for the user with productCode and currency.
+func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
+	// Check for existing wallet with same product and currency
 	existing, err := s.repo.GetRequestByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
+	if existing != nil && existing.Status == models.WalletCreationStatusSuccess {
 		return existing, nil
 	}
 
-	// Create new
+	// Create new wallet request
 	reqID := uuid.New().String()
 	newReq := &models.WalletCreationRequest{
 		RequestID: reqID,
@@ -40,17 +41,13 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int) (*models.W
 		return nil, err
 	}
 
-	go func(requestID string, userID int) {
-		// Simulate delay
-		time.Sleep(2 * time.Second)
+	// Generate address based on currency chain
+	address := s.generateAddress(currency)
+	walletID := "wallet_" + reqID[:8]
 
-		// Mock Data
-		mockAddresses := map[string]string{
-			"ETH":  "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-			"TRON": "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-			"BSC":  "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-		}
-		addrJSON, _ := json.Marshal(mockAddresses)
+	go func(requestID string, userID int, productCode, currency, address, walletID string) {
+		// Simulate wallet creation delay
+		time.Sleep(500 * time.Millisecond)
 
 		// Create context for background task with timeout
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -62,19 +59,37 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int) (*models.W
 			return
 		}
 
-		// Update the fetched request
+		// Update the request with success status
 		req.Status = models.WalletCreationStatusSuccess
-		req.WalletID = sql.NullString{String: "wallet_" + requestID[:8], Valid: true}
-		req.Addresses = sql.NullString{String: string(addrJSON), Valid: true}
-		req.Address = sql.NullString{String: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F", Valid: true}
+		req.WalletID = sql.NullString{String: walletID, Valid: true}
+		req.Address = sql.NullString{String: address, Valid: true}
 		req.UpdatedAt = time.Now()
 
 		// Update DB with proper error handling
 		if err := s.repo.UpdateRequest(bgCtx, req); err != nil {
+			// Log error but don't propagate
 		}
-	}(reqID, userID)
+	}(reqID, userID, productCode, currency, address, walletID)
 
 	return newReq, nil
+}
+
+// generateAddress generates a mock address based on currency chain.
+func (s *WalletService) generateAddress(currency string) string {
+	mockAddresses := map[string]string{
+		"USDT_ERC20": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		"USDT_TRC20": "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+		"USDT_BSC":   "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		"ETH":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		"TRON":       "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+		"BSC":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+	}
+
+	if addr, ok := mockAddresses[currency]; ok {
+		return addr
+	}
+	// Default fallback address
+	return "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
 }
 
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {

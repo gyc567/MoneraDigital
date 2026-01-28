@@ -55,6 +55,8 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			auth.POST("/logout", h.Logout)
 			// 2FA验证登录 - 公开端点，因为此时还没有JWT
 			auth.POST("/2fa/verify-login", h.Verify2FALogin)
+			// 跳过2FA设置 - 公开端点
+			auth.POST("/2fa/skip", h.Skip2FALogin)
 		}
 
 		webhooks := public.Group("/webhooks")
@@ -71,6 +73,11 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			accounts.POST("/freeze", accountHandler.FreezeBalance)
 			accounts.POST("/unfreeze", accountHandler.UnfreezeBalance)
 			accounts.POST("/transfer", accountHandler.Transfer)
+		}
+
+		wallet := public.Group("/wallet")
+		{
+			wallet.POST("/create", h.CreateWallet)
 		}
 	}
 

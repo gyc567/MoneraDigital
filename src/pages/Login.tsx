@@ -87,7 +87,7 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) {
         const errorCode = data.code || "";
-        
+
         if (errorCode === "EMAIL_NOT_FOUND") {
           setEmailError(t("auth.errors.emailNotFound"));
         } else if (errorCode === "INVALID_CREDENTIALS") {
@@ -118,6 +118,37 @@ export default function Login() {
       if (!emailError && !passwordError) {
         toast.error(t("auth.errors.serverError"));
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSkip2FA = async () => {
+    if (!tempUserId) return;
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/auth/2fa/skip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: tempUserId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Skip failed');
+      }
+
+      // Store token and redirect
+      localStorage.setItem('token', data.access_token || data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      toast.success(t("auth.login.successMessage"));
+      const returnTo = validateRedirectPath((location.state as any)?.returnTo);
+      navigate(returnTo);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to skip 2FA');
     } finally {
       setIsLoading(false);
     }
@@ -208,15 +239,36 @@ export default function Login() {
             )}
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={isLoading || (requires2FA && twoFactorToken.length !== 6)}>
-              {isLoading ? t("auth.login.loggingIn") : (requires2FA ? t("dashboard.security.verify") : t("auth.login.button"))}
-            </Button>
-            {!requires2FA && (
-              <div className="text-sm text-center">
-                {t("auth.login.noAccount")}{" "}
-                <Link to="/register" className="text-blue-600 hover:underline">
-                  {t("auth.login.register")}
-                </Link>
+            {!requires2FA ? (
+              <>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("auth.login.loggingIn") : t("auth.login.button")}
+                </Button>
+                <div className="text-sm text-center">
+                  {t("auth.login.noAccount")}{" "}
+                  <Link to="/register" className="text-blue-600 hover:underline">
+                    {t("auth.login.register")}
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <div className="flex gap-2 w-full">
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={isLoading || twoFactorToken.length !== 6}
+                >
+                  {isLoading ? t("auth.login.loggingIn") : t("dashboard.security.verify")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleSkip2FA}
+                  disabled={isLoading}
+                >
+                  Skip for Now
+                </Button>
               </div>
             )}
           </CardFooter>
