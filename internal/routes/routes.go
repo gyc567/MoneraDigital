@@ -106,7 +106,6 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 
 		wallet := protected.Group("/wallet")
 		{
-			wallet.POST("/create", h.CreateWallet)
 			wallet.GET("/info", h.GetWalletInfo)
 		}
 

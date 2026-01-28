@@ -17,7 +17,7 @@ func TestWalletService_CreateWallet_New(t *testing.T) {
 	service := NewWalletService(mockRepo)
 
 	// Setup expectations
-	mockRepo.On("GetRequestByUserID", mock.Anything, 1).Return(nil, nil)
+	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "C_SPOT", "USDT_ERC20").Return(nil, nil)
 	mockRepo.On("CreateRequest", mock.Anything, mock.AnythingOfType("*models.WalletCreationRequest")).Return(nil)
 
 	req, err := service.CreateWallet(context.Background(), 1, "C_SPOT", "USDT_ERC20")
@@ -43,7 +43,7 @@ func TestWalletService_CreateWallet_Existing(t *testing.T) {
 	}
 
 	// Setup expectations - existing success wallet
-	mockRepo.On("GetRequestByUserID", mock.Anything, 1).Return(existingReq, nil)
+	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "C_SPOT", "USDT_ERC20").Return(existingReq, nil)
 
 	req, err := service.CreateWallet(context.Background(), 1, "C_SPOT", "USDT_ERC20")
 
@@ -68,7 +68,7 @@ func TestWalletService_CreateWallet_WithProductAndCurrency(t *testing.T) {
 			mockRepo := new(MockWalletRepository)
 			service := NewWalletService(mockRepo)
 
-			mockRepo.On("GetRequestByUserID", mock.Anything, 1).Return(nil, nil)
+			mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, tc.productCode, tc.currency).Return(nil, nil)
 			mockRepo.On("CreateRequest", mock.Anything, mock.AnythingOfType("*models.WalletCreationRequest")).Return(nil)
 
 			req, err := service.CreateWallet(context.Background(), 1, tc.productCode, tc.currency)

@@ -22,6 +22,28 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 		return
 	}
 
+	// Validate required fields
+	if req.UserID == "" || req.ProductCode == "" || req.Currency == "" {
+		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
+			Code:      "400",
+			Message:   "userId, productCode and currency are required",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	// Validate product code
+	if req.ProductCode != "BANK_ACCOUNT" {
+		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
+			Code:      "400",
+			Message:   "Invalid product code",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
 	// Convert userId string to int
 	userID, err := strconv.Atoi(req.UserID)
 	if err != nil {
@@ -54,7 +76,7 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 
 	c.JSON(http.StatusOK, dto.CreateWalletResponse{
 		Code:    "200",
-		Message: "成功",
+		Message: "Success",
 		Data: dto.WalletResponseData{
 			UserID:      req.UserID,
 			ProductCode: req.ProductCode,

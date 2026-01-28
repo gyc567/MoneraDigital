@@ -25,8 +25,41 @@ func (m *MockSafeheronService) Withdraw(ctx context.Context, req SafeheronWithdr
 	return args.Get(0).(*SafeheronWithdrawalResponse), args.Error(1)
 }
 
+// MockAccountRepositoryForWithdrawal implements repository.Account interface
+type MockAccountRepositoryForWithdrawal struct {
+	mock.Mock
+}
+
+func (m *MockAccountRepositoryForWithdrawal) GetByUserIDAndType(ctx context.Context, userID int, accountType string) (*models.Account, error) {
+	args := m.Called(ctx, userID, accountType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Account), args.Error(1)
+}
+
+func (m *MockAccountRepositoryForWithdrawal) Create(ctx context.Context, account *models.Account) error {
+	args := m.Called(ctx, account)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepositoryForWithdrawal) UpdateFrozenBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepositoryForWithdrawal) ReleaseFrozenBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepositoryForWithdrawal) DeductBalance(ctx context.Context, userID int, amount float64) error {
+	args := m.Called(ctx, userID, amount)
+	return args.Error(0)
+}
+
 func TestWithdrawalService_CreateWithdrawal_InsufficientBalance(t *testing.T) {
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryForWithdrawal)
 	repo := &repository.Repository{Account: mockAccountRepo}
 	service := NewWithdrawalService(nil, repo, nil)
 
@@ -58,7 +91,7 @@ func TestWithdrawalService_CreateWithdrawal_WithMockDB(t *testing.T) {
 	defer db.Close()
 
 	// Setup Mocks
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryForWithdrawal)
 	mockAddressRepo := new(MockAddressRepository)
 	mockWithdrawalRepo := new(MockWithdrawalRepository)
 	mockSafeheron := new(MockSafeheronService)

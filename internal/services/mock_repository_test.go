@@ -2,8 +2,9 @@ package services
 
 import (
 	"context"
-	"monera-digital/internal/models"
 	"github.com/stretchr/testify/mock"
+	"monera-digital/internal/models"
+	"monera-digital/internal/repository"
 )
 
 // MockDepositRepository
@@ -13,25 +14,25 @@ type MockDepositRepository struct {
 
 func (m *MockDepositRepository) Create(ctx context.Context, deposit *models.Deposit) error {
 	args := m.Called(ctx, deposit)
-    if args.Get(0) == nil {
-        deposit.ID = 1 
-    }
+	if args.Get(0) == nil {
+		deposit.ID = 1
+	}
 	return args.Error(0)
 }
 
 func (m *MockDepositRepository) GetByTxHash(ctx context.Context, txHash string) (*models.Deposit, error) {
 	args := m.Called(ctx, txHash)
-    if args.Get(0) == nil {
-        return nil, args.Error(1)
-    }
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.Deposit), args.Error(1)
 }
 
 func (m *MockDepositRepository) GetByUserID(ctx context.Context, userID int, limit, offset int) ([]*models.Deposit, int64, error) {
 	args := m.Called(ctx, userID, limit, offset)
-    if args.Get(0) == nil {
-        return nil, 0, args.Error(2)
-    }
+	if args.Get(0) == nil {
+		return nil, 0, args.Error(2)
+	}
 	return args.Get(0).([]*models.Deposit), args.Get(1).(int64), args.Error(2)
 }
 
@@ -47,17 +48,17 @@ type MockWalletRepository struct {
 
 func (m *MockWalletRepository) CreateRequest(ctx context.Context, req *models.WalletCreationRequest) error {
 	args := m.Called(ctx, req)
-    if args.Get(0) == nil {
-        req.ID = 1
-    }
+	if args.Get(0) == nil {
+		req.ID = 1
+	}
 	return args.Error(0)
 }
 
 func (m *MockWalletRepository) GetRequestByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	args := m.Called(ctx, userID)
-    if args.Get(0) == nil {
-        return nil, args.Error(1)
-    }
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
@@ -68,9 +69,17 @@ func (m *MockWalletRepository) UpdateRequest(ctx context.Context, req *models.Wa
 
 func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	args := m.Called(ctx, userID)
-    if args.Get(0) == nil {
-        return nil, args.Error(1)
-    }
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
+}
+
+func (m *MockWalletRepository) GetWalletByUserProductCurrency(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
+	args := m.Called(ctx, userID, productCode, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
@@ -102,8 +111,39 @@ func (m *MockAccountRepository) ReleaseFrozenBalance(ctx context.Context, userID
 	return args.Error(0)
 }
 
-func (m *MockAccountRepository) DeductBalance(ctx context.Context, userID int, amount float64) error {
-	args := m.Called(ctx, userID, amount)
+func (m *MockAccountRepository) DeductBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) AddBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) GetAccountsByUserID(ctx context.Context, userID int64) ([]*repository.AccountModel, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.AccountModel), args.Error(1)
+}
+
+func (m *MockAccountRepository) GetAccountByUserIDAndCurrency(ctx context.Context, userID int64, currency string) (*repository.AccountModel, error) {
+	args := m.Called(ctx, userID, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.AccountModel), args.Error(1)
+}
+
+func (m *MockAccountRepository) FreezeBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) UnfreezeBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
 	return args.Error(0)
 }
 
@@ -199,4 +239,121 @@ func (m *MockAddressRepository) GetByAddressAndChain(ctx context.Context, addres
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.WithdrawalAddress), args.Error(1)
+}
+
+// MockWealthRepository
+ type MockWealthRepository struct {
+	mock.Mock
+}
+
+func (m *MockWealthRepository) GetActiveProducts(ctx context.Context) ([]*repository.WealthProductModel, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.WealthProductModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) GetProductByCode(ctx context.Context, code string) (*repository.WealthProductModel, error) {
+	args := m.Called(ctx, code)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.WealthProductModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) CreateOrder(ctx context.Context, order *repository.WealthOrderModel) error {
+	args := m.Called(ctx, order)
+	return args.Error(0)
+}
+
+func (m *MockWealthRepository) GetOrdersByUserID(ctx context.Context, userID int64) ([]*repository.WealthOrderModel, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.WealthOrderModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) GetOrderByID(ctx context.Context, id int64) (*repository.WealthOrderModel, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.WealthOrderModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) UpdateOrder(ctx context.Context, order *repository.WealthOrderModel) error {
+	args := m.Called(ctx, order)
+	return args.Error(0)
+}
+
+func (m *MockWealthRepository) GetProductByID(ctx context.Context, id int64) (*repository.WealthProductModel, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.WealthProductModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) UpdateProductSoldQuota(ctx context.Context, id int64, amount string) error {
+	args := m.Called(ctx, id, amount)
+	return args.Error(0)
+}
+
+func (m *MockWealthRepository) GetActiveOrders(ctx context.Context) ([]*repository.WealthOrderModel, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.WealthOrderModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) GetExpiredOrders(ctx context.Context) ([]*repository.WealthOrderModel, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.WealthOrderModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) AccrueInterest(ctx context.Context, orderID int64, amount string, date string) error {
+	args := m.Called(ctx, orderID, amount, date)
+	return args.Error(0)
+}
+
+func (m *MockWealthRepository) SettleOrder(ctx context.Context, orderID int64, interestPaid string) error {
+	args := m.Called(ctx, orderID, interestPaid)
+	return args.Error(0)
+}
+
+func (m *MockWealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel) (*repository.WealthOrderModel, error) {
+	args := m.Called(ctx, order, product)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.WealthOrderModel), args.Error(1)
+}
+
+// MockJournalRepository
+ type MockJournalRepository struct {
+	mock.Mock
+}
+
+func (m *MockJournalRepository) CreateJournal(ctx context.Context, journal *repository.JournalModel) error {
+	args := m.Called(ctx, journal)
+	return args.Error(0)
+}
+
+func (m *MockJournalRepository) GetJournalsByAccountID(ctx context.Context, accountID int64, limit, offset int) ([]*repository.JournalModel, int64, error) {
+	args := m.Called(ctx, accountID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, 0, args.Error(2)
+	}
+	return args.Get(0).([]*repository.JournalModel), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockJournalRepository) CreateJournalRecord(ctx context.Context, record *repository.JournalModel) error {
+	args := m.Called(ctx, record)
+	return args.Error(0)
 }
