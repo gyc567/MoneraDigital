@@ -242,20 +242,45 @@ function getUser(id: any): any {
 
 **Critical Rule**: All API request/response JSON fields MUST use camelCase (`userId`, not `user_id`).
 
+### JSON Field Naming Convention
+
+| Layer | Format | Example |
+|-------|--------|---------|
+| **API Request/Response** | camelCase | `userId`, `createdAt`, `walletAddress` |
+| **Database Columns** | snake_case | `user_id`, `created_at`, `wallet_address` |
+| **TypeScript Interfaces** | camelCase | `userId: number` |
+| **Go Struct JSON Tags** | camelCase | `json:"userId"` |
+| **Go Struct DB Tags** | snake_case | `db:"user_id"` |
+
 ```go
 // Go struct - JSON camelCase, DB snake_case
-type User struct {
-    UserID    int       `json:"userId" db:"user_id"`
-    CreatedAt time.Time `json:"createdAt" db:"created_at"`
+type WithdrawalAddress struct {
+    ID            int          `json:"id" db:"id"`
+    UserID        int          `json:"userId" db:"user_id"`
+    WalletAddress string       `json:"walletAddress" db:"wallet_address"`
+    ChainType     string       `json:"chainType" db:"chain_type"`
+    AddressAlias  string       `json:"addressAlias" db:"address_alias"`
+    Verified      bool         `json:"verified" db:"verified"`
+    CreatedAt     time.Time    `json:"createdAt" db:"created_at"`
+    VerifiedAt    sql.NullTime `json:"verifiedAt,omitempty" db:"verified_at"`
 }
 ```
 
 ```typescript
 // TypeScript - always camelCase
-interface User {
+interface WithdrawalAddress {
+  id: number;
   userId: number;
+  walletAddress: string;
+  chainType: "BTC" | "ETH" | "USDC" | "USDT";
+  addressAlias: string;
+  verified: boolean;
   createdAt: string;
+  verifiedAt: string | null;
 }
+```
+
+**⚠️ WARNING**: Never mix snake_case and camelCase in API JSON. All API communication MUST use camelCase.
 ```
 | Functions | camelCase (verb-first) | `getUser()`, `fetchWithdrawalHistory()` |
 | Classes/PInterfaces | PascalCase | `AuthService`, `WithdrawalAddress` |

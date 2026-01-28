@@ -125,7 +125,7 @@ func TestWithdrawalAddressResponse_JSONFormat(t *testing.T) {
 		VerifiedAt: &now,
 	}
 
-	// 验证字段名使用 snake_case
+	// 验证字段名使用 camelCase
 	assert.Equal(t, 1, response.ID)
 	assert.Equal(t, 123, response.UserID)
 	assert.Equal(t, "0x1234567890abcdef", response.Address)

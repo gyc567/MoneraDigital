@@ -15,40 +15,45 @@
 **后端模型** (`internal/models/models.go`):
 ```go
 type WithdrawalAddress struct {
-    CreatedAt  time.Time    `json:"createdAt"`     // camelCase
-    VerifiedAt sql.NullTime `json:"verified_at"`   // snake_case
+    CreatedAt  time.Time    `json:"createdAt"`     // camelCase ✅
+    VerifiedAt sql.NullTime `json:"verified_at"`   // snake_case ❌
 }
 ```
 
 **前端期望** (`src/pages/dashboard/Addresses.tsx`):
 ```typescript
 interface WithdrawalAddress {
-    created_at: string;  // snake_case
-    verified_at: string | null;  // snake_case
+    created_at: string;  // snake_case ❌
+    verified_at: string | null;  // snake_case ❌
 }
 ```
 
-**问题**：`CreatedAt` 使用 camelCase，但前端期望 snake_case，导致 `addr.created_at` 为 `undefined`，`new Date(undefined)` 返回 "Invalid Date"。
+**问题**：字段命名不统一，导致前端解析失败。
+
+### 规范要求
+根据 AGENTS.md，**所有 API JSON 字段必须使用 camelCase**。
 
 ## 修复方案
 
-### 使用 DTO 统一 API 响应格式
+### 统一使用 camelCase
 
-1. 修改 `internal/dto/address.go` - 更新 DTO 字段名为 snake_case
-2. 修改 `internal/handlers/handlers.go` - 使用 DTO 转换模型数据
+1. 修改 `internal/dto/address.go` - DTO 字段使用 camelCase
+2. 修改 `src/pages/dashboard/Addresses.tsx` - 前端接口使用 camelCase
+3. 使用 DTO 转换模型数据，确保 API 响应格式一致
 
 ## 实施步骤
 
-1. ✅ 更新 DTO 字段名统一为 snake_case
-2. ✅ 修改 handler 使用 DTO 转换
-3. ✅ 添加单元测试验证转换逻辑
-4. ✅ 运行回归测试
+1. ✅ 更新 DTO 字段名为 camelCase
+2. ✅ 更新前端接口为 camelCase
+3. ✅ 修改 handler 使用 DTO 转换
+4. ✅ 添加单元测试验证转换逻辑
+5. ✅ 运行回归测试
 
 ## 测试策略
 
 ### 新增测试
 - `TestConvertAddressToDTO` - 测试模型到 DTO 的转换
-- `TestWithdrawalAddressResponse_JSONFormat` - 测试 JSON 格式
+- `TestWithdrawalAddressResponse_JSONFormat` - 测试 JSON 格式 (camelCase)
 - `TestWithdrawalAddressResponse_NullVerifiedAt` - 测试 null 值处理
 
 ### 回归测试
@@ -63,3 +68,4 @@ go test ./internal/...
 2. **高内聚低耦合**: DTO 专门负责 API 格式，与模型分离
 3. **测试覆盖**: 新增 3 个单元测试，覆盖所有场景
 4. **隔离性**: 只修改 DTO 和 handler，不影响其他功能
+5. **规范统一**: 严格遵循 camelCase API JSON 规范
