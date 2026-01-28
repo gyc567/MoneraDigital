@@ -190,7 +190,7 @@ func (s *TwoFactorService) IsEnabled(userID int) (bool, error) {
 
 // getSecret retrieves and decrypts the 2FA secret for a user
 func (s *TwoFactorService) getSecret(userID int) (string, error) {
-	var encryptedSecret string
+	var encryptedSecret sql.NullString
 	query := `SELECT two_factor_secret FROM users WHERE id = $1`
 	err := s.DB.QueryRow(query, userID).Scan(&encryptedSecret)
 	if err == sql.ErrNoRows {
@@ -199,7 +199,10 @@ func (s *TwoFactorService) getSecret(userID int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	secret, err := s.Encryption.Decrypt(encryptedSecret)
+	if !encryptedSecret.Valid || encryptedSecret.String == "" {
+		return "", fmt.Errorf("2FA not set up")
+	}
+	secret, err := s.Encryption.Decrypt(encryptedSecret.String)
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt secret: %w", err)
 	}
@@ -208,7 +211,7 @@ func (s *TwoFactorService) getSecret(userID int) (string, error) {
 
 // getBackupCodes retrieves and decrypts backup codes for a user
 func (s *TwoFactorService) getBackupCodes(userID int) ([]string, error) {
-	var encryptedCodes string
+	var encryptedCodes sql.NullString
 	query := `SELECT two_factor_backup_codes FROM users WHERE id = $1`
 	err := s.DB.QueryRow(query, userID).Scan(&encryptedCodes)
 	if err == sql.ErrNoRows {
@@ -217,9 +220,12 @@ func (s *TwoFactorService) getBackupCodes(userID int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !encryptedCodes.Valid || encryptedCodes.String == "" {
+		return nil, fmt.Errorf("2FA not set up")
+	}
 
 	var codes []string
-	if err := json.Unmarshal([]byte(encryptedCodes), &codes); err != nil {
+	if err := json.Unmarshal([]byte(encryptedCodes.String), &codes); err != nil {
 		return nil, err
 	}
 	return codes, nil

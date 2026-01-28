@@ -408,7 +408,9 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 		// Verify 2FA
 		valid, err := h.AuthService.Verify2FA(userID, req.Token)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA"})
+			// Log the specific error for debugging
+			fmt.Printf("[VerifyAddress] 2FA verification error for user %d: %v\n", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA: " + err.Error()})
 			return
 		}
 		if !valid {
@@ -424,6 +426,7 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 	// Ideally, we should have h.AddressService.VerifyEmailToken(token) here.
 
 	if err := h.AddressService.VerifyAddress(c.Request.Context(), userID, id, verificationMethod); err != nil {
+		fmt.Printf("[VerifyAddress] Address verification error for user %d, address %d: %v\n", userID, id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
