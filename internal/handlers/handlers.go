@@ -487,6 +487,26 @@ func (h *Handler) CreateWithdrawal(c *gin.Context) {
 		return
 	}
 
+	// Get user to check if 2FA is enabled
+	user, err := h.AuthService.GetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		return
+	}
+
+	// Verify 2FA if enabled
+	if user.TwoFactorEnabled {
+		valid, err := h.AuthService.Verify2FA(userID, req.TwoFactorToken)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA"})
+			return
+		}
+		if !valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 2FA code"})
+			return
+		}
+	}
+
 	order, err := h.WithdrawalService.CreateWithdrawal(c.Request.Context(), userID, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

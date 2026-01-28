@@ -54,7 +54,7 @@ func TestAccountRepository_UpdateFrozenBalance(t *testing.T) {
 	}
 	defer db.Close()
 
-	repo := NewAccountRepository(db)
+	repo := NewAccountRepositoryV1(db)
 
 	userID := 1
 	amount := 100.0

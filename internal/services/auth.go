@@ -141,6 +141,7 @@ func (s *AuthService) createCoreAccount(userID int, email string) (string, error
 }
 
 // Login handles user authentication
+// Note: 2FA is no longer required during login. It's only required for sensitive operations.
 func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 	var user models.User
 	var hashedPassword string
@@ -159,15 +160,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		return nil, errors.New("invalid credentials")
 	}
 
-	// Check if 2FA is required
-	if user.TwoFactorEnabled {
-		return &LoginResponse{
-			Requires2FA: true,
-			UserID:      user.ID,
-		}, nil
-	}
-
-	// Generate JWT token
+	// Generate JWT token directly (no 2FA check during login)
 	token, err := utils.GenerateJWT(user.ID, user.Email, s.jwtSecret)
 	if err != nil {
 		return nil, err

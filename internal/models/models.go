@@ -215,9 +215,10 @@ type AddAddressRequest struct {
 }
 
 type CreateWithdrawalRequest struct {
-	AddressID int    `json:"address_id" binding:"required"`
-	Amount    string `json:"amount" binding:"required"`
-	Asset     string `json:"asset" binding:"required"`
+	AddressID      int    `json:"addressId" binding:"required"`
+	Amount         string `json:"amount" binding:"required"`
+	Asset          string `json:"asset" binding:"required"`
+	TwoFactorToken string `json:"twoFactorToken" binding:"required,len=6"`
 }
 
 type Verify2FARequest struct {

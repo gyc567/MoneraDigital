@@ -18,7 +18,7 @@ func init() {
 
 func TestInterestScheduler_CalculateDailyInterest_Success(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -64,7 +64,7 @@ func TestInterestScheduler_CalculateDailyInterest_Success(t *testing.T) {
 
 func TestInterestScheduler_CalculateDailyInterest_NoActiveOrders(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -86,7 +86,7 @@ func TestInterestScheduler_CalculateDailyInterest_NoActiveOrders(t *testing.T) {
 
 func TestInterestScheduler_CalculateDailyInterest_SkipStartDate(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -121,7 +121,7 @@ func TestInterestScheduler_CalculateDailyInterest_SkipStartDate(t *testing.T) {
 
 func TestInterestScheduler_CalculateDailyInterest_SkipAlreadyAccrued(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -157,7 +157,7 @@ func TestInterestScheduler_CalculateDailyInterest_SkipAlreadyAccrued(t *testing.
 
 func TestInterestScheduler_CalculateDailyInterest_DatabaseError(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -179,7 +179,7 @@ func TestInterestScheduler_CalculateDailyInterest_DatabaseError(t *testing.T) {
 
 func TestInterestScheduler_CalculateDailyInterest_AccrueError(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -264,7 +264,7 @@ func TestSchedulerMetrics_Reset(t *testing.T) {
 
 func TestInterestScheduler_SettleOrder_Success(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -305,7 +305,7 @@ func TestInterestScheduler_SettleOrder_Success(t *testing.T) {
 
 func TestInterestScheduler_SettleOrder_AlreadySettled(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -328,7 +328,7 @@ func TestInterestScheduler_SettleOrder_AlreadySettled(t *testing.T) {
 
 func TestInterestScheduler_SettleExpiredOrders_AutoRenew(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
@@ -396,7 +396,7 @@ func TestInterestScheduler_SettleExpiredOrders_AutoRenew(t *testing.T) {
 
 func TestInterestScheduler_SettleExpiredOrders_NoAutoRenew(t *testing.T) {
 	mockWealthRepo := new(MockWealthRepository)
-	mockAccountRepo := new(MockAccountRepository)
+	mockAccountRepo := new(MockAccountRepositoryV2)
 	mockJournalRepo := new(MockJournalRepository)
 
 	scheduler := &InterestScheduler{
