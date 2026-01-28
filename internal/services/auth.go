@@ -220,6 +220,37 @@ func (s *AuthService) Verify2FAAndLogin(userID int, token string) (*LoginRespons
 	}, nil
 }
 
+// Skip2FAAndLogin allows skipping 2FA if not enabled and completes login
+func (s *AuthService) Skip2FAAndLogin(userID int) (*LoginResponse, error) {
+	// 获取用户信息
+	user, err := s.GetUserByID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	// 如果用户已经启用了2FA，则不允许跳过
+	if user.TwoFactorEnabled {
+		return nil, errors.New("cannot skip 2FA as it is enabled for this account")
+	}
+
+	// 生成JWT令牌
+	jwtToken, err := utils.GenerateJWT(user.ID, user.Email, s.jwtSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(24 * time.Hour)
+
+	return &LoginResponse{
+		User:        user,
+		Token:       jwtToken,
+		AccessToken: jwtToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   86400,
+		ExpiresAt:   expiresAt,
+	}, nil
+}
+
 // Verify2FA verifies a 2FA token for a user
 func (s *AuthService) Verify2FA(userID int, token string) (bool, error) {
 	if s.twoFactorService == nil {
