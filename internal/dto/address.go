@@ -12,15 +12,15 @@ type AddAddressRequest struct {
 
 // WithdrawalAddressResponse DTO for withdrawal address response
 type WithdrawalAddressResponse struct {
-	ID         int        `json:"id"`
-	UserID     int        `json:"userId"`
-	Address    string     `json:"address"`
-	Type       string     `json:"type"`
-	Label      string     `json:"label"`
-	IsVerified bool       `json:"isVerified"`
-	IsPrimary  bool       `json:"isPrimary"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	VerifiedAt *time.Time `json:"verifiedAt,omitempty"`
+	ID          int        `json:"id"`
+	UserID      int        `json:"user_id"`
+	Address     string     `json:"wallet_address"`
+	Type        string     `json:"chain_type"`
+	Label       string     `json:"address_alias"`
+	IsVerified  bool       `json:"verified"`
+	IsDeleted   bool       `json:"is_deleted"`
+	CreatedAt   time.Time  `json:"created_at"`
+	VerifiedAt  *time.Time `json:"verified_at,omitempty"`
 }
 
 // WithdrawalAddressesListResponse DTO for list of withdrawal addresses

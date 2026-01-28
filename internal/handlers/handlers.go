@@ -345,7 +345,26 @@ func (h *Handler) GetAddresses(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"addresses": addresses, "total": len(addresses), "count": len(addresses)})
+	// Convert models to DTOs for consistent API response format
+	response := make([]dto.WithdrawalAddressResponse, len(addresses))
+	for i, addr := range addresses {
+		response[i] = dto.WithdrawalAddressResponse{
+			ID:         addr.ID,
+			UserID:     addr.UserID,
+			Address:    addr.WalletAddress,
+			Type:       addr.ChainType,
+			Label:      addr.AddressAlias,
+			IsVerified: addr.Verified,
+			IsDeleted:  addr.IsDeleted,
+			CreatedAt:  addr.CreatedAt,
+		}
+		// Handle nullable VerifiedAt
+		if addr.VerifiedAt.Valid {
+			response[i].VerifiedAt = &addr.VerifiedAt.Time
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"addresses": response, "total": len(response), "count": len(response)})
 }
 
 func (h *Handler) AddAddress(c *gin.Context) {
