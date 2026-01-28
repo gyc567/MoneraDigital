@@ -9,8 +9,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Key Stack:**
 - Frontend: React 18, TypeScript, Vite, Tailwind CSS, Radix UI (51 components)
 - Backend: **Golang (Go)** - Mandatory for all backend interfaces, database access, and operations.
+- External Core System: **Monnaire Core API** - Core account management (integrated via Go backend)
+- Database: PostgreSQL (Neon)
 - Testing: Vitest, Playwright
 - i18n: English and Chinese support via i18next
+
+## Architecture
+
+```
+Frontend (React) → API Routes (Vercel) → Go Backend → Core API / Database
+```
+
+### Critical Rules
+
+1. **Frontend ONLY calls `/api/*` endpoints** - Never direct database or Core API access
+2. **Go Backend handles ALL business logic** - Database operations and Core API integration
+3. **Core API is external** - Only Go backend can call Monnaire Core API
+
+### Layer Responsibilities
+
+| Layer | Can Do | Cannot Do |
+|-------|--------|-----------|
+| Frontend | UI, form validation, call `/api/*` | Direct DB access, direct Core API access |
+| API Routes | Route, auth check, proxy | Business logic |
+| Go Backend | Business logic, DB access, Core API calls | Nothing - this is where everything happens |
+| Core API | Account management, KYC | Be called by frontend directly |
 
 ---
 
@@ -195,23 +218,31 @@ Inconsistent naming causes:
 - Feature components (Hero, Features, Stats, etc.)
 
 **Services** (`src/lib/`):
-- Core business logic services that are **reused by both API endpoints and frontend**
-  - `auth-service.ts` - Registration, login, password hashing, JWT generation
-  - `two-factor-service.ts` - TOTP setup, verification, backup codes (encrypted)
-  - `lending-service.ts` - Lending applications, position management, APY calculations
-  - `address-whitelist-service.ts` - Address verification (24-hour email tokens), management
-  - `withdrawal-service.ts` - Withdrawal processing and transaction tracking
-  - `email-service.ts` - Email notifications and verification tokens
-  - `encryption.ts` - AES-256-GCM encryption (2FA secrets, backup codes)
+- **API Client Services** - Frontend services that ONLY call backend APIs
+  - `auth-service.ts` - Calls `/api/auth/*` endpoints
+  - `two-factor-service.ts` - Calls `/api/auth/2fa/*` endpoints
+  - `lending-service.ts` - Calls `/api/lending/*` endpoints
+  - `address-whitelist-service.ts` - Calls `/api/addresses` endpoints
+  - `withdrawal-service.ts` - Calls `/api/withdrawals` endpoints
+  - `wallet-service.ts` - Calls `/api/v1/wallet/*` endpoints
+- **Utilities**:
   - `auth-middleware.ts` - JWT verification (used in API handlers)
-  - `redirect-validator.ts` - Open redirect attack mitigation (whitelist validation)
-  - `rate-limit.ts` - Redis-based rate limiting (5 requests/60s per IP)
-- Utilities: `db.ts` (Drizzle instance), `redis.ts` (Upstash client), `logger.ts` (Pino), `utils.ts` (cn function)
+  - `redirect-validator.ts` - Open redirect attack mitigation
+  - `rate-limit.ts` - Redis-based rate limiting
+  - `logger.ts` - Pino logging
+  - `utils.ts` - Helper functions
 
-**Database** (`src/db/`):
-- `schema.ts` - Drizzle schema definitions (users, lending_positions, withdrawal_addresses, address_verifications, withdrawals)
-- PostgreSQL native enums for status fields (lending_status, address_type, withdrawal_status)
-- Foreign key relationships enforced
+**⚠️ IMPORTANT**: Frontend services do NOT contain business logic. They only make HTTP API calls to the Go backend.
+
+**Go Backend** (`internal/`):
+- **Handlers** (`internal/handlers/`) - HTTP request handlers
+- **Services** (`internal/services/`) - Business logic, database operations
+- **Core API Integration** (`internal/handlers/core/`) - Monnaire Core API client
+- **Database** - PostgreSQL access via `internal/repository/`
+
+**External Systems**:
+- **Monnaire Core API** - Core account management, KYC (called only by Go backend)
+- **PostgreSQL** - Application data (accessed only by Go backend)
 
 **Internationalization** (`src/i18n/`):
 - `config.ts` - i18next setup (localStorage language persistence)

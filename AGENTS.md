@@ -11,9 +11,110 @@
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Shadcn UI (Radix Primitives)
 - **Backend**: Golang (Go) - **Mandatory for all interfaces, database access, and operations.**
 - **Database**: PostgreSQL (Neon)
+- **External Core System**: Monnaire Core API (Account Management)
 - **State/Cache**: Redis (Upstash)
 - **Testing**: Vitest (Unit/Integration), Playwright (E2E)
 - **Language**: TypeScript (Frontend), Go (Backend)
+
+## Architecture Overview
+
+```
+Frontend (React) → API Routes (Vercel) → Go Backend → Core API / Database
+```
+
+### Layer Responsibilities
+
+| Layer | Technology | Responsibilities |
+|-------|------------|------------------|
+| **Frontend** | React + TypeScript | UI rendering, form validation, API calls only |
+| **API Routes** | Vercel Serverless | Request routing, auth validation, proxy to backend |
+| **Go Backend** | Go (internal/) | Business logic, database operations, Core API integration |
+| **Core API** | External/Mock | Core account management, KYC, compliance |
+| **Database** | PostgreSQL (Neon) | User data, transactions, application state |
+
+## Architecture Principles
+
+### 1. Frontend-Only API Calls
+**⚠️ CRITICAL**: Frontend code **MUST NOT** directly access the database or Core API.
+
+```
+✅ Correct:  Frontend → /api/* → Go Backend → Database/Core API
+❌ Forbidden: Frontend → Direct Database Access
+❌ Forbidden: Frontend → Direct Core API Access
+```
+
+### 2. Service Layer Pattern
+
+Frontend services (`src/lib/*-service.ts`) **only** make HTTP API calls:
+
+```typescript
+// ✅ Correct: Service calls local API
+export class UserService {
+  static async getUser() {
+    const response = await fetch('/api/users/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return response.json();
+  }
+}
+
+// ❌ Forbidden: Direct database access
+export class UserService {
+  static async getUser() {
+    return db.select().from(users);  // Never do this!
+  }
+}
+
+// ❌ Forbidden: Direct Core API access
+export class UserService {
+  static async getUser() {
+    return fetch('https://core-api.monera.com/users');  // Never do this!
+  }
+}
+```
+
+### 3. Go Backend Responsibilities
+
+Go backend (`internal/`) is the **only** layer that can:
+- Access PostgreSQL database
+- Call Monnaire Core API
+- Implement business logic
+- Handle authentication/authorization
+
+```go
+// ✅ Correct: Go Backend calls Core API
+func (s *AuthService) createCoreAccount(userID int, email string) (string, error) {
+    coreAPIURL := os.Getenv("Monnaire_Core_API_URL") + "/accounts/create"
+    resp, err := http.Post(coreAPIURL, "application/json", body)
+    // ...
+}
+
+// ✅ Correct: Go Backend accesses database
+func (s *AuthService) CreateUser(req models.RegisterRequest) (*models.User, error) {
+    _, err := s.DB.Exec("INSERT INTO users ...", req.Email, hashedPassword)
+    // ...
+}
+```
+
+### 4. Data Flow Example (User Registration)
+
+```
+1. Frontend (React)
+   POST /api/auth/register
+   { email, password }
+   
+2. API Routes (Vercel)
+   Validate JWT → Forward to Go Backend
+   
+3. Go Backend (internal/services/auth.go)
+   a. Create user in PostgreSQL
+   b. Call Monnaire Core API to create core account
+      POST Monnaire_Core_API_URL/accounts/create
+   c. Return { user, token }
+   
+4. Frontend
+   Receive response, update UI
+```
 
 ---
 
@@ -267,15 +368,17 @@ src/
 ├── components/
 │   ├── ui/                 # Shadcn/Radix UI components
 │   └── DashboardLayout.tsx # Layout components
-├── db/
-│   ├── schema.ts           # Drizzle schema definitions
-│   └── migrations/         # Database migrations
-├── lib/                    # Core service layer (business logic)
+├── lib/                    # Core service layer (API clients only)
+│   ├── auth-service.ts     # Auth API client
+│   ├── withdrawal-service.ts # Withdrawal API client
+│   └── ...                 # Other service clients
 ├── pages/                  # Route pages (React Router)
 │   └── dashboard/          # Dashboard pages
 ├── hooks/                  # Custom React hooks
 └── i18n/                   # Internationalization
 ```
+
+**Note**: `src/db/` directory has been removed. Frontend must NOT directly access database.
 
 ---
 
@@ -407,8 +510,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 - **Setup**: Copy `.env.example` to `.env`, then run `npm install`
 - **Port**: Vite dev server runs on port 8080 by default
-- **Database**: Use `npm run db:push` to sync schema changes
+- **Database**: Database schema is managed by Go backend (`internal/migration/`)
 - **Tests**: Run `npm test` before committing
+
+**Note**: Frontend does NOT directly access database. All database operations go through Go backend API.
 
 ---
 
@@ -416,13 +521,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 | File | Purpose |
 |------|---------|
-| `src/db/schema.ts` | Database schema definitions |
-| `src/lib/auth-service.ts` | Authentication business logic |
-| `src/lib/withdrawal-service.ts` | Withdrawal business logic |
-| `api/` | API route handlers |
+| `internal/migration/migrations/` | Go database migrations (backend only) |
+| `src/lib/auth-service.ts` | Auth API client (frontend) |
+| `src/lib/withdrawal-service.ts` | Withdrawal API client (frontend) |
+| `api/[...route].ts` | Unified API router (Vercel) |
 | `vite.config.ts` | Build configuration |
 | `eslint.config.js` | Linting rules |
 | `tailwind.config.ts` | Tailwind CSS configuration |
+
+**Note**: Database schema is defined in Go backend (`internal/migration/migrations/`), not in frontend.
 
 ---
 
