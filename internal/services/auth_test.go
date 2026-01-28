@@ -174,8 +174,8 @@ func TestAuthService_Login_UserNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for invalid credentials, got nil")
 	}
-	if err.Error() != "email not found" {
-		t.Errorf("Expected 'email not found', got '%s'", err.Error())
+	if err.Error() != "invalid credentials" {
+		t.Errorf("Expected 'invalid credentials', got '%s'", err.Error())
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -306,8 +306,8 @@ func TestGenerateJWT(t *testing.T) {
 		t.Fatalf("Failed to parse JWT: %v", err)
 	}
 
-	if claims["user_id"].(float64) != 123 {
-		t.Errorf("Expected user_id 123, got %v", claims["user_id"])
+	if claims["userId"].(float64) != 123 {
+		t.Errorf("Expected userId 123, got %v", claims["userId"])
 	}
 	if claims["email"] != "test@example.com" {
 		t.Errorf("Expected email 'test@example.com', got %v", claims["email"])

@@ -44,6 +44,76 @@ npm run test -- --watch                                 # Watch mode
 
 ---
 
+## JSON Naming Convention (Critical)
+
+**All API request/response fields MUST use camelCase naming:**
+
+✅ **Correct**:
+```json
+{
+  "userId": 1,
+  "accessToken": "xxx",
+  "refreshToken": "xxx",
+  "requires2FA": true,
+  "createdAt": "2024-01-01T00:00:00Z"
+}
+```
+
+❌ **Incorrect**:
+```json
+{
+  "user_id": 1,
+  "access_token": "xxx",
+  "refresh_token": "xxx",
+  "requires_2fa": true,
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### Go Struct Tags
+
+Go structs must use camelCase for JSON tags:
+
+```go
+// ✅ Correct
+type LoginResponse struct {
+    UserID       int    `json:"userId"`       // camelCase for JSON
+    AccessToken  string `json:"accessToken"`  // camelCase for JSON
+    Requires2FA  bool   `json:"requires2FA"`  // camelCase for JSON
+    CreatedAt    time.Time `json:"createdAt" db:"created_at"`  // camelCase JSON, snake_case DB
+}
+
+// ❌ Incorrect
+type LoginResponse struct {
+    UserID       int    `json:"user_id"`      // snake_case - DON'T USE
+    AccessToken  string `json:"access_token"` // snake_case - DON'T USE
+}
+```
+
+### TypeScript/JavaScript
+
+Frontend code must use camelCase:
+
+```typescript
+// ✅ Correct
+const userId = 1;
+const accessToken = 'xxx';
+const requires2FA = true;
+
+// ❌ Incorrect
+const user_id = 1;
+const access_token = 'xxx';
+```
+
+### Why This Matters
+
+Inconsistent naming causes:
+- Frontend cannot parse backend responses correctly
+- `data.userId` returns `undefined` when backend sends `user_id`
+- Silent failures that are hard to debug
+
+---
+
 ## New Feature Development Rules
 
 **Mandatory rules for developing new features:**

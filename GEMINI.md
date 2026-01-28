@@ -45,6 +45,40 @@ api/
 │   ├── login.ts          # ❌ 单独的函数 - 会导致超过 12 个限制
 │   ├── register.ts       # ❌ 单独的函数
 │   └── logout.ts         # ❌ 单独的函数
+```
+
+### JSON 命名规范（关键）
+
+**所有 API 请求/响应字段必须使用驼峰命名（camelCase）**：
+
+✅ **正确**:
+```json
+{
+  "userId": 1,
+  "accessToken": "xxx",
+  "refreshToken": "xxx",
+  "requires2FA": true
+}
+```
+
+❌ **错误**:
+```json
+{
+  "user_id": 1,
+  "access_token": "xxx",
+  "refresh_token": "xxx",
+  "requires_2fa": true
+}
+```
+
+**Go 结构体标签规范**:
+```go
+type LoginResponse struct {
+    UserID      int    `json:"userId"`       // JSON: camelCase
+    AccessToken string `json:"accessToken"`  // JSON: camelCase
+    // db tag uses snake_case for database columns
+}
+```
 ├── 2fa/
 │   ├── setup.ts          # ❌ 单独的函数
 │   └── enable.ts         # ❌ 单独的函数

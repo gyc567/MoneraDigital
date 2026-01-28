@@ -136,6 +136,26 @@ function getUser(id: any): any {
 |------|------------|----------|
 | Variables | camelCase | `userId`, `isLoading` |
 | Constants | UPPER_SNAKE_CASE | `JWT_SECRET`, `MAX_RETRY_COUNT` |
+| JSON Fields | camelCase | `userId`, `accessToken`, `requires2FA` |
+| Database Columns | snake_case | `user_id`, `created_at` |
+
+**Critical Rule**: All API request/response JSON fields MUST use camelCase (`userId`, not `user_id`).
+
+```go
+// Go struct - JSON camelCase, DB snake_case
+type User struct {
+    UserID    int       `json:"userId" db:"user_id"`
+    CreatedAt time.Time `json:"createdAt" db:"created_at"`
+}
+```
+
+```typescript
+// TypeScript - always camelCase
+interface User {
+  userId: number;
+  createdAt: string;
+}
+```
 | Functions | camelCase (verb-first) | `getUser()`, `fetchWithdrawalHistory()` |
 | Classes/PInterfaces | PascalCase | `AuthService`, `WithdrawalAddress` |
 | Components | PascalCase | `DashboardLayout`, `WithdrawPage` |

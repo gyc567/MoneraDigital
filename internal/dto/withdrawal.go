@@ -5,25 +5,25 @@ import "time"
 
 // CreateWithdrawalRequest DTO for creating a withdrawal
 type CreateWithdrawalRequest struct {
-	FromAddressID int     `json:"from_address_id" binding:"required,gt=0"`
+	FromAddressID int     `json:"fromAddressId" binding:"required,gt=0"`
 	Amount        float64 `json:"amount" binding:"required,gt=0"`
 	Asset         string  `json:"asset" binding:"required,oneof=BTC ETH USDC USDT"`
-	ToAddress     string  `json:"to_address" binding:"required,min=20,max=100"`
+	ToAddress     string  `json:"toAddress" binding:"required,min=20,max=100"`
 }
 
 // WithdrawalResponse DTO for withdrawal response
 type WithdrawalResponse struct {
 	ID            int        `json:"id"`
-	UserID        int        `json:"user_id"`
-	FromAddressID int        `json:"from_address_id"`
+	UserID        int        `json:"userId"`
+	FromAddressID int        `json:"fromAddressId"`
 	Amount        float64    `json:"amount"`
 	Asset         string     `json:"asset"`
-	ToAddress     string     `json:"to_address"`
+	ToAddress     string     `json:"toAddress"`
 	Status        string     `json:"status"`
-	TxHash        *string    `json:"tx_hash,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	FailureReason *string    `json:"failure_reason,omitempty"`
+	TxHash        *string    `json:"txHash,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	CompletedAt   *time.Time `json:"completedAt,omitempty"`
+	FailureReason *string    `json:"failureReason,omitempty"`
 }
 
 // WithdrawalsListResponse DTO for list of withdrawals
@@ -35,5 +35,5 @@ type WithdrawalsListResponse struct {
 
 // CancelWithdrawalRequest DTO for canceling a withdrawal
 type CancelWithdrawalRequest struct {
-	WithdrawalID int `json:"withdrawal_id" binding:"required,gt=0"`
+	WithdrawalID int `json:"withdrawalId" binding:"required,gt=0"`
 }

@@ -80,11 +80,11 @@ func TestTwoFAHandler_Skip2FALogin_Success(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	if response["access_token"] == nil || response["access_token"] == "" {
-		t.Error("Expected access_token in response")
+	if response["accessToken"] == nil || response["accessToken"] == "" {
+		t.Error("Expected accessToken in response")
 	}
-	if response["token_type"] != "Bearer" {
-		t.Errorf("Expected token_type 'Bearer', got '%v'", response["token_type"])
+	if response["tokenType"] != "Bearer" {
+		t.Errorf("Expected tokenType 'Bearer', got '%v'", response["tokenType"])
 	}
 	if response["user"] == nil {
 		t.Error("Expected user in response")
@@ -289,16 +289,16 @@ func TestTwoFAHandler_Skip2FALogin_ResponseFormat(t *testing.T) {
 
 	// Verify response structure matches LoginResponse
 	var response struct {
-		AccessToken  string    `json:"access_token"`
-		RefreshToken string    `json:"refresh_token"`
-		TokenType    string    `json:"token_type"`
-		ExpiresIn    int       `json:"expires_in"`
-		ExpiresAt    time.Time `json:"expires_at"`
+		AccessToken  string    `json:"accessToken"`
+		RefreshToken string    `json:"refreshToken"`
+		TokenType    string    `json:"tokenType"`
+		ExpiresIn    int       `json:"expiresIn"`
+		ExpiresAt    time.Time `json:"expiresAt"`
 		Token        string    `json:"token"`
 		User         struct {
 			ID               int    `json:"id"`
 			Email            string `json:"email"`
-			TwoFactorEnabled bool   `json:"two_factor_enabled"`
+			TwoFactorEnabled bool   `json:"twoFactorEnabled"`
 		} `json:"user"`
 	}
 
@@ -307,13 +307,13 @@ func TestTwoFAHandler_Skip2FALogin_ResponseFormat(t *testing.T) {
 	}
 
 	if response.AccessToken == "" {
-		t.Error("Expected access_token in response")
+		t.Error("Expected accessToken in response")
 	}
 	if response.TokenType != "Bearer" {
-		t.Errorf("Expected token_type 'Bearer', got '%s'", response.TokenType)
+		t.Errorf("Expected tokenType 'Bearer', got '%s'", response.TokenType)
 	}
 	if response.ExpiresIn != 86400 {
-		t.Errorf("Expected expires_in 86400, got %d", response.ExpiresIn)
+		t.Errorf("Expected expiresIn 86400, got %d", response.ExpiresIn)
 	}
 	if response.User.ID != 1 {
 		t.Errorf("Expected user ID 1, got %d", response.User.ID)
@@ -322,7 +322,7 @@ func TestTwoFAHandler_Skip2FALogin_ResponseFormat(t *testing.T) {
 		t.Errorf("Expected user email 'test@example.com', got '%s'", response.User.Email)
 	}
 	if response.User.TwoFactorEnabled != false {
-		t.Errorf("Expected user two_factor_enabled false, got %v", response.User.TwoFactorEnabled)
+		t.Errorf("Expected user twoFactorEnabled false, got %v", response.User.TwoFactorEnabled)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
