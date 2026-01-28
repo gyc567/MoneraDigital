@@ -151,18 +151,56 @@ npm run test -- --watch                                 # Watch mode
 ### Backend Structure (`api/`)
 
 **Route Organization** (Vercel Serverless Functions):
-- `api/auth/login.ts`, `register.ts`, `me.ts` - Authentication endpoints
-- `api/auth/2fa/setup.ts`, `enable.ts`, `verify-login.ts` - 2FA endpoints
-- `api/lending/apply.ts`, `positions.ts` - Lending endpoints
-- `api/addresses/` - Address management (CRUD, verify, set primary)
-- `api/withdrawals/` - Withdrawal endpoints
-- `api/[...route].ts` - Dynamic routing handler
+- **`api/[...route].ts`** - **统一路由处理器（唯一 Serverless Function）**
+- `api/__route__.test.ts` - 路由测试
 
-**Pattern**: Each endpoint is a standalone serverless function with:
-1. Manual middleware composition (auth check, rate limiting)
-2. Zod validation of request body
-3. Service layer calls for business logic
-4. Structured error responses (status codes, error codes)
+**重要规则**: Vercel Hobby 计划限制最多 12 个 Serverless Functions。项目必须使用统一的路由架构：
+
+```
+api/
+├── [...route].ts          # 统一路由处理器（唯一 Serverless Function）
+└── __route__.test.ts      # 路由测试
+```
+
+**禁止这样做**（会导致超过 12 个函数限制）：
+```
+api/
+├── auth/
+│   ├── login.ts          # ❌ 单独的函数
+│   ├── register.ts       # ❌ 单独的函数
+│   └── logout.ts         # ❌ 单独的函数
+├── 2fa/
+│   ├── setup.ts          # ❌ 单独的函数
+│   └── enable.ts         # ❌ 单独的函数
+└── ... (更多文件)
+```
+
+**统一路由配置** (`ROUTE_CONFIG`):
+```typescript
+const ROUTE_CONFIG: Record<string, RouteConfig> = {
+  // Auth endpoints
+  'POST /auth/login': { requiresAuth: false, backendPath: '/api/auth/login' },
+  'POST /auth/register': { requiresAuth: false, backendPath: '/api/auth/register' },
+  
+  // 2FA endpoints
+  'POST /auth/2fa/setup': { requiresAuth: true, backendPath: '/api/auth/2fa/setup' },
+  'POST /auth/2fa/enable': { requiresAuth: true, backendPath: '/api/auth/2fa/enable' },
+  
+  // ... 其他路由
+};
+```
+
+**Pattern**: 统一路由处理器的工作流程：
+1. 解析请求路径和方法
+2. 在 `ROUTE_CONFIG` 中查找匹配的路由
+3. 检查认证要求（如果需要）
+4. 转发请求到 Go 后端
+5. 返回后端响应
+
+**添加新路由的步骤**：
+1. 在 `ROUTE_CONFIG` 中添加配置（不需要创建新文件）
+2. 在 Go 后端 `internal/routes/routes.go` 中添加对应处理器
+3. 在 `api/__route__.test.ts` 中添加测试
 
 ---
 

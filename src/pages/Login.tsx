@@ -101,6 +101,7 @@ export default function Login() {
       }
 
       if (data.requires2FA) {
+        console.log('[Login] 2FA required, userId from response:', data.userId);
         setRequires2FA(true);
         setTempUserId(data.userId);
         toast.info(t("dashboard.security.enterCode"));
@@ -124,10 +125,17 @@ export default function Login() {
   };
 
   const handleSkip2FA = async () => {
-    if (!tempUserId) return;
+    console.log('[2FA Skip] Button clicked, tempUserId:', tempUserId);
+    
+    if (!tempUserId) {
+      console.error('[2FA Skip] Error: tempUserId is null or undefined');
+      toast.error('Session expired. Please login again.');
+      return;
+    }
 
     setIsLoading(true);
     try {
+      console.log('[2FA Skip] Sending request with userId:', tempUserId);
       const response = await fetch('/api/auth/2fa/skip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,9 +143,11 @@ export default function Login() {
       });
 
       const data = await response.json();
+      console.log('[2FA Skip] Response:', { status: response.status, data });
 
       if (!response.ok) {
-        throw new Error(data.message || 'Skip failed');
+        console.error('[2FA Skip] Request failed:', data);
+        throw new Error(data.error || data.message || 'Skip failed');
       }
 
       // Store token and redirect

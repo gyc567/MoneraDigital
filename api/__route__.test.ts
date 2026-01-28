@@ -657,4 +657,180 @@ describe('/api/[...route] - Unified API Router', () => {
       }
     });
   });
+
+
+
+  describe('Dynamic Address Routes', () => {
+    it('should route DELETE /addresses/:id correctly', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ message: 'Address deleted' }),
+      });
+
+      const req = {
+        method: 'DELETE',
+        query: { route: ['addresses', '123'] },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:8081/api/addresses/123',
+        expect.any(Object)
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('should route POST /addresses/:id/verify correctly', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ message: 'Address verified' }),
+      });
+
+      const req = {
+        method: 'POST',
+        query: { route: ['addresses', '123', 'verify'] },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
+        body: { token: 'verification-token' },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:8081/api/addresses/123/verify',
+        expect.any(Object)
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('should route POST /addresses/:id/primary correctly', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ message: 'Primary address set' }),
+      });
+
+      const req = {
+        method: 'POST',
+        query: { route: ['addresses', '123', 'primary'] },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:8081/api/addresses/123/primary',
+        expect.any(Object)
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('should reject invalid address route patterns', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      const req = {
+        method: 'GET',  // GET not allowed for dynamic address routes
+        query: { route: ['addresses', '123', 'invalid'] },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+  });
+
+  describe('Backend Response Parsing', () => {
+    it('should handle backend response with invalid JSON', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      // Mock fetch to return non-JSON response
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
+      });
+
+      const req = {
+        method: 'POST',
+        query: { route: ['auth', 'login'] },
+        headers: {},
+        body: { email: 'test@example.com', password: 'password' },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Internal Server Error',
+          code: 'BACKEND_ERROR',
+        })
+      );
+    });
+
+    it('should handle successful response with invalid JSON (should not happen)', async () => {
+      const handler = await import('./[...route].js').then(m => m.default);
+
+      // Mock fetch to return ok but non-JSON response
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
+      });
+
+      const req = {
+        method: 'GET',
+        query: { route: ['auth', 'me'] },
+        headers: { authorization: `Bearer ${generateTestToken()}` },
+      } as any;
+
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as any;
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      // Should return empty object when JSON parsing fails for successful response
+      expect(res.json).toHaveBeenCalledWith({});
+    });
+  });
 });

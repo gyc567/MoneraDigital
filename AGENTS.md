@@ -272,23 +272,112 @@ src/
 
 ## API Routes
 
-- **Location**: `api/` directory
-- **Naming**: File-based routing (`api/auth/login.ts` → `/api/auth/login`)
-- **Method handlers**: Check `req.method` in handler
-- **Auth**: Use `verifyToken()` from auth middleware
-- **Response**: Return JSON with `res.status().json()`
+### 统一 Serverless Function 架构（强制）
+
+**重要**: Vercel Hobby 计划限制最多 **12 个 Serverless Functions**。
+项目必须使用统一的路由架构，所有 API 请求通过单一入口处理。
+
+**正确的文件结构**:
+```
+api/
+├── [...route].ts          # 统一路由处理器（唯一 Serverless Function）
+└── __route__.test.ts      # 路由测试
+```
+
+**禁止的文件结构**（会导致超过 12 个函数限制）:
+```
+api/
+├── auth/
+│   ├── login.ts          # ❌ 单独的 Serverless Function
+│   ├── register.ts       # ❌ 单独的 Serverless Function
+│   └── logout.ts         # ❌ 单独的 Serverless Function
+├── 2fa/
+│   ├── setup.ts          # ❌ 单独的 Serverless Function
+│   └── enable.ts         # ❌ 单独的 Serverless Function
+└── ... (更多文件)
+```
+
+### 统一路由配置
+
+所有路由在 `api/[...route].ts` 的 `ROUTE_CONFIG` 中集中配置：
 
 ```typescript
-// ✅ Correct
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyToken } from '../../src/lib/auth-middleware.js';
+const ROUTE_CONFIG: Record<string, RouteConfig> = {
+  // Auth endpoints
+  'POST /auth/login': { requiresAuth: false, backendPath: '/api/auth/login' },
+  'POST /auth/register': { requiresAuth: false, backendPath: '/api/auth/register' },
+  'GET /auth/me': { requiresAuth: true, backendPath: '/api/auth/me' },
+  
+  // 2FA endpoints
+  'POST /auth/2fa/setup': { requiresAuth: true, backendPath: '/api/auth/2fa/setup' },
+  'POST /auth/2fa/enable': { requiresAuth: true, backendPath: '/api/auth/2fa/enable' },
+  'POST /auth/2fa/disable': { requiresAuth: true, backendPath: '/api/auth/2fa/disable' },
+  'GET /auth/2fa/status': { requiresAuth: true, backendPath: '/api/auth/2fa/status' },
+  'POST /auth/2fa/verify-login': { requiresAuth: false, backendPath: '/api/auth/2fa/verify-login' },
+  'POST /auth/2fa/skip': { requiresAuth: false, backendPath: '/api/auth/2fa/skip' },
+  
+  // Address endpoints
+  'GET /addresses': { requiresAuth: true, backendPath: '/api/addresses' },
+  'POST /addresses': { requiresAuth: true, backendPath: '/api/addresses' },
+  
+  // ... 其他路由
+};
+```
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
-    const user = verifyToken(req);
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
-    // handle GET
+### 添加新 API 端点的步骤
+
+1. **在 `ROUTE_CONFIG` 中添加配置**（不需要创建新文件）:
+```typescript
+'POST /new/endpoint': { 
+  requiresAuth: true, 
+  backendPath: '/api/new/endpoint' 
+}
+```
+
+2. **在 Go 后端添加处理器**:
+```go
+// internal/routes/routes.go
+protected.POST("/new/endpoint", h.NewEndpointHandler)
+```
+
+3. **在 `api/__route__.test.ts` 中添加测试**:
+```typescript
+it('should route POST /new/endpoint correctly', async () => {
+  // 测试代码
+});
+```
+
+### 动态路由支持
+
+支持动态路由参数（如 `/addresses/:id`）:
+
+```typescript
+// Handle dynamic address routes: /addresses/123, /addresses/123/verify, etc.
+if (path.startsWith('/addresses/')) {
+  const isValidAddressRoute =
+    /^\/addresses\/[\w-]+(\/verify|\/primary)?$/.test(path) &&
+    (method === 'DELETE' || method === 'POST' || method === 'PUT' || method === 'PATCH');
+  
+  if (isValidAddressRoute) {
+    return {
+      found: true,
+      config: { requiresAuth: true, backendPath: '' },
+      backendPath: `/api${path}`,
+    };
   }
+}
+```
+
+### 旧的 API 路由模式（已废弃）
+
+以下模式不再使用，仅作为参考：
+
+```typescript
+// ❌ 废弃：每个端点一个文件
+// api/auth/login.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // ...
 }
 ```
 

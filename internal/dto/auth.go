@@ -17,11 +17,11 @@ type LoginRequest struct {
 
 // LoginResponse DTO for login response
 type LoginResponse struct {
-	AccessToken  string    `json:"access_token,omitempty"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	TokenType    string    `json:"token_type,omitempty"`
-	ExpiresIn    int       `json:"expires_in,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	AccessToken  string    `json:"accessToken,omitempty"`
+	RefreshToken string    `json:"refreshToken,omitempty"`
+	TokenType    string    `json:"tokenType,omitempty"`
+	ExpiresIn    int       `json:"expiresIn,omitempty"`
+	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
 	User         *UserInfo `json:"user,omitempty"`
 	Token        string    `json:"token,omitempty"`
 	Requires2FA  bool      `json:"requires2FA,omitempty"`
@@ -37,15 +37,15 @@ type UserInfo struct {
 
 // RefreshTokenRequest DTO for token refresh
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refreshToken" binding:"required"`
 }
 
 // RefreshTokenResponse DTO for token refresh response
 type RefreshTokenResponse struct {
-	AccessToken string    `json:"access_token"`
-	TokenType   string    `json:"token_type"`
-	ExpiresIn   int       `json:"expires_in"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	AccessToken string    `json:"accessToken"`
+	TokenType   string    `json:"tokenType"`
+	ExpiresIn   int       `json:"expiresIn"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 // LogoutRequest DTO for logout
@@ -61,7 +61,7 @@ type Setup2FARequest struct {
 // Setup2FAResponse DTO for 2FA setup response
 type Setup2FAResponse struct {
 	Secret string `json:"secret"`
-	QRCode string `json:"qr_code"`
+	QRCode string `json:"qrCode"`
 }
 
 // Enable2FARequest DTO for enabling 2FA

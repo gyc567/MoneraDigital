@@ -51,8 +51,8 @@ type LoginResponse struct {
 	TokenType    string       `json:"token_type,omitempty"`
 	ExpiresIn    int          `json:"expires_in,omitempty"`
 	ExpiresAt    time.Time    `json:"expires_at,omitempty"`
-	Requires2FA  bool         `json:"requires_2fa,omitempty"`
-	UserID       int          `json:"user_id,omitempty"`
+	Requires2FA  bool         `json:"requires2FA,omitempty"`
+	UserID       int          `json:"userId,omitempty"`
 }
 
 // Register handles user registration

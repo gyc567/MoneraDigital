@@ -22,7 +22,45 @@ It is a **full-stack application** utilizing a TypeScript frontend and a **Golan
     *   `src/lib/`: Frontend service layer and utilities.
     *   `src/i18n/`: Internationalization (English/Chinese).
 *   **`internal/` & `cmd/`**: **Primary Backend Code**. All API handlers, business logic, and database operations reside here.
+*   **`api/`**: **统一 Serverless Function（唯一文件）**
+    *   `api/[...route].ts`: 统一路由处理器，所有 API 请求通过此单一入口
+    *   `api/__route__.test.ts`: 路由测试
 *   **`docs/`**: Extensive project documentation (Architecture, PRDs, Security).
+
+### 统一 Serverless Function 架构（重要）
+
+**Vercel Hobby 计划限制**: 最多 12 个 Serverless Functions。
+
+**必须使用统一路由架构**:
+```
+api/
+├── [...route].ts          # 统一路由处理器（唯一 Serverless Function）
+└── __route__.test.ts      # 路由测试
+```
+
+**禁止这样做**（会导致部署失败）:
+```
+api/
+├── auth/
+│   ├── login.ts          # ❌ 单独的函数 - 会导致超过 12 个限制
+│   ├── register.ts       # ❌ 单独的函数
+│   └── logout.ts         # ❌ 单独的函数
+├── 2fa/
+│   ├── setup.ts          # ❌ 单独的函数
+│   └── enable.ts         # ❌ 单独的函数
+└── ... (更多文件)
+```
+
+**所有路由在 `api/[...route].ts` 中集中配置**:
+```typescript
+const ROUTE_CONFIG: Record<string, RouteConfig> = {
+  'POST /auth/login': { requiresAuth: false, backendPath: '/api/auth/login' },
+  'POST /auth/register': { requiresAuth: false, backendPath: '/api/auth/register' },
+  // ... 其他路由
+};
+```
+
+**添加新 API 端点**: 只需在 `ROUTE_CONFIG` 中添加配置，**不要创建新文件**。
 
 ## Development Workflow
 

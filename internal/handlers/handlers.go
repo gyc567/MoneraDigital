@@ -216,19 +216,21 @@ func (h *Handler) Skip2FALogin(c *gin.Context) {
 		UserID int `json:"userId" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+			"code": "INVALID_REQUEST",
+			"userId": req.UserID,
+		})
 		return
 	}
 
-	// Logic to finalize login without 2FA
-	// This usually means generating the JWT token for the user
-	// We need a service method for this, likely similar to Verify2FAAndLogin but without the token check
-	// For now, we assume a new method Skip2FAAndLogin exists or we reuse existing logic if possible.
-	// Let's assume we need to add Skip2FAAndLogin to AuthService.
-
 	resp, err := h.AuthService.Skip2FAAndLogin(req.UserID)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+			"code": "SKIP_2FA_FAILED",
+			"userId": req.UserID,
+		})
 		return
 	}
 
