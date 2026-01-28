@@ -77,7 +77,10 @@ export default function Login() {
 
       // Login successful - store token and redirect
       localStorage.setItem("token", data.accessToken || data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      // Only store user data if it exists to avoid "undefined" string in localStorage
+      if (data.user) {
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
       toast.success(t("auth.login.successMessage"));
       
       // Redirect to validated returnTo or default to /dashboard

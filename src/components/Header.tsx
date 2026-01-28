@@ -13,11 +13,14 @@ const Header = () => {
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
-    if (savedUser) {
+    // Check for null, undefined string, or empty string before parsing
+    if (savedUser && savedUser !== "undefined" && savedUser !== "null") {
       try {
         setUser(JSON.parse(savedUser));
       } catch (e) {
         console.error("Failed to parse user from localStorage", e);
+        // Clean up invalid data
+        localStorage.removeItem("user");
       }
     }
   }, []);

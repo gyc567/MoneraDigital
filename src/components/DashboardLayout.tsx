@@ -12,11 +12,28 @@ const DashboardLayout = () => {
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     const token = localStorage.getItem("token");
-    if (!token || !savedUser) {
+    // Check for valid token and user data
+    if (!token) {
       navigate("/login");
       return;
     }
-    setUser(JSON.parse(savedUser));
+    // Validate user data before parsing
+    if (!savedUser || savedUser === "undefined" || savedUser === "null") {
+      // Token exists but user data is missing/corrupted, clean up and redirect
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
+      return;
+    }
+    try {
+      setUser(JSON.parse(savedUser));
+    } catch (e) {
+      console.error("Failed to parse user data:", e);
+      // Clean up invalid data
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
+    }
   }, [navigate]);
 
   const handleLogout = () => {
