@@ -27,12 +27,12 @@ func (r *WalletRepository) CreateRequest(ctx context.Context, req *models.Wallet
 
 func (r *WalletRepository) GetRequestByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	query := `
-		SELECT id, request_id, user_id, status, wallet_id, address, addresses, error_message, created_at, updated_at
+		SELECT id, request_id, user_id, product_code, currency, status, wallet_id, address, addresses, error_message, created_at, updated_at
 		FROM wallet_creation_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`
 
 	var w models.WalletCreationRequest
 	err := r.db.QueryRowContext(ctx, query, userID).Scan(
-		&w.ID, &w.RequestID, &w.UserID, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
+		&w.ID, &w.RequestID, &w.UserID, &w.ProductCode, &w.Currency, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -76,12 +76,12 @@ func (r *WalletRepository) GetWalletByUserProductCurrency(ctx context.Context, u
 
 func (r *WalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	query := `
-		SELECT id, request_id, user_id, status, wallet_id, address, addresses, error_message, created_at, updated_at
+		SELECT id, request_id, user_id, product_code, currency, status, wallet_id, address, addresses, error_message, created_at, updated_at
 		FROM wallet_creation_requests WHERE user_id = $1 AND status = 'SUCCESS' ORDER BY created_at DESC LIMIT 1`
 
 	var w models.WalletCreationRequest
 	err := r.db.QueryRowContext(ctx, query, userID).Scan(
-		&w.ID, &w.RequestID, &w.UserID, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
+		&w.ID, &w.RequestID, &w.UserID, &w.ProductCode, &w.Currency, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
