@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,7 +22,7 @@ func NewWalletService(repo repository.Wallet) *WalletService {
 // CreateWallet creates a new wallet for the user with productCode and currency.
 func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
 	// Check for existing wallet with same product and currency
-	existing, err := s.repo.GetRequestByUserID(ctx, userID)
+	existing, err := s.repo.GetWalletByUserProductCurrency(ctx, userID, productCode, currency)
 	if err != nil {
 		return nil, err
 	}
@@ -32,9 +33,11 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	// Create new wallet request
 	reqID := uuid.New().String()
 	newReq := &models.WalletCreationRequest{
-		RequestID: reqID,
-		UserID:    userID,
-		Status:    models.WalletCreationStatusCreating,
+		RequestID:   reqID,
+		UserID:      userID,
+		ProductCode: productCode,
+		Currency:    currency,
+		Status:      models.WalletCreationStatusCreating,
 	}
 	err = s.repo.CreateRequest(ctx, newReq)
 	if err != nil {
@@ -83,6 +86,10 @@ func (s *WalletService) generateAddress(currency string) string {
 		"ETH":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
 		"TRON":       "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
 		"BSC":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+	}
+
+	if addr := os.Getenv("WALLET_ADDR_" + currency); addr != "" {
+		return addr
 	}
 
 	if addr, ok := mockAddresses[currency]; ok {

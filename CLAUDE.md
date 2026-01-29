@@ -9,8 +9,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Key Stack:**
 - Frontend: React 18, TypeScript, Vite, Tailwind CSS, Radix UI (51 components)
 - Backend: **Golang (Go)** - Mandatory for all backend interfaces, database access, and operations.
+- External Core System: **Monnaire Core API** - Core account management (integrated via Go backend)
+- Database: PostgreSQL (Neon)
 - Testing: Vitest, Playwright
 - i18n: English and Chinese support via i18next
+
+## Architecture
+
+```
+Frontend (React) → API Routes (Vercel) → Go Backend → Core API / Database
+```
+
+### Critical Rules
+
+1. **Frontend ONLY calls `/api/*` endpoints** - Never direct database or Core API access
+2. **Go Backend handles ALL business logic** - Database operations and Core API integration
+3. **Core API is external** - Only Go backend can call Monnaire Core API
+
+### Layer Responsibilities
+
+| Layer | Can Do | Cannot Do |
+|-------|--------|-----------|
+| Frontend | UI, form validation, call `/api/*` | Direct DB access, direct Core API access |
+| API Routes | Route, auth check, proxy | Business logic |
+| Go Backend | Business logic, DB access, Core API calls | Nothing - this is where everything happens |
+| Core API | Account management, KYC | Be called by frontend directly |
 
 ---
 
@@ -41,6 +64,76 @@ npm run test -- src/lib/auth-service.test.ts          # Specific file
 npm run test -- --reporter=verbose                      # Verbose output
 npm run test -- --watch                                 # Watch mode
 ```
+
+---
+
+## JSON Naming Convention (Critical)
+
+**All API request/response fields MUST use camelCase naming:**
+
+✅ **Correct**:
+```json
+{
+  "userId": 1,
+  "accessToken": "xxx",
+  "refreshToken": "xxx",
+  "requires2FA": true,
+  "createdAt": "2024-01-01T00:00:00Z"
+}
+```
+
+❌ **Incorrect**:
+```json
+{
+  "user_id": 1,
+  "access_token": "xxx",
+  "refresh_token": "xxx",
+  "requires_2fa": true,
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### Go Struct Tags
+
+Go structs must use camelCase for JSON tags:
+
+```go
+// ✅ Correct
+type LoginResponse struct {
+    UserID       int    `json:"userId"`       // camelCase for JSON
+    AccessToken  string `json:"accessToken"`  // camelCase for JSON
+    Requires2FA  bool   `json:"requires2FA"`  // camelCase for JSON
+    CreatedAt    time.Time `json:"createdAt" db:"created_at"`  // camelCase JSON, snake_case DB
+}
+
+// ❌ Incorrect
+type LoginResponse struct {
+    UserID       int    `json:"user_id"`      // snake_case - DON'T USE
+    AccessToken  string `json:"access_token"` // snake_case - DON'T USE
+}
+```
+
+### TypeScript/JavaScript
+
+Frontend code must use camelCase:
+
+```typescript
+// ✅ Correct
+const userId = 1;
+const accessToken = 'xxx';
+const requires2FA = true;
+
+// ❌ Incorrect
+const user_id = 1;
+const access_token = 'xxx';
+```
+
+### Why This Matters
+
+Inconsistent naming causes:
+- Frontend cannot parse backend responses correctly
+- `data.userId` returns `undefined` when backend sends `user_id`
+- Silent failures that are hard to debug
 
 ---
 
@@ -125,23 +218,31 @@ npm run test -- --watch                                 # Watch mode
 - Feature components (Hero, Features, Stats, etc.)
 
 **Services** (`src/lib/`):
-- Core business logic services that are **reused by both API endpoints and frontend**
-  - `auth-service.ts` - Registration, login, password hashing, JWT generation
-  - `two-factor-service.ts` - TOTP setup, verification, backup codes (encrypted)
-  - `lending-service.ts` - Lending applications, position management, APY calculations
-  - `address-whitelist-service.ts` - Address verification (24-hour email tokens), management
-  - `withdrawal-service.ts` - Withdrawal processing and transaction tracking
-  - `email-service.ts` - Email notifications and verification tokens
-  - `encryption.ts` - AES-256-GCM encryption (2FA secrets, backup codes)
+- **API Client Services** - Frontend services that ONLY call backend APIs
+  - `auth-service.ts` - Calls `/api/auth/*` endpoints
+  - `two-factor-service.ts` - Calls `/api/auth/2fa/*` endpoints
+  - `lending-service.ts` - Calls `/api/lending/*` endpoints
+  - `address-whitelist-service.ts` - Calls `/api/addresses` endpoints
+  - `withdrawal-service.ts` - Calls `/api/withdrawals` endpoints
+  - `wallet-service.ts` - Calls `/api/v1/wallet/*` endpoints
+- **Utilities**:
   - `auth-middleware.ts` - JWT verification (used in API handlers)
-  - `redirect-validator.ts` - Open redirect attack mitigation (whitelist validation)
-  - `rate-limit.ts` - Redis-based rate limiting (5 requests/60s per IP)
-- Utilities: `db.ts` (Drizzle instance), `redis.ts` (Upstash client), `logger.ts` (Pino), `utils.ts` (cn function)
+  - `redirect-validator.ts` - Open redirect attack mitigation
+  - `rate-limit.ts` - Redis-based rate limiting
+  - `logger.ts` - Pino logging
+  - `utils.ts` - Helper functions
 
-**Database** (`src/db/`):
-- `schema.ts` - Drizzle schema definitions (users, lending_positions, withdrawal_addresses, address_verifications, withdrawals)
-- PostgreSQL native enums for status fields (lending_status, address_type, withdrawal_status)
-- Foreign key relationships enforced
+**⚠️ IMPORTANT**: Frontend services do NOT contain business logic. They only make HTTP API calls to the Go backend.
+
+**Go Backend** (`internal/`):
+- **Handlers** (`internal/handlers/`) - HTTP request handlers
+- **Services** (`internal/services/`) - Business logic, database operations
+- **Core API Integration** (`internal/handlers/core/`) - Monnaire Core API client
+- **Database** - PostgreSQL access via `internal/repository/`
+
+**External Systems**:
+- **Monnaire Core API** - Core account management, KYC (called only by Go backend)
+- **PostgreSQL** - Application data (accessed only by Go backend)
 
 **Internationalization** (`src/i18n/`):
 - `config.ts` - i18next setup (localStorage language persistence)
@@ -151,18 +252,56 @@ npm run test -- --watch                                 # Watch mode
 ### Backend Structure (`api/`)
 
 **Route Organization** (Vercel Serverless Functions):
-- `api/auth/login.ts`, `register.ts`, `me.ts` - Authentication endpoints
-- `api/auth/2fa/setup.ts`, `enable.ts`, `verify-login.ts` - 2FA endpoints
-- `api/lending/apply.ts`, `positions.ts` - Lending endpoints
-- `api/addresses/` - Address management (CRUD, verify, set primary)
-- `api/withdrawals/` - Withdrawal endpoints
-- `api/[...route].ts` - Dynamic routing handler
+- **`api/[...route].ts`** - **统一路由处理器（唯一 Serverless Function）**
+- `api/__route__.test.ts` - 路由测试
 
-**Pattern**: Each endpoint is a standalone serverless function with:
-1. Manual middleware composition (auth check, rate limiting)
-2. Zod validation of request body
-3. Service layer calls for business logic
-4. Structured error responses (status codes, error codes)
+**重要规则**: Vercel Hobby 计划限制最多 12 个 Serverless Functions。项目必须使用统一的路由架构：
+
+```
+api/
+├── [...route].ts          # 统一路由处理器（唯一 Serverless Function）
+└── __route__.test.ts      # 路由测试
+```
+
+**禁止这样做**（会导致超过 12 个函数限制）：
+```
+api/
+├── auth/
+│   ├── login.ts          # ❌ 单独的函数
+│   ├── register.ts       # ❌ 单独的函数
+│   └── logout.ts         # ❌ 单独的函数
+├── 2fa/
+│   ├── setup.ts          # ❌ 单独的函数
+│   └── enable.ts         # ❌ 单独的函数
+└── ... (更多文件)
+```
+
+**统一路由配置** (`ROUTE_CONFIG`):
+```typescript
+const ROUTE_CONFIG: Record<string, RouteConfig> = {
+  // Auth endpoints
+  'POST /auth/login': { requiresAuth: false, backendPath: '/api/auth/login' },
+  'POST /auth/register': { requiresAuth: false, backendPath: '/api/auth/register' },
+  
+  // 2FA endpoints
+  'POST /auth/2fa/setup': { requiresAuth: true, backendPath: '/api/auth/2fa/setup' },
+  'POST /auth/2fa/enable': { requiresAuth: true, backendPath: '/api/auth/2fa/enable' },
+  
+  // ... 其他路由
+};
+```
+
+**Pattern**: 统一路由处理器的工作流程：
+1. 解析请求路径和方法
+2. 在 `ROUTE_CONFIG` 中查找匹配的路由
+3. 检查认证要求（如果需要）
+4. 转发请求到 Go 后端
+5. 返回后端响应
+
+**添加新路由的步骤**：
+1. 在 `ROUTE_CONFIG` 中添加配置（不需要创建新文件）
+2. 在 Go 后端 `internal/routes/routes.go` 中添加对应处理器
+3. 在 `api/__route__.test.ts` 中添加测试
 
 ---
 

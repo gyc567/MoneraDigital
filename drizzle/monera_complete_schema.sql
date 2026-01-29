@@ -28,10 +28,13 @@ CREATE TABLE IF NOT EXISTS users (
   two_factor_secret TEXT,
   two_factor_enabled BOOLEAN DEFAULT FALSE NOT NULL,
   two_factor_backup_codes TEXT,
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL
+  two_factor_last_used_at BIGINT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_two_factor_last_used_at ON users(two_factor_last_used_at) WHERE two_factor_enabled = TRUE;
 
 -- ====================================================================
 -- LEGACY/SIMPLE LENDING
@@ -254,6 +257,8 @@ CREATE TABLE IF NOT EXISTS wallet_creation_request (
   coin_address TEXT,
   error_message TEXT,
   retry_count INTEGER DEFAULT 0 NOT NULL,
+  product_code VARCHAR(50) DEFAULT '',
+  currency VARCHAR(20) DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
@@ -261,6 +266,7 @@ CREATE TABLE IF NOT EXISTS wallet_creation_request (
 CREATE INDEX IF NOT EXISTS idx_wallet_creation_request_user_id ON wallet_creation_request(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_user_id ON wallet_creation_request(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_request_id ON wallet_creation_request(request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_requests_user_product_currency ON wallet_creation_request(user_id, product_code, currency) WHERE status = 'SUCCESS';
 
 -- 3.3 Transfer Record
 CREATE TABLE IF NOT EXISTS transfer_record (
@@ -535,7 +541,11 @@ WHERE user_id > 0;
 -- COMMENTS
 -- ====================================================================
 
-COMMENT ON TABLE users IS 'Core user authentication table';
+COMMENT ON TABLE users IS 'Core user authentication table with 2FA support';
+COMMENT ON COLUMN users.two_factor_secret IS 'Encrypted TOTP secret key';
+COMMENT ON COLUMN users.two_factor_enabled IS 'Whether 2FA is enabled for the user';
+COMMENT ON COLUMN users.two_factor_backup_codes IS 'Encrypted backup codes for 2FA recovery';
+COMMENT ON COLUMN users.two_factor_last_used_at IS 'Timestamp of last 2FA usage for replay attack prevention';
 COMMENT ON TABLE lending_positions IS 'Legacy lending positions table';
 COMMENT ON TABLE withdrawal_addresses IS 'User withdrawal addresses';
 COMMENT ON TABLE withdrawals IS 'Withdrawal transaction records';
@@ -551,7 +561,9 @@ COMMENT ON TABLE withdrawal_request IS 'Withdrawal request tracking';
 COMMENT ON TABLE withdrawal_order IS 'Withdrawal execution orders';
 COMMENT ON TABLE withdrawal_freeze_log IS 'Withdrawal balance freeze records';
 COMMENT ON TABLE withdrawal_verification IS 'Withdrawal verification codes and attempts';
-COMMENT ON TABLE wallet_creation_requests IS 'Wallet creation requests';
+COMMENT ON TABLE wallet_creation_request IS 'Wallet creation requests with product and currency support';
+COMMENT ON COLUMN wallet_creation_request.product_code IS 'Product code for the wallet (e.g., SPOT, EARN)';
+COMMENT ON COLUMN wallet_creation_request.currency IS 'Currency code for the wallet (e.g., USDT, BTC)';
 COMMENT ON TABLE wealth_product_approval IS 'Wealth product approval workflow';
 COMMENT ON TABLE account_adjustment IS 'Manual account adjustments';
 COMMENT ON TABLE audit_trail IS 'Comprehensive audit trail for all operations';

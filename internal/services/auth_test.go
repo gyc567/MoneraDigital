@@ -174,8 +174,8 @@ func TestAuthService_Login_UserNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected error for invalid credentials, got nil")
 	}
-	if err.Error() != "email not found" {
-		t.Errorf("Expected 'email not found', got '%s'", err.Error())
+	if err.Error() != "invalid credentials" {
+		t.Errorf("Expected 'invalid credentials', got '%s'", err.Error())
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -306,8 +306,8 @@ func TestGenerateJWT(t *testing.T) {
 		t.Fatalf("Failed to parse JWT: %v", err)
 	}
 
-	if claims["user_id"].(float64) != 123 {
-		t.Errorf("Expected user_id 123, got %v", claims["user_id"])
+	if claims["userId"].(float64) != 123 {
+		t.Errorf("Expected userId 123, got %v", claims["userId"])
 	}
 	if claims["email"] != "test@example.com" {
 		t.Errorf("Expected email 'test@example.com', got %v", claims["email"])
@@ -335,4 +335,127 @@ func TestParseJWT_ExpiredToken(t *testing.T) {
 	// Note: This is a simplified test - in real scenarios, you'd need to
 	// manipulate time or use a custom claims struct with custom expiry
 	t.Skip("Requires time manipulation or custom claims - skipping for now")
+}
+
+// ==================== Skip2FAAndLogin Tests ====================
+
+func TestAuthService_Skip2FAAndLogin_Success(t *testing.T) {
+	db, mock := newMockDB(t)
+	defer db.Close()
+
+	// Mock GetUserByID query
+	mock.ExpectQuery(`SELECT id, email, two_factor_enabled FROM users WHERE id = \$1`).
+		WithArgs(1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "two_factor_enabled"}).
+			AddRow(1, "test@example.com", false))
+
+	service := NewAuthService(db, "test-secret")
+
+	resp, err := service.Skip2FAAndLogin(1)
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("Expected response, got nil")
+	}
+	if resp.AccessToken == "" {
+		t.Error("Expected access token, got empty")
+	}
+	if resp.TokenType != "Bearer" {
+		t.Errorf("Expected 'Bearer', got '%s'", resp.TokenType)
+	}
+	if resp.User == nil {
+		t.Fatal("Expected user in response")
+	}
+	if resp.User.Email != "test@example.com" {
+		t.Errorf("Expected email 'test@example.com', got '%s'", resp.User.Email)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+}
+
+func TestAuthService_Skip2FAAndLogin_UserNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	defer db.Close()
+
+	// Mock GetUserByID query - user not found
+	mock.ExpectQuery(`SELECT id, email, two_factor_enabled FROM users WHERE id = \$1`).
+		WithArgs(999).
+		WillReturnError(sql.ErrNoRows)
+
+	service := NewAuthService(db, "test-secret")
+
+	_, err := service.Skip2FAAndLogin(999)
+
+	if err == nil {
+		t.Fatal("Expected error for non-existent user, got nil")
+	}
+	if !errors.Is(err, sql.ErrNoRows) && !contains(err.Error(), "user not found") {
+		t.Errorf("Expected 'user not found' error, got: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+}
+
+func TestAuthService_Skip2FAAndLogin_2FAEnabled(t *testing.T) {
+	db, mock := newMockDB(t)
+	defer db.Close()
+
+	// Mock GetUserByID query - user with 2FA enabled
+	mock.ExpectQuery(`SELECT id, email, two_factor_enabled FROM users WHERE id = \$1`).
+		WithArgs(1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "two_factor_enabled"}).
+			AddRow(1, "test@example.com", true))
+
+	service := NewAuthService(db, "test-secret")
+
+	_, err := service.Skip2FAAndLogin(1)
+
+	if err == nil {
+		t.Fatal("Expected error when 2FA is enabled, got nil")
+	}
+	if err.Error() != "cannot skip 2FA as it is enabled for this account" {
+		t.Errorf("Expected 'cannot skip 2FA as it is enabled for this account', got: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %v", err)
+	}
+}
+
+func TestAuthService_Skip2FAAndLogin_DBError(t *testing.T) {
+	db, mock := newMockDB(t)
+	defer db.Close()
+
+	// Mock GetUserByID query - database error
+	mock.ExpectQuery(`SELECT id, email, two_factor_enabled FROM users WHERE id = \$1`).
+		WithArgs(1).
+		WillReturnError(errors.New("database connection failed"))
+
+	service := NewAuthService(db, "test-secret")
+
+	_, err := service.Skip2FAAndLogin(1)
+
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

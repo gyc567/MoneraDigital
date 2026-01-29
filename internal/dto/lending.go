@@ -7,22 +7,22 @@ import "time"
 type ApplyLendingRequest struct {
 	Asset        string  `json:"asset" binding:"required,oneof=BTC ETH USDC USDT"`
 	Amount       float64 `json:"amount" binding:"required,gt=0"`
-	DurationDays int     `json:"duration_days" binding:"required,gt=0,lte=365"`
+	DurationDays int     `json:"durationDays" binding:"required,gt=0,lte=365"`
 }
 
 // LendingPositionResponse DTO for lending position response
 type LendingPositionResponse struct {
 	ID           int       `json:"id"`
-	UserID       int       `json:"user_id"`
+	UserID       int       `json:"userId"`
 	Asset        string    `json:"asset"`
 	Amount       float64   `json:"amount"`
-	DurationDays int       `json:"duration_days"`
+	DurationDays int       `json:"durationDays"`
 	APY          float64   `json:"apy"`
 	Status       string    `json:"status"`
-	AccruedYield float64   `json:"accrued_yield"`
-	StartDate    time.Time `json:"start_date"`
-	EndDate      time.Time `json:"end_date"`
-	CreatedAt    time.Time `json:"created_at"`
+	AccruedYield float64   `json:"accruedYield"`
+	StartDate    time.Time `json:"startDate"`
+	EndDate      time.Time `json:"endDate"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // LendingPositionsListResponse DTO for list of lending positions
@@ -34,5 +34,5 @@ type LendingPositionsListResponse struct {
 
 // CloseLendingRequest DTO for closing a lending position
 type CloseLendingRequest struct {
-	PositionID int `json:"position_id" binding:"required,gt=0"`
+	PositionID int `json:"positionId" binding:"required,gt=0"`
 }

@@ -11,9 +11,110 @@
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Shadcn UI (Radix Primitives)
 - **Backend**: Golang (Go) - **Mandatory for all interfaces, database access, and operations.**
 - **Database**: PostgreSQL (Neon)
+- **External Core System**: Monnaire Core API (Account Management)
 - **State/Cache**: Redis (Upstash)
 - **Testing**: Vitest (Unit/Integration), Playwright (E2E)
 - **Language**: TypeScript (Frontend), Go (Backend)
+
+## Architecture Overview
+
+```
+Frontend (React) → API Routes (Vercel) → Go Backend → Core API / Database
+```
+
+### Layer Responsibilities
+
+| Layer | Technology | Responsibilities |
+|-------|------------|------------------|
+| **Frontend** | React + TypeScript | UI rendering, form validation, API calls only |
+| **API Routes** | Vercel Serverless | Request routing, auth validation, proxy to backend |
+| **Go Backend** | Go (internal/) | Business logic, database operations, Core API integration |
+| **Core API** | External/Mock | Core account management, KYC, compliance |
+| **Database** | PostgreSQL (Neon) | User data, transactions, application state |
+
+## Architecture Principles
+
+### 1. Frontend-Only API Calls
+**⚠️ CRITICAL**: Frontend code **MUST NOT** directly access the database or Core API.
+
+```
+✅ Correct:  Frontend → /api/* → Go Backend → Database/Core API
+❌ Forbidden: Frontend → Direct Database Access
+❌ Forbidden: Frontend → Direct Core API Access
+```
+
+### 2. Service Layer Pattern
+
+Frontend services (`src/lib/*-service.ts`) **only** make HTTP API calls:
+
+```typescript
+// ✅ Correct: Service calls local API
+export class UserService {
+  static async getUser() {
+    const response = await fetch('/api/users/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return response.json();
+  }
+}
+
+// ❌ Forbidden: Direct database access
+export class UserService {
+  static async getUser() {
+    return db.select().from(users);  // Never do this!
+  }
+}
+
+// ❌ Forbidden: Direct Core API access
+export class UserService {
+  static async getUser() {
+    return fetch('https://core-api.monera.com/users');  // Never do this!
+  }
+}
+```
+
+### 3. Go Backend Responsibilities
+
+Go backend (`internal/`) is the **only** layer that can:
+- Access PostgreSQL database
+- Call Monnaire Core API
+- Implement business logic
+- Handle authentication/authorization
+
+```go
+// ✅ Correct: Go Backend calls Core API
+func (s *AuthService) createCoreAccount(userID int, email string) (string, error) {
+    coreAPIURL := os.Getenv("Monnaire_Core_API_URL") + "/accounts/create"
+    resp, err := http.Post(coreAPIURL, "application/json", body)
+    // ...
+}
+
+// ✅ Correct: Go Backend accesses database
+func (s *AuthService) CreateUser(req models.RegisterRequest) (*models.User, error) {
+    _, err := s.DB.Exec("INSERT INTO users ...", req.Email, hashedPassword)
+    // ...
+}
+```
+
+### 4. Data Flow Example (User Registration)
+
+```
+1. Frontend (React)
+   POST /api/auth/register
+   { email, password }
+   
+2. API Routes (Vercel)
+   Validate JWT → Forward to Go Backend
+   
+3. Go Backend (internal/services/auth.go)
+   a. Create user in PostgreSQL
+   b. Call Monnaire Core API to create core account
+      POST Monnaire_Core_API_URL/accounts/create
+   c. Return { user, token }
+   
+4. Frontend
+   Receive response, update UI
+```
 
 ---
 
@@ -136,6 +237,51 @@ function getUser(id: any): any {
 |------|------------|----------|
 | Variables | camelCase | `userId`, `isLoading` |
 | Constants | UPPER_SNAKE_CASE | `JWT_SECRET`, `MAX_RETRY_COUNT` |
+| JSON Fields | camelCase | `userId`, `accessToken`, `requires2FA` |
+| Database Columns | snake_case | `user_id`, `created_at` |
+
+**Critical Rule**: All API request/response JSON fields MUST use camelCase (`userId`, not `user_id`).
+
+### JSON Field Naming Convention
+
+| Layer | Format | Example |
+|-------|--------|---------|
+| **API Request/Response** | camelCase | `userId`, `createdAt`, `walletAddress` |
+| **Database Columns** | snake_case | `user_id`, `created_at`, `wallet_address` |
+| **TypeScript Interfaces** | camelCase | `userId: number` |
+| **Go Struct JSON Tags** | camelCase | `json:"userId"` |
+| **Go Struct DB Tags** | snake_case | `db:"user_id"` |
+
+```go
+// Go struct - JSON camelCase, DB snake_case
+type WithdrawalAddress struct {
+    ID            int          `json:"id" db:"id"`
+    UserID        int          `json:"userId" db:"user_id"`
+    WalletAddress string       `json:"walletAddress" db:"wallet_address"`
+    ChainType     string       `json:"chainType" db:"chain_type"`
+    AddressAlias  string       `json:"addressAlias" db:"address_alias"`
+    Verified      bool         `json:"verified" db:"verified"`
+    CreatedAt     time.Time    `json:"createdAt" db:"created_at"`
+    VerifiedAt    sql.NullTime `json:"verifiedAt,omitempty" db:"verified_at"`
+}
+```
+
+```typescript
+// TypeScript - always camelCase
+interface WithdrawalAddress {
+  id: number;
+  userId: number;
+  walletAddress: string;
+  chainType: "BTC" | "ETH" | "USDC" | "USDT";
+  addressAlias: string;
+  verified: boolean;
+  createdAt: string;
+  verifiedAt: string | null;
+}
+```
+
+**⚠️ WARNING**: Never mix snake_case and camelCase in API JSON. All API communication MUST use camelCase.
+```
 | Functions | camelCase (verb-first) | `getUser()`, `fetchWithdrawalHistory()` |
 | Classes/PInterfaces | PascalCase | `AuthService`, `WithdrawalAddress` |
 | Components | PascalCase | `DashboardLayout`, `WithdrawPage` |
@@ -247,15 +393,17 @@ src/
 ├── components/
 │   ├── ui/                 # Shadcn/Radix UI components
 │   └── DashboardLayout.tsx # Layout components
-├── db/
-│   ├── schema.ts           # Drizzle schema definitions
-│   └── migrations/         # Database migrations
-├── lib/                    # Core service layer (business logic)
+├── lib/                    # Core service layer (API clients only)
+│   ├── auth-service.ts     # Auth API client
+│   ├── withdrawal-service.ts # Withdrawal API client
+│   └── ...                 # Other service clients
 ├── pages/                  # Route pages (React Router)
 │   └── dashboard/          # Dashboard pages
 ├── hooks/                  # Custom React hooks
 └── i18n/                   # Internationalization
 ```
+
+**Note**: `src/db/` directory has been removed. Frontend must NOT directly access database.
 
 ---
 
@@ -272,23 +420,112 @@ src/
 
 ## API Routes
 
-- **Location**: `api/` directory
-- **Naming**: File-based routing (`api/auth/login.ts` → `/api/auth/login`)
-- **Method handlers**: Check `req.method` in handler
-- **Auth**: Use `verifyToken()` from auth middleware
-- **Response**: Return JSON with `res.status().json()`
+### 统一 Serverless Function 架构（强制）
+
+**重要**: Vercel Hobby 计划限制最多 **12 个 Serverless Functions**。
+项目必须使用统一的路由架构，所有 API 请求通过单一入口处理。
+
+**正确的文件结构**:
+```
+api/
+├── [...route].ts          # 统一路由处理器（唯一 Serverless Function）
+└── __route__.test.ts      # 路由测试
+```
+
+**禁止的文件结构**（会导致超过 12 个函数限制）:
+```
+api/
+├── auth/
+│   ├── login.ts          # ❌ 单独的 Serverless Function
+│   ├── register.ts       # ❌ 单独的 Serverless Function
+│   └── logout.ts         # ❌ 单独的 Serverless Function
+├── 2fa/
+│   ├── setup.ts          # ❌ 单独的 Serverless Function
+│   └── enable.ts         # ❌ 单独的 Serverless Function
+└── ... (更多文件)
+```
+
+### 统一路由配置
+
+所有路由在 `api/[...route].ts` 的 `ROUTE_CONFIG` 中集中配置：
 
 ```typescript
-// ✅ Correct
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyToken } from '../../src/lib/auth-middleware.js';
+const ROUTE_CONFIG: Record<string, RouteConfig> = {
+  // Auth endpoints
+  'POST /auth/login': { requiresAuth: false, backendPath: '/api/auth/login' },
+  'POST /auth/register': { requiresAuth: false, backendPath: '/api/auth/register' },
+  'GET /auth/me': { requiresAuth: true, backendPath: '/api/auth/me' },
+  
+  // 2FA endpoints
+  'POST /auth/2fa/setup': { requiresAuth: true, backendPath: '/api/auth/2fa/setup' },
+  'POST /auth/2fa/enable': { requiresAuth: true, backendPath: '/api/auth/2fa/enable' },
+  'POST /auth/2fa/disable': { requiresAuth: true, backendPath: '/api/auth/2fa/disable' },
+  'GET /auth/2fa/status': { requiresAuth: true, backendPath: '/api/auth/2fa/status' },
+  'POST /auth/2fa/verify-login': { requiresAuth: false, backendPath: '/api/auth/2fa/verify-login' },
+  'POST /auth/2fa/skip': { requiresAuth: false, backendPath: '/api/auth/2fa/skip' },
+  
+  // Address endpoints
+  'GET /addresses': { requiresAuth: true, backendPath: '/api/addresses' },
+  'POST /addresses': { requiresAuth: true, backendPath: '/api/addresses' },
+  
+  // ... 其他路由
+};
+```
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
-    const user = verifyToken(req);
-    if (!user) return res.status(401).json({ error: 'Unauthorized' });
-    // handle GET
+### 添加新 API 端点的步骤
+
+1. **在 `ROUTE_CONFIG` 中添加配置**（不需要创建新文件）:
+```typescript
+'POST /new/endpoint': { 
+  requiresAuth: true, 
+  backendPath: '/api/new/endpoint' 
+}
+```
+
+2. **在 Go 后端添加处理器**:
+```go
+// internal/routes/routes.go
+protected.POST("/new/endpoint", h.NewEndpointHandler)
+```
+
+3. **在 `api/__route__.test.ts` 中添加测试**:
+```typescript
+it('should route POST /new/endpoint correctly', async () => {
+  // 测试代码
+});
+```
+
+### 动态路由支持
+
+支持动态路由参数（如 `/addresses/:id`）:
+
+```typescript
+// Handle dynamic address routes: /addresses/123, /addresses/123/verify, etc.
+if (path.startsWith('/addresses/')) {
+  const isValidAddressRoute =
+    /^\/addresses\/[\w-]+(\/verify|\/primary)?$/.test(path) &&
+    (method === 'DELETE' || method === 'POST' || method === 'PUT' || method === 'PATCH');
+  
+  if (isValidAddressRoute) {
+    return {
+      found: true,
+      config: { requiresAuth: true, backendPath: '' },
+      backendPath: `/api${path}`,
+    };
   }
+}
+```
+
+### 旧的 API 路由模式（已废弃）
+
+以下模式不再使用，仅作为参考：
+
+```typescript
+// ❌ 废弃：每个端点一个文件
+// api/auth/login.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // ...
 }
 ```
 
@@ -298,8 +535,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 - **Setup**: Copy `.env.example` to `.env`, then run `npm install`
 - **Port**: Vite dev server runs on port 8080 by default
-- **Database**: Use `npm run db:push` to sync schema changes
+- **Database**: Database schema is managed by Go backend (`internal/migration/`)
 - **Tests**: Run `npm test` before committing
+
+**Note**: Frontend does NOT directly access database. All database operations go through Go backend API.
 
 ---
 
@@ -307,13 +546,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 | File | Purpose |
 |------|---------|
-| `src/db/schema.ts` | Database schema definitions |
-| `src/lib/auth-service.ts` | Authentication business logic |
-| `src/lib/withdrawal-service.ts` | Withdrawal business logic |
-| `api/` | API route handlers |
+| `internal/migration/migrations/` | Go database migrations (backend only) |
+| `src/lib/auth-service.ts` | Auth API client (frontend) |
+| `src/lib/withdrawal-service.ts` | Withdrawal API client (frontend) |
+| `api/[...route].ts` | Unified API router (Vercel) |
 | `vite.config.ts` | Build configuration |
 | `eslint.config.js` | Linting rules |
 | `tailwind.config.ts` | Tailwind CSS configuration |
+
+**Note**: Database schema is defined in Go backend (`internal/migration/migrations/`), not in frontend.
 
 ---
 

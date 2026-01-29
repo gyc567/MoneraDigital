@@ -208,6 +208,7 @@
     },
     "2fa": {
       "required": "Security Verification Required",
+      "enterCode": "Enter the 6-digit code from your authenticator app",
       "firstWithdrawal": "This is your first withdrawal to a new address. Please enter your 2FA code to confirm.",
       "code": "Verification Code",
       "placeholder": "Enter 6-digit code",
@@ -347,6 +348,8 @@
       "title": "Withdrawal Addresses",
       "description": "Manage your withdrawal addresses and set up address whitelist",
       "addAddress": "Add Address",
+      "addressLabel": "Address Label",
+      "addressLabelPlaceholder": "e.g., My Ethereum Wallet",
       "label": "Address Label",
       "assetType": "Asset Type",
       "address": "Wallet Address",

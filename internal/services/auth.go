@@ -46,13 +46,13 @@ func (s *AuthService) SetTokenBlacklist(tb *cache.TokenBlacklist) {
 type LoginResponse struct {
 	User         *models.User `json:"user,omitempty"`
 	Token        string       `json:"token,omitempty"`
-	AccessToken  string       `json:"access_token,omitempty"`
-	RefreshToken string       `json:"refresh_token,omitempty"`
-	TokenType    string       `json:"token_type,omitempty"`
-	ExpiresIn    int          `json:"expires_in,omitempty"`
-	ExpiresAt    time.Time    `json:"expires_at,omitempty"`
-	Requires2FA  bool         `json:"requires_2fa,omitempty"`
-	UserID       int          `json:"user_id,omitempty"`
+	AccessToken  string       `json:"accessToken,omitempty"`
+	RefreshToken string       `json:"refreshToken,omitempty"`
+	TokenType    string       `json:"tokenType,omitempty"`
+	ExpiresIn    int          `json:"expiresIn,omitempty"`
+	ExpiresAt    time.Time    `json:"expiresAt,omitempty"`
+	Requires2FA  bool         `json:"requires2FA,omitempty"`
+	UserID       int          `json:"userId,omitempty"`
 }
 
 // Register handles user registration
@@ -141,6 +141,7 @@ func (s *AuthService) createCoreAccount(userID int, email string) (string, error
 }
 
 // Login handles user authentication
+// Note: 2FA is no longer required during login. It's only required for sensitive operations.
 func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 	var user models.User
 	var hashedPassword string
@@ -159,15 +160,7 @@ func (s *AuthService) Login(req models.LoginRequest) (*LoginResponse, error) {
 		return nil, errors.New("invalid credentials")
 	}
 
-	// Check if 2FA is required
-	if user.TwoFactorEnabled {
-		return &LoginResponse{
-			Requires2FA: true,
-			UserID:      user.ID,
-		}, nil
-	}
-
-	// Generate JWT token
+	// Generate JWT token directly (no 2FA check during login)
 	token, err := utils.GenerateJWT(user.ID, user.Email, s.jwtSecret)
 	if err != nil {
 		return nil, err

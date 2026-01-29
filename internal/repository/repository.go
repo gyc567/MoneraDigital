@@ -68,6 +68,7 @@ type Wallet interface {
 	GetRequestByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error)
 	UpdateRequest(ctx context.Context, req *models.WalletCreationRequest) error
 	GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error)
+	GetWalletByUserProductCurrency(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error)
 }
 
 // Wealth 理财仓储接口

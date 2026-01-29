@@ -54,6 +54,26 @@ func (r *WalletRepository) UpdateRequest(ctx context.Context, req *models.Wallet
 	return err
 }
 
+func (r *WalletRepository) GetWalletByUserProductCurrency(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
+	query := `
+		SELECT id, request_id, user_id, product_code, currency, status, wallet_id, address, addresses, error_message, created_at, updated_at
+		FROM wallet_creation_requests 
+		WHERE user_id = $1 AND product_code = $2 AND currency = $3 
+		ORDER BY created_at DESC LIMIT 1`
+
+	var w models.WalletCreationRequest
+	err := r.db.QueryRowContext(ctx, query, userID, productCode, currency).Scan(
+		&w.ID, &w.RequestID, &w.UserID, &w.ProductCode, &w.Currency, &w.Status, &w.WalletID, &w.Address, &w.Addresses, &w.ErrorMessage, &w.CreatedAt, &w.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
 func (r *WalletRepository) GetActiveWalletByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	query := `
 		SELECT id, request_id, user_id, status, wallet_id, address, addresses, error_message, created_at, updated_at

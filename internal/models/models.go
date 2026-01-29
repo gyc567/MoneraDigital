@@ -54,9 +54,9 @@ type User struct {
 	Email                string         `json:"email" db:"email"`
 	Password             string         `json:"-" db:"password"`
 	TwoFactorSecret      sql.NullString `json:"-" db:"two_factor_secret"`
-	TwoFactorEnabled     bool           `json:"two_factor_enabled" db:"two_factor_enabled"`
+	TwoFactorEnabled     bool           `json:"twoFactorEnabled" db:"two_factor_enabled"`
 	TwoFactorBackupCodes sql.NullString `json:"-" db:"two_factor_backup_codes"`
-	CreatedAt            time.Time      `json:"created_at" db:"created_at"`
+	CreatedAt            time.Time      `json:"createdAt" db:"created_at"`
 }
 
 // Account model (New)
@@ -75,36 +75,38 @@ type Account struct {
 // Deposit model
 type Deposit struct {
 	ID          int            `json:"id" db:"id"`
-	UserID      int            `json:"user_id" db:"user_id"`
-	TxHash      string         `json:"tx_hash" db:"tx_hash"`
+	UserID      int            `json:"userId" db:"user_id"`
+	TxHash      string         `json:"txHash" db:"tx_hash"`
 	Amount      string         `json:"amount" db:"amount"`
 	Asset       string         `json:"asset" db:"asset"`
 	Chain       string         `json:"chain" db:"chain"`
 	Status      DepositStatus  `json:"status" db:"status"`
-	FromAddress sql.NullString `json:"from_address" db:"from_address"`
-	ToAddress   sql.NullString `json:"to_address" db:"to_address"`
-	CreatedAt   time.Time      `json:"created_at" db:"created_at"`
-	ConfirmedAt sql.NullTime   `json:"confirmed_at" db:"confirmed_at"`
+	FromAddress sql.NullString `json:"fromAddress" db:"from_address"`
+	ToAddress   sql.NullString `json:"toAddress" db:"to_address"`
+	CreatedAt   time.Time      `json:"createdAt" db:"created_at"`
+	ConfirmedAt sql.NullTime   `json:"confirmedAt" db:"confirmed_at"`
 }
 
 // WalletCreationRequest model
 type WalletCreationRequest struct {
 	ID           int                  `json:"id" db:"id"`
-	RequestID    string               `json:"request_id" db:"request_id"`
-	UserID       int                  `json:"user_id" db:"user_id"`
+	RequestID    string               `json:"requestId" db:"request_id"`
+	UserID       int                  `json:"userId" db:"user_id"`
+	ProductCode  string               `json:"productCode" db:"product_code"`
+	Currency     string               `json:"currency" db:"currency"`
 	Status       WalletCreationStatus `json:"status" db:"status"`
-	WalletID     sql.NullString       `json:"wallet_id" db:"wallet_id"`
+	WalletID     sql.NullString       `json:"walletId" db:"wallet_id"`
 	Address      sql.NullString       `json:"address" db:"address"`
 	Addresses    sql.NullString       `json:"addresses" db:"addresses"` // JSON string
-	ErrorMessage sql.NullString       `json:"error_message" db:"error_message"`
-	CreatedAt    time.Time            `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time            `json:"updated_at" db:"updated_at"`
+	ErrorMessage sql.NullString       `json:"errorMessage" db:"error_message"`
+	CreatedAt    time.Time            `json:"createdAt" db:"created_at"`
+	UpdatedAt    time.Time            `json:"updatedAt" db:"updated_at"`
 }
 
 // LendingPosition model
 type LendingPosition struct {
 	ID           int           `json:"id" db:"id"`
-	UserID       int           `json:"user_id" db:"user_id"`
+	UserID       int           `json:"userId" db:"user_id"`
 	Asset        string        `json:"asset" db:"asset"`
 	Amount       string        `json:"amount" db:"amount"` // Using string for decimal precision
 	DurationDays int           `json:"duration_days" db:"duration_days"`
@@ -213,12 +215,13 @@ type AddAddressRequest struct {
 }
 
 type CreateWithdrawalRequest struct {
-	AddressID int    `json:"address_id" binding:"required"`
-	Amount    string `json:"amount" binding:"required"`
-	Asset     string `json:"asset" binding:"required"`
+	AddressID      int    `json:"addressId" binding:"required"`
+	Amount         string `json:"amount" binding:"required"`
+	Asset          string `json:"asset" binding:"required"`
+	TwoFactorToken string `json:"twoFactorToken" binding:"required,len=6"`
 }
 
 type Verify2FARequest struct {
-	UserID int    `json:"user_id" binding:"required"`
+	UserID int    `json:"userId" binding:"required"`
 	Token  string `json:"token" binding:"required,len=6"`
 }

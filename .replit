@@ -50,7 +50,7 @@ waitForPort = 5000
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["bash", "scripts/build.sh"]
+build = ["bash", "scripts/build-backend-only.sh"]
 run = ["./server"]
 
 [userenv]

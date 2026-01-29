@@ -33,6 +33,9 @@ func main() {
 	migrator.Register(&migrations.CreateUsersTable{})
 	migrator.Register(&migrations.CreateLendingPositionsTable{})
 	migrator.Register(&migrations.CreateWithdrawalTables{})
+	migrator.Register(&migrations.AddTwoFactorColumnsMigration{})
+	migrator.Register(&migrations.AddTwoFactorTimestampMigration{})
+	migrator.Register(&migrations.UpdateWalletRequestsTable{})
 
 	// Initialize migrations table
 	if err := migrator.Init(); err != nil {

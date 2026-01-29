@@ -185,19 +185,21 @@ func (h *Handler) Skip2FALogin(c *gin.Context) {
 		UserID int `json:"userId" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+			"code": "INVALID_REQUEST",
+			"userId": req.UserID,
+		})
 		return
 	}
 
-	// Logic to finalize login without 2FA
-	// This usually means generating the JWT token for the user
-	// We need a service method for this, likely similar to Verify2FAAndLogin but without the token check
-	// For now, we assume a new method Skip2FAAndLogin exists or we reuse existing logic if possible.
-	// Let's assume we need to add Skip2FAAndLogin to AuthService.
-
 	resp, err := h.AuthService.Skip2FAAndLogin(req.UserID)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+			"code": "SKIP_2FA_FAILED",
+			"userId": req.UserID,
+		})
 		return
 	}
 
@@ -312,7 +314,26 @@ func (h *Handler) GetAddresses(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"addresses": addresses, "total": len(addresses), "count": len(addresses)})
+	// Convert models to DTOs for consistent API response format
+	response := make([]dto.WithdrawalAddressResponse, len(addresses))
+	for i, addr := range addresses {
+		response[i] = dto.WithdrawalAddressResponse{
+			ID:         addr.ID,
+			UserID:     addr.UserID,
+			Address:    addr.WalletAddress,
+			Type:       addr.ChainType,
+			Label:      addr.AddressAlias,
+			IsVerified: addr.Verified,
+			IsDeleted:  addr.IsDeleted,
+			CreatedAt:  addr.CreatedAt,
+		}
+		// Handle nullable VerifiedAt
+		if addr.VerifiedAt.Valid {
+			response[i].VerifiedAt = &addr.VerifiedAt.Time
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"addresses": response, "total": len(response), "count": len(response)})
 }
 
 func (h *Handler) AddAddress(c *gin.Context) {
@@ -375,7 +396,9 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 		// Verify 2FA
 		valid, err := h.AuthService.Verify2FA(userID, req.Token)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA"})
+			// Log the specific error for debugging
+			fmt.Printf("[VerifyAddress] 2FA verification error for user %d: %v\n", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA: " + err.Error()})
 			return
 		}
 		if !valid {
@@ -391,6 +414,7 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 	// Ideally, we should have h.AddressService.VerifyEmailToken(token) here.
 
 	if err := h.AddressService.VerifyAddress(c.Request.Context(), userID, id, verificationMethod); err != nil {
+		fmt.Printf("[VerifyAddress] Address verification error for user %d, address %d: %v\n", userID, id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -452,6 +476,26 @@ func (h *Handler) CreateWithdrawal(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Get user to check if 2FA is enabled
+	user, err := h.AuthService.GetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user profile"})
+		return
+	}
+
+	// Verify 2FA if enabled
+	if user.TwoFactorEnabled {
+		valid, err := h.AuthService.Verify2FA(userID, req.TwoFactorToken)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify 2FA"})
+			return
+		}
+		if !valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 2FA code"})
+			return
+		}
 	}
 
 	order, err := h.WithdrawalService.CreateWithdrawal(c.Request.Context(), userID, req)

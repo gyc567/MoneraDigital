@@ -13,13 +13,13 @@ import { toast } from "sonner";
 
 interface WithdrawalAddress {
   id: number;
-  wallet_address: string;
-  chain_type: "BTC" | "ETH" | "USDC" | "USDT";
-  address_alias: string;
+  walletAddress: string;
+  chainType: "BTC" | "ETH" | "USDC" | "USDT";
+  addressAlias: string;
   verified: boolean;
-  is_deleted: boolean;
-  created_at: string;
-  verified_at: string | null;
+  isDeleted: boolean;
+  createdAt: string;
+  verifiedAt: string | null;
 }
 
 const Addresses = () => {
@@ -100,9 +100,9 @@ const Addresses = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          wallet_address: newAddress,
-          chain_type: addressType,
-          address_alias: label,
+          walletAddress: newAddress,
+          chainType: addressType,
+          addressAlias: label,
         }),
       });
 
@@ -242,9 +242,9 @@ const Addresses = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-3">
                     <div className="flex items-center gap-3">
-                      <h3 className="font-semibold">{addr.address_alias}</h3>
-                      <Badge variant={addr.chain_type === "BTC" ? "default" : "secondary"}>
-                        {addr.chain_type}
+                      <h3 className="font-semibold">{addr.addressAlias}</h3>
+                      <Badge variant={addr.chainType === "BTC" ? "default" : "secondary"}>
+                        {addr.chainType}
                       </Badge>
                       {addr.verified && (
                         <Badge variant="outline" className="gap-1">
@@ -259,28 +259,28 @@ const Addresses = () => {
                         </Badge>
                       )}
                       {/* addr.isPrimary not supported yet */}
-                      {addr.is_deleted && (
+                      {addr.isDeleted && (
                         <Badge variant="destructive">{t("dashboard.addresses.deactivated")}</Badge>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground break-all font-mono">
-                        {addr.wallet_address}
+                        {addr.walletAddress}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {t("dashboard.addresses.added")}: {new Date(addr.created_at).toLocaleDateString()}
+                        {t("dashboard.addresses.added")}: {new Date(addr.createdAt).toLocaleDateString()}
                       </p>
-                      {addr.verified_at && (
+                      {addr.verifiedAt && (
                         <p className="text-xs text-green-600">
-                          {t("dashboard.addresses.verified")}: {new Date(addr.verified_at).toLocaleDateString()}
+                          {t("dashboard.addresses.verified")}: {new Date(addr.verifiedAt).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex gap-2">
-                    {!addr.verified && !addr.is_deleted && (
+                    {!addr.verified && !addr.isDeleted && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -294,7 +294,7 @@ const Addresses = () => {
                     )}
 
                     {/* Primary button logic might need revisit if backend doesn't support it in list */}
-                    {addr.verified && !addr.is_deleted && (
+                    {addr.verified && !addr.isDeleted && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -304,7 +304,7 @@ const Addresses = () => {
                       </Button>
                     )}
 
-                    {!addr.is_deleted && (
+                    {!addr.isDeleted && (
                       <Button
                         size="sm"
                         variant="ghost"

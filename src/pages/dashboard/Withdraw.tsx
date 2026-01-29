@@ -103,12 +103,7 @@ function Withdraw() {
   const [is2FADialogOpen, setIs2FADialogOpen] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [isVerifying2FA, setIsVerifying2FA] = useState(false);
-  const [pendingWithdrawal, setPendingWithdrawal] = useState<{
-    addressId: number;
-    amount: string;
-    asset: string;
-    chain: string;
-  } | null>(null);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
 
   // Fetch verified addresses
   const fetchAddresses = async () => {
@@ -269,7 +264,25 @@ function Withdraw() {
   useEffect(() => {
     fetchAddresses();
     fetchHistory();
+    fetchUser2FAStatus();
   }, []);
+
+  // Fetch user's 2FA status
+  const fetchUser2FAStatus = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setTwoFactorEnabled(data.twoFactorEnabled || false);
+      }
+    } catch (error) {
+      console.error("Fetch 2FA status error:", error);
+    }
+  };
 
   useEffect(() => {
     // Set default chain based on asset
@@ -299,7 +312,7 @@ function Withdraw() {
     }
   };
 
-  const handleSubmitWithdrawal = async () => {
+  const handleSubmitWithdrawal = async (twoFactorToken?: string) => {
     if (!selectedAddressId || !amount) {
       toast.error("Please fill in all fields");
       return;
@@ -314,11 +327,12 @@ function Withdraw() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        // Match Backend snake_case
+        // Use camelCase to match backend
         body: JSON.stringify({
-          address_id: Number(selectedAddressId),
+          addressId: Number(selectedAddressId),
           amount,
           asset,
+          twoFactorToken: twoFactorToken || "",
         }),
       });
 
@@ -327,6 +341,9 @@ function Withdraw() {
         toast.success(data.message || "Withdrawal initiated successfully");
         setAmount("");
         setIsConfirming(false);
+        setIs2FADialogOpen(false);
+        setTwoFactorCode("");
+        setPendingWithdrawal(null);
         await fetchHistory();
       } else {
         toast.error(data.error || "Failed to initiate withdrawal");
@@ -341,40 +358,14 @@ function Withdraw() {
 
   // Handle 2FA verification and submit withdrawal
   const handleVerify2FAAndSubmit = async () => {
-    if (!pendingWithdrawal || !twoFactorCode) {
-      toast.error("Missing verification data");
+    if (!twoFactorCode || twoFactorCode.length !== 6) {
+      toast.error("Please enter a valid 6-digit 2FA code");
       return;
     }
 
     setIsVerifying2FA(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/withdrawals/verify-2fa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ...pendingWithdrawal,
-          twoFactorCode,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        toast.success("Withdrawal initiated successfully");
-        setAmount("");
-        setTwoFactorCode("");
-        setIs2FADialogOpen(false);
-        setPendingWithdrawal(null);
-        await fetchHistory();
-      } else {
-        toast.error(data.error || "Verification failed");
-      }
-    } catch (error) {
-      console.error("2FA verification error:", error);
-      toast.error("Verification failed");
+      await handleSubmitWithdrawal(twoFactorCode);
     } finally {
       setIsVerifying2FA(false);
     }
@@ -653,16 +644,10 @@ function Withdraw() {
              <AlertDialogCancel disabled={isSubmitting}>{t("common.cancel")}</AlertDialogCancel>
              <AlertDialogAction
                onClick={async () => {
-                 // Check if this is a new address (first withdrawal to this address)
-                 if (selectedAddress && !selectedAddress.verified) {
+                 // Check if 2FA is enabled - if so, show 2FA dialog
+                 if (twoFactorEnabled) {
                    setIsConfirming(false);
                    setIs2FADialogOpen(true);
-                   setPendingWithdrawal({
-                     addressId: selectedAddress.id,
-                     amount,
-                     asset,
-                     chain,
-                   });
                  } else {
                    await handleSubmitWithdrawal();
                  }
@@ -676,7 +661,7 @@ function Withdraw() {
          </AlertDialogContent>
        </AlertDialog>
 
-       {/* 2FA Verification Dialog for New Addresses */}
+       {/* 2FA Verification Dialog */}
        <Dialog open={is2FADialogOpen} onOpenChange={setIs2FADialogOpen}>
          <DialogContent className="sm:max-w-[425px]">
            <DialogHeader>
@@ -685,7 +670,7 @@ function Withdraw() {
                {t("auth.2fa.required")}
              </DialogTitle>
              <DialogDescription>
-               {t("auth.2fa.firstWithdrawal")}
+               Please enter your 2FA code to confirm this withdrawal.
              </DialogDescription>
            </DialogHeader>
 
