@@ -60,6 +60,18 @@ const CHAIN_OPTIONS: Record<string, ChainOption[]> = {
   ],
 };
 
+function getChainOptions(t: ReturnType<typeof useTranslation<string>>["t"], asset: string): ChainOption[] {
+  const options = CHAIN_OPTIONS[asset] || [];
+  return options.map(opt => ({
+    ...opt,
+    label: opt.label === "Bitcoin Network" ? t("dashboard.withdraw.networkNames.bitcoinNetwork") :
+          opt.label === "Ethereum Network" ? t("dashboard.withdraw.networkNames.ethereumNetwork") :
+          opt.label === "Ethereum (ERC-20)" ? t("dashboard.withdraw.networkNames.ethereumERC20") :
+          opt.label === "Tron (TRC-20)" ? t("dashboard.withdraw.networkNames.tronTRC20") :
+          opt.label
+  }));
+}
+
 // Address validation patterns by chain type
 const ADDRESS_PATTERNS: Record<string, RegExp> = {
   Ethereum: /^0x[a-fA-F0-9]{40}$/,
@@ -453,11 +465,11 @@ function Withdraw() {
                     <Label htmlFor="chain">{t("dashboard.withdraw.chain.label")}</Label>
                     <Select value={chain} onValueChange={setChain}>
                       <SelectTrigger id="chain">
-                        <SelectValue placeholder="Select chain" />
+                        <SelectValue placeholder={t("dashboard.withdraw.chain.placeholder")} />
                       </SelectTrigger>
-                      <SelectContent>
-                        {(CHAIN_OPTIONS[asset] || []).map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
+                       <SelectContent>
+                         {(getChainOptions(t, asset) || []).map((option) => (
+                           <SelectItem key={option.value} value={option.value}>
                             <div className="flex items-center justify-between gap-4">
                               <span>{option.label}</span>
                               <span className="text-xs text-muted-foreground">
@@ -488,11 +500,11 @@ function Withdraw() {
                   <div className="space-y-2">
                     <Label htmlFor="amount">{t("dashboard.withdraw.amount.label")}</Label>
                     <div className="flex gap-2">
-                      <Input
-                        id="amount"
-                        type="number"
-                        placeholder="10.50"
-                        value={amount}
+                       <Input
+                         id="amount"
+                         type="number"
+                         placeholder={t("dashboard.withdraw.amount.placeholder")}
+                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
                         className="flex-1"
                       />
@@ -669,9 +681,9 @@ function Withdraw() {
                <Shield className="h-5 w-5 text-yellow-500" />
                {t("auth.2fa.required")}
              </DialogTitle>
-             <DialogDescription>
-               Please enter your 2FA code to confirm this withdrawal.
-             </DialogDescription>
+              <DialogDescription>
+                {t("dashboard.withdraw.2fa.withdrawalDescription")}
+              </DialogDescription>
            </DialogHeader>
 
            <div className="space-y-4 py-4">
@@ -745,13 +757,13 @@ function Withdraw() {
                 <SelectTrigger id="chain">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Ethereum">Ethereum</SelectItem>
-                  <SelectItem value="Arbitrum">Arbitrum</SelectItem>
-                  <SelectItem value="Polygon">Polygon</SelectItem>
-                  <SelectItem value="Tron">Tron</SelectItem>
-                  <SelectItem value="Bitcoin">Bitcoin</SelectItem>
-                </SelectContent>
+                 <SelectContent>
+                   <SelectItem value="Ethereum">{t("dashboard.withdraw.networkNames.ethereum")}</SelectItem>
+                   <SelectItem value="Arbitrum">{t("dashboard.withdraw.networkNames.arbitrum")}</SelectItem>
+                   <SelectItem value="Polygon">{t("dashboard.withdraw.networkNames.polygon")}</SelectItem>
+                   <SelectItem value="Tron">{t("dashboard.withdraw.networkNames.tron")}</SelectItem>
+                   <SelectItem value="Bitcoin">{t("dashboard.withdraw.networkNames.bitcoin")}</SelectItem>
+                 </SelectContent>
               </Select>
             </div>
 

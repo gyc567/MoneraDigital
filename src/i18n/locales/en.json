@@ -414,6 +414,31 @@
         "loading": "Loading history...",
         "empty": "No withdrawal history yet"
       },
+      "chain": {
+        "label": "Withdrawal Chain",
+        "placeholder": "Select chain"
+      },
+      "amount": {
+        "title": "Withdrawal Amount",
+        "description": "Enter the amount you wish to withdraw",
+        "label": "Amount",
+        "placeholder": "Enter amount"
+      },
+      "2fa": {
+        "withdrawalDescription": "Please enter your 2FA code to confirm this withdrawal.",
+        "hint": "Enter the 6-digit code"
+      },
+      "networkNames": {
+        "ethereum": "Ethereum",
+        "arbitrum": "Arbitrum",
+        "polygon": "Polygon",
+        "tron": "Tron",
+        "bitcoin": "Bitcoin",
+        "bitcoinNetwork": "Bitcoin Network",
+        "ethereumNetwork": "Ethereum Network",
+        "ethereumERC20": "Ethereum (ERC-20)",
+        "tronTRC20": "Tron (TRC-20)"
+      },
       "noAddresses": "No verified addresses available. Please add and verify an address first.",
       "loading": "Loading..."
     },

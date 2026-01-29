@@ -376,9 +376,34 @@
         "disclaimer": "此提现将发送到您的已验证地址。确认邮件将发送到您的账户。",
         "button": "确认提现"
       },
-      "history": {
+       "history": {
         "loading": "正在加载历史记录...",
         "empty": "暂无提现记录"
+      },
+      "chain": {
+        "label": "提现网络",
+        "placeholder": "选择网络"
+      },
+      "amount": {
+        "title": "提现金额",
+        "description": "请输入您希望提现的金额",
+        "label": "金额",
+        "placeholder": "请输入金额"
+      },
+      "2fa": {
+        "withdrawalDescription": "请输入验证码以确认此提现",
+        "hint": "请输入6位验证码"
+      },
+      "networkNames": {
+        "ethereum": "以太坊",
+        "arbitrum": "Arbitrum",
+        "polygon": "Polygon",
+        "tron": "Tron",
+        "bitcoin": "比特币",
+        "bitcoinNetwork": "比特币网络",
+        "ethereumNetwork": "以太坊网络",
+        "ethereumERC20": "以太坊 (ERC-20)",
+        "tronTRC20": "Tron (TRC-20)"
       },
       "noAddresses": "没有可用的已验证地址。请先添加并验证地址。",
       "loading": "加载中..."
