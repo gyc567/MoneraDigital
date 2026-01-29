@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"monera-digital/internal/coreapi"
 	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
@@ -176,4 +177,43 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
 		return nil, nil
 	}
 	return w, nil
+}
+
+type AddAddressRequest struct {
+	Chain string
+	Token string
+}
+
+func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddressRequest) (*models.WalletCreationRequest, error) {
+	wallet, err := s.repo.GetActiveWalletByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if wallet == nil {
+		return nil, errors.New("wallet not found")
+	}
+
+	addresses := make(map[string]string)
+	if wallet.Addresses.Valid && wallet.Addresses.String != "" {
+		if err := json.Unmarshal([]byte(wallet.Addresses.String), &addresses); err != nil {
+			return nil, errors.New("failed to parse existing addresses")
+		}
+	}
+
+	addressKey := req.Token + "_" + req.Chain
+	if _, exists := addresses[addressKey]; exists {
+		return wallet, nil
+	}
+
+	addresses[addressKey] = s.generateAddress(addressKey)
+
+	addressesJSON, _ := json.Marshal(addresses)
+	wallet.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
+	wallet.UpdatedAt = time.Now()
+
+	if err := s.repo.UpdateRequest(ctx, wallet); err != nil {
+		return nil, err
+	}
+
+	return wallet, nil
 }

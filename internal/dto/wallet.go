@@ -24,3 +24,9 @@ type WalletResponseData struct {
 	Status      string `json:"status"`
 	CreatedAt   string `json:"createdAt"`
 }
+
+// AddWalletAddressRequest defines the request for adding a wallet address.
+type AddWalletAddressRequest struct {
+	Chain string `json:"chain"`
+	Token string `json:"token"`
+}
