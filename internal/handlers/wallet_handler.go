@@ -10,6 +10,7 @@ import (
 
 	"monera-digital/internal/dto"
 	"monera-digital/internal/models"
+	"monera-digital/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -169,4 +170,50 @@ func (h *Handler) GetWalletInfo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, info)
+}
+
+func (h *Handler) AddWalletAddress(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "User not authenticated",
+			"code":    "UNAUTHORIZED",
+		})
+		return
+	}
+
+	var req dto.AddWalletAddressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Bad Request",
+			"message": err.Error(),
+			"code":    "INVALID_REQUEST",
+		})
+		return
+	}
+
+	if req.Chain == "" || req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Bad Request",
+			"message": "chain and token are required",
+			"code":    "MISSING_FIELDS",
+		})
+		return
+	}
+
+	wallet, err := h.WalletService.AddAddress(c.Request.Context(), userID.(int), services.AddAddressRequest{
+		Chain: req.Chain,
+		Token: req.Token,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal Server Error",
+			"message": err.Error(),
+			"code":    "ADD_ADDRESS_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, wallet)
 }

@@ -40,6 +40,7 @@ const ROUTE_CONFIG: Record<string, RouteConfig> = {
 
   'POST /wallet/create': { requiresAuth: false, backendPath: '/api/wallet/create' },
   'GET /wallet/info': { requiresAuth: true, backendPath: '/api/wallet/info' },
+  'POST /wallet/addresses': { requiresAuth: true, backendPath: '/api/wallet/addresses' },
 };
 
 /**
