@@ -34,16 +34,16 @@ WHERE two_factor_enabled = TRUE;
 -- ====================================================================
 
 -- Add product_code column
-ALTER TABLE wallet_creation_request 
+ALTER TABLE wallet_creation_requests 
 ADD COLUMN IF NOT EXISTS product_code VARCHAR(50) DEFAULT '';
 
 -- Add currency column
-ALTER TABLE wallet_creation_request 
+ALTER TABLE wallet_creation_requests 
 ADD COLUMN IF NOT EXISTS currency VARCHAR(20) DEFAULT '';
 
 -- Create unique index for user + product + currency combination
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_requests_user_product_currency 
-ON wallet_creation_request(user_id, product_code, currency) 
+ON wallet_creation_requests(user_id, product_code, currency) 
 WHERE status = 'SUCCESS';
 
 -- ====================================================================
@@ -56,9 +56,9 @@ COMMENT ON COLUMN users.two_factor_enabled IS 'Whether 2FA is enabled for the us
 COMMENT ON COLUMN users.two_factor_backup_codes IS 'Encrypted backup codes for 2FA recovery';
 COMMENT ON COLUMN users.two_factor_last_used_at IS 'Timestamp of last 2FA usage for replay attack prevention';
 
-COMMENT ON TABLE wallet_creation_request IS 'Wallet creation requests with product and currency support';
-COMMENT ON COLUMN wallet_creation_request.product_code IS 'Product code for the wallet (e.g., SPOT, EARN)';
-COMMENT ON COLUMN wallet_creation_request.currency IS 'Currency code for the wallet (e.g., USDT, BTC)';
+COMMENT ON TABLE wallet_creation_requests IS 'Wallet creation requests with product and currency support';
+COMMENT ON COLUMN wallet_creation_requests.product_code IS 'Product code for the wallet (e.g., SPOT, EARN)';
+COMMENT ON COLUMN wallet_creation_requests.currency IS 'Currency code for the wallet (e.g., USDT, BTC)';
 
 -- ====================================================================
 -- 4. Verification Queries (run manually to verify)
@@ -73,7 +73,7 @@ COMMENT ON COLUMN wallet_creation_request.currency IS 'Currency code for the wal
 -- Uncomment to verify indexes:
 -- SELECT indexname, indexdef 
 -- FROM pg_indexes 
--- WHERE tablename IN ('users', 'wallet_creation_request');
+-- WHERE tablename IN ('users', 'wallet_creation_requests');
 
 -- Commit transaction
 COMMIT;

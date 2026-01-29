@@ -19,7 +19,7 @@ import (
 
 func TestWalletService_CreateWallet_New(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo)
+	service := NewWalletService(mockRepo, nil)
 
 	// Setup expectations
 	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "C_SPOT", "USDT_ERC20").Return(nil, nil)
@@ -37,7 +37,7 @@ func TestWalletService_CreateWallet_New(t *testing.T) {
 
 func TestWalletService_CreateWallet_Existing(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo)
+	service := NewWalletService(mockRepo, nil)
 
 	now := time.Now()
 	existingReq := &models.WalletCreationRequest{
@@ -72,7 +72,7 @@ func TestWalletService_CreateWallet_WithProductAndCurrency(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockRepo := new(MockWalletRepository)
-			service := NewWalletService(mockRepo)
+			service := NewWalletService(mockRepo, nil)
 
 			mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, tc.productCode, tc.currency).Return(nil, nil)
 			mockRepo.On("CreateRequest", mock.Anything, mock.AnythingOfType("*models.WalletCreationRequest")).Return(nil)
@@ -87,7 +87,7 @@ func TestWalletService_CreateWallet_WithProductAndCurrency(t *testing.T) {
 
 func TestWalletService_GetWalletInfo_Success(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo)
+	service := NewWalletService(mockRepo, nil)
 
 	now := time.Now()
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(&models.WalletCreationRequest{
@@ -101,7 +101,7 @@ func TestWalletService_GetWalletInfo_Success(t *testing.T) {
 
 func TestWalletService_GetWalletInfo_Pending(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo)
+	service := NewWalletService(mockRepo, nil)
 
 	now := time.Now()
 	pendingReq := &models.WalletCreationRequest{
@@ -124,7 +124,7 @@ func TestWalletService_GetWalletInfo_Pending(t *testing.T) {
 
 func TestWalletService_GetWalletInfo_NotFound(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo)
+	service := NewWalletService(mockRepo, nil)
 
 	// No active wallet and no pending request
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(nil, nil)

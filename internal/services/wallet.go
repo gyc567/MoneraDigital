@@ -3,6 +3,9 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"monera-digital/internal/coreapi"
+	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 	"os"
@@ -12,11 +15,12 @@ import (
 )
 
 type WalletService struct {
-	repo repository.Wallet
+	repo          repository.Wallet
+	coreAPIClient *coreapi.Client
 }
 
-func NewWalletService(repo repository.Wallet) *WalletService {
-	return &WalletService{repo: repo}
+func NewWalletService(repo repository.Wallet, coreAPIClient *coreapi.Client) *WalletService {
+	return &WalletService{repo: repo, coreAPIClient: coreAPIClient}
 }
 
 // CreateWallet creates a new wallet for the user with productCode and currency.
@@ -41,14 +45,46 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	}
 	err = s.repo.CreateRequest(ctx, newReq)
 	if err != nil {
+		logger.Error("Failed to create wallet request", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
 		return nil, err
 	}
+	logger.Info("Wallet request created", "requestId", reqID, "userId", userID)
 
-	// Generate address based on currency chain
-	address := s.generateAddress(currency)
-	walletID := "wallet_" + reqID[:8]
+	// Try to create wallet via Core API, fallback to mock if fails
+	var walletID, address string
+	var addresses map[string]string
 
-	go func(requestID string, userID int, productCode, currency, address, walletID string) {
+	if s.coreAPIClient != nil {
+		coreResp, err := s.coreAPIClient.CreateWallet(ctx, coreapi.CreateWalletRequest{
+			UserID:      userID,
+			ProductCode: productCode,
+			Currency:    currency,
+		})
+		if err != nil {
+			logger.Warn("Core API wallet creation failed, falling back to mock", "error", err.Error(), "userId", userID)
+		} else {
+			logger.Info("Core API wallet created successfully", "walletId", coreResp.WalletID, "userId", userID)
+			walletID = coreResp.WalletID
+			address = coreResp.Address
+			addresses = coreResp.Addresses
+		}
+	}
+
+	// Fallback to mock addresses if Core API didn't provide them
+	if addresses == nil {
+		addresses = s.generateMockAddresses(currency)
+	}
+	if walletID == "" {
+		walletID = "wallet_" + reqID[:8]
+	}
+	if address == "" {
+		address = addresses[currency]
+	}
+
+	// Store addresses as JSON string
+	addressesJSON, _ := json.Marshal(addresses)
+
+	go func(requestID string, userID int, productCode, currency, walletID, address string, addressesJSON []byte) {
 		// Simulate wallet creation delay
 		time.Sleep(500 * time.Millisecond)
 
@@ -66,36 +102,58 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 		req.Status = models.WalletCreationStatusSuccess
 		req.WalletID = sql.NullString{String: walletID, Valid: true}
 		req.Address = sql.NullString{String: address, Valid: true}
+		req.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
 		req.UpdatedAt = time.Now()
 
 		// Update DB with proper error handling
 		if err := s.repo.UpdateRequest(bgCtx, req); err != nil {
 			// Log error but don't propagate
 		}
-	}(reqID, userID, productCode, currency, address, walletID)
+	}(reqID, userID, productCode, currency, walletID, address, addressesJSON)
 
 	return newReq, nil
 }
 
-// generateAddress generates a mock address based on currency chain.
+// generateMockAddresses generates mock addresses for multiple chains based on currency.
+func (s *WalletService) generateMockAddresses(currency string) map[string]string {
+	mockAddresses := map[string]map[string]string{
+		"USDT": {
+			"ERC20": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+			"TRC20": "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+			"BSC":   "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		},
+		"ETH": {
+			"ETH": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		},
+		"TRON": {
+			"TRON": "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+		},
+		"BSC": {
+			"BSC": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+		},
+	}
+
+	// Check environment variable override
+	if envAddr := os.Getenv("WALLET_ADDR_" + currency); envAddr != "" {
+		return map[string]string{currency: envAddr}
+	}
+
+	// Return addresses for the currency
+	if addrMap, ok := mockAddresses[currency]; ok {
+		return addrMap
+	}
+
+	// Default fallback - use the original single address
+	defaultAddr := "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+	return map[string]string{currency: defaultAddr}
+}
+
+// generateAddress generates a single mock address based on currency chain.
 func (s *WalletService) generateAddress(currency string) string {
-	mockAddresses := map[string]string{
-		"USDT_ERC20": "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-		"USDT_TRC20": "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-		"USDT_BSC":   "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-		"ETH":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-		"TRON":       "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-		"BSC":        "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-	}
-
-	if addr := os.Getenv("WALLET_ADDR_" + currency); addr != "" {
+	addrMap := s.generateMockAddresses(currency)
+	if addr, ok := addrMap[currency]; ok {
 		return addr
 	}
-
-	if addr, ok := mockAddresses[currency]; ok {
-		return addr
-	}
-	// Default fallback address
 	return "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
 }
 

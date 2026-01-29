@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Shield, Copy, Check, AlertCircle, Loader2, Wallet, Globe } from "lucide-react";
+import { Shield, Copy, Check, AlertCircle, Loader2, Wallet, Globe, Plus } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/components/ui/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api-client";
 
@@ -65,6 +66,25 @@ const CURRENCY_OPTIONS = [
   { value: "BSC", label: "BSC (BNB)" },
 ];
 
+// Token options for adding new address
+const TOKEN_OPTIONS = [
+  { value: "USDT", label: "USDT" },
+  { value: "USDC", label: "USDC" },
+];
+
+// Network options for adding new address
+const NETWORK_OPTIONS = [
+  { value: "TRON", label: "TRON (TRC20)", name: "TRON" },
+  { value: "ETH", label: "Ethereum (ERC20)", name: "Ethereum" },
+  { value: "BSC", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
+];
+
+// Add address request type
+interface AddAddressRequest {
+  chain: string;
+  token: string;
+}
+
 const AccountOpening = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -120,6 +140,9 @@ const AccountOpening = () => {
   );
 
   const [selectedNetwork, setSelectedNetwork] = useState<string>("");
+  const [showAddAddressDialog, setShowAddAddressDialog] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<string>("USDT");
+  const [selectedChain, setSelectedChain] = useState<string>("TRON");
 
   useEffect(() => {
     if (availableNetworks.length > 0 && !selectedNetwork) {
@@ -155,6 +178,41 @@ const AccountOpening = () => {
     }
   });
 
+  const addAddressMutation = useMutation({
+    mutationFn: async (data: AddAddressRequest) => {
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+      return apiRequest("/api/wallet/addresses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["walletInfo"] });
+      setShowAddAddressDialog(false);
+      toast({
+        variant: "default",
+        title: t("wallet.opening.addressAdded"),
+        description: t("wallet.opening.addressAddedDesc"),
+      });
+    },
+    onError: (err) => {
+      toast({
+        variant: "destructive",
+        title: t("wallet.opening.addAddressErrorTitle"),
+        description: err.message,
+      });
+    },
+  });
+
+  const handleAddAddress = () => {
+    addAddressMutation.mutate({ chain: selectedChain, token: selectedToken });
+  };
+
   const handleCreateWallet = () => {
     createMutation.mutate();
   };
@@ -184,6 +242,85 @@ const AccountOpening = () => {
           {t("wallet.opening.description")}
         </p>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">{t("wallet.opening.title")}</h1>
+        <p className="text-muted-foreground mt-2">
+          {t("wallet.opening.description")}
+        </p>
+      </div>
+
+      {/* Add Address Dialog */}
+      <Dialog open={showAddAddressDialog} onOpenChange={setShowAddAddressDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("wallet.opening.addAddressDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Token Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("wallet.opening.tokenLabel")}</label>
+              <Select value={selectedToken} onValueChange={setSelectedToken}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select token" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TOKEN_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Network Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("wallet.opening.networkLabel")}</label>
+              <Select value={selectedChain} onValueChange={setSelectedChain}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select network" />
+                </SelectTrigger>
+                <SelectContent>
+                  {NETWORK_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowAddAddressDialog(false)}
+              disabled={addAddressMutation.isPending}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={handleAddAddress}
+              disabled={addAddressMutation.isPending}
+            >
+              {addAddressMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t("wallet.opening.addingAddress")}
+                </>
+              ) : (
+                t("wallet.opening.confirmAddAddress")
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Main Card */}
       <Card className="bg-card/50 backdrop-blur-sm border-border/50">
@@ -321,6 +458,16 @@ const AccountOpening = () => {
               <p className="text-xs text-muted-foreground text-center">
                 {t("wallet.opening.depositHint")}
               </p>
+
+              {/* Add New Address Button */}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowAddAddressDialog(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                {t("wallet.opening.addNewAddress")}
+              </Button>
             </div>
           )}
         </CardContent>

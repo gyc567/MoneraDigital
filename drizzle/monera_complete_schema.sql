@@ -247,28 +247,7 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_record_request_id ON idempotency_reco
 CREATE INDEX IF NOT EXISTS idx_idempotency_record_ttl ON idempotency_record(ttl_expire_at);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_idempotency ON idempotency_record(user_id, request_id, biz_type);
 
--- 3.2 Wallet Creation Request
-CREATE TABLE IF NOT EXISTS wallet_creation_request (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL,
-  request_id TEXT NOT NULL,
-  status TEXT DEFAULT 'PENDING' NOT NULL,
-  safeheron_wallet_id TEXT,
-  coin_address TEXT,
-  error_message TEXT,
-  retry_count INTEGER DEFAULT 0 NOT NULL,
-  product_code VARCHAR(50) DEFAULT '',
-  currency VARCHAR(20) DEFAULT '',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_wallet_creation_request_user_id ON wallet_creation_request(user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_user_id ON wallet_creation_request(user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_creation_request_request_id ON wallet_creation_request(request_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_requests_user_product_currency ON wallet_creation_request(user_id, product_code, currency) WHERE status = 'SUCCESS';
-
--- 3.3 Transfer Record
+-- 3.2 Transfer Record
 CREATE TABLE IF NOT EXISTS transfer_record (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL,
@@ -372,11 +351,13 @@ CREATE TABLE IF NOT EXISTS withdrawal_verification (
 
 CREATE INDEX IF NOT EXISTS idx_withdrawal_verification_user_id ON withdrawal_verification(user_id);
 
--- 3.9 Wallet Creation Requests (Legacy)
+-- 3.9 Wallet Creation Requests
 CREATE TABLE IF NOT EXISTS wallet_creation_requests (
   id SERIAL PRIMARY KEY,
   request_id TEXT NOT NULL UNIQUE,
   user_id INTEGER NOT NULL REFERENCES users(id),
+  product_code VARCHAR(50) DEFAULT '',
+  currency VARCHAR(20) DEFAULT '',
   status wallet_creation_status DEFAULT 'CREATING' NOT NULL,
   wallet_id TEXT,
   address TEXT,
@@ -387,6 +368,7 @@ CREATE TABLE IF NOT EXISTS wallet_creation_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wallet_creation_requests_user_id ON wallet_creation_requests(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_requests_user_product_currency ON wallet_creation_requests(user_id, product_code, currency) WHERE status = 'SUCCESS';
 
 -- 4.1 Wealth Product Approval
 CREATE TABLE IF NOT EXISTS wealth_product_approval (
@@ -561,9 +543,9 @@ COMMENT ON TABLE withdrawal_request IS 'Withdrawal request tracking';
 COMMENT ON TABLE withdrawal_order IS 'Withdrawal execution orders';
 COMMENT ON TABLE withdrawal_freeze_log IS 'Withdrawal balance freeze records';
 COMMENT ON TABLE withdrawal_verification IS 'Withdrawal verification codes and attempts';
-COMMENT ON TABLE wallet_creation_request IS 'Wallet creation requests with product and currency support';
-COMMENT ON COLUMN wallet_creation_request.product_code IS 'Product code for the wallet (e.g., SPOT, EARN)';
-COMMENT ON COLUMN wallet_creation_request.currency IS 'Currency code for the wallet (e.g., USDT, BTC)';
+COMMENT ON TABLE wallet_creation_requests IS 'Wallet creation requests with product and currency support';
+COMMENT ON COLUMN wallet_creation_requests.product_code IS 'Product code for the wallet (e.g., X_FINANCE)';
+COMMENT ON COLUMN wallet_creation_requests.currency IS 'Currency code for the wallet (e.g., TRON, USDT)';
 COMMENT ON TABLE wealth_product_approval IS 'Wealth product approval workflow';
 COMMENT ON TABLE account_adjustment IS 'Manual account adjustments';
 COMMENT ON TABLE audit_trail IS 'Comprehensive audit trail for all operations';

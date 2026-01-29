@@ -619,7 +619,8 @@
       "errorTitle": "Activation Failed",
       "errorDescription": "Unable to create wallet account. Please try again later.",
       "error": "Failed to create wallet account",
-      "retry": "Try Again"
+      "retry": "Try Again",
+      "currencyLabel": "Select Currency"
     }
   }
 }

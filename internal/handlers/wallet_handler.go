@@ -1,43 +1,78 @@
 package handlers
 
 import (
-	"github.com/gin-gonic/gin"
-	"net/http"
-)
-
-func (h *Handler) CreateWallet(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	req, err := h.WalletService.CreateWallet(c.Request.Context(), userID.(int))
-	if err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusOK, req)
+	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"monera-digital/internal/dto"
+	"monera-digital/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
+// parseTokenFromHeader extracts and parses userId from JWT token in Authorization header
+func parseTokenFromHeader(authHeader string) (int, error) {
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return 0, jwt.ErrSignatureInvalid
+	}
+
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &models.TokenClaims{})
+	if err != nil {
+		return 0, err
+	}
+
+	claims, ok := token.Claims.(*models.TokenClaims)
+	if !ok {
+		return 0, jwt.ErrTokenMalformed
+	}
+
+	if claims.UserID == 0 {
+		return 0, jwt.ErrTokenMalformed
+	}
+
+	return claims.UserID, nil
+}
+
 func (h *Handler) CreateWallet(c *gin.Context) {
-	var req dto.CreateWalletRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
 		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
 			Code:      "400",
-			Message:   "Invalid request parameters",
+			Message:   "Failed to read request body",
 			Success:   false,
 			Timestamp: time.Now().UnixMilli(),
 		})
 		return
+	}
+
+	var req dto.CreateWalletRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
+			Code:      "400",
+			Message:   "Invalid JSON format",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	// If userId not provided in request body, try to extract from JWT token in Authorization header
+	if req.UserID == "" {
+		authHeader := c.GetHeader("Authorization")
+		log.Printf("Authorization header: %s", authHeader)
+		if authHeader != "" {
+			userID, err := parseTokenFromHeader(authHeader)
+			if err == nil && userID != 0 {
+				req.UserID = strconv.Itoa(userID)
+			}
+		}
 	}
 
 	// Validate required fields
@@ -52,7 +87,7 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 	}
 
 	// Validate product code
-	if req.ProductCode != "BANK_ACCOUNT" {
+	if req.ProductCode != "X_FINANCE" {
 		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
 			Code:      "400",
 			Message:   "Invalid product code",
@@ -110,13 +145,21 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 func (h *Handler) GetWalletInfo(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "User not authenticated",
+			"code":    "UNAUTHORIZED",
+		})
 		return
 	}
 
 	info, err := h.WalletService.GetWalletInfo(c.Request.Context(), userID.(int))
 	if err != nil {
-		c.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Internal Server Error",
+			"message": err.Error(),
+			"code":    "WALLET_INFO_ERROR",
+		})
 		return
 	}
 

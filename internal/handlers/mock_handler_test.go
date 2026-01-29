@@ -59,7 +59,7 @@ var _ repository.Wallet = (*MockWalletRepository)(nil)
 // Setup test handler with mock service
 func newMockHandler() *Handler {
 	mockRepo := NewMockWalletRepository()
-	walletService := services.NewWalletService(mockRepo)
+	walletService := services.NewWalletService(mockRepo, nil)
 
 	h := &Handler{
 		WalletService: walletService,

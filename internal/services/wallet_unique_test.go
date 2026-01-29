@@ -92,7 +92,7 @@ var _ repository.Wallet = (*MockWalletRepositoryUnique)(nil)
 
 func TestCreateWallet_UniqueCheck(t *testing.T) {
 	repo := NewMockWalletRepositoryUnique()
-	service := NewWalletService(repo)
+	service := NewWalletService(repo, nil)
 
 	// Create first wallet
 	ctx := context.Background()

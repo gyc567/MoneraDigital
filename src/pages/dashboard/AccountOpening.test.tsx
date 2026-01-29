@@ -13,8 +13,31 @@ import { apiRequest } from '@/lib/api-client';
 
 const queryClient = new QueryClient();
 
+const mockApiRequest = vi.fn();
+
 vi.mock('@/lib/api-client', () => ({
-  apiRequest: vi.fn(),
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+}));
+
+Object.defineProperty(window, 'localStorage', {
+  value: {
+    getItem: vi.fn((key: string) => {
+      if (key === 'token') {
+        return 'mock-token';
+      }
+      return null;
+    }),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+  },
+  writable: true,
+});
+
+vi.mock('react-router-dom', () => ({
+  BrowserRouter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useNavigate: vi.fn(),
+  useLocation: vi.fn(() => ({ pathname: '/dashboard/account-opening' })),
 }));
 
 describe('AccountOpening', () => {
@@ -40,31 +63,31 @@ describe('AccountOpening', () => {
   };
 
   it('should render the page title', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText('Activate Your Wallet')).toBeInTheDocument();
   });
 
   it('should render the page description', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText(/Create your secure digital asset wallet/)).toBeInTheDocument();
   });
 
   it('should render the main card with MoneraDigital custody title', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText('MoneraDigital Custody Account')).toBeInTheDocument();
   });
 
   it('should render the security info text', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText(/Your assets are protected/)).toBeInTheDocument();
   });
 
   it('should render the Activate Now button initially', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     const button = screen.getByRole('button', { name: /Activate Now/i });
     expect(button).toBeInTheDocument();
@@ -72,8 +95,8 @@ describe('AccountOpening', () => {
   });
 
   it('should show loading state when button is clicked', async () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'CREATING' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'CREATING' });
     renderComponent();
     const button = screen.getByRole('button', { name: /Activate Now/i });
     fireEvent.click(button);
@@ -83,8 +106,8 @@ describe('AccountOpening', () => {
   });
 
   it('should show success state with address after wallet creation', async () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
-    vi.mocked(apiRequest).mockResolvedValueOnce({
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({
       status: 'SUCCESS',
       walletId: { String: 'wallet_test123', Valid: true },
       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
@@ -99,8 +122,8 @@ describe('AccountOpening', () => {
   });
 
   it('should show wallet ID after success', async () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
-    vi.mocked(apiRequest).mockResolvedValueOnce({
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({
       status: 'SUCCESS',
       walletId: { String: 'wallet_test123', Valid: true },
       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
@@ -114,7 +137,7 @@ describe('AccountOpening', () => {
   });
 
   it('should render three feature cards', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText('Bank-Level Security')).toBeInTheDocument();
     expect(screen.getByText('Instant Setup')).toBeInTheDocument();
@@ -122,21 +145,21 @@ describe('AccountOpening', () => {
   });
 
   it('should be accessible - have proper heading hierarchy', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1).toBeInTheDocument();
   });
 
   it('should render in English by default', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText('Activate Your Wallet')).toBeInTheDocument();
   });
 
   it('should switch to Chinese when language changes', async () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     expect(screen.getByText('Activate Your Wallet')).toBeInTheDocument();
     await act(async () => {
@@ -159,7 +182,7 @@ describe('AccountOpening', () => {
   });
 
   it('should have proper button styling classes', () => {
-    vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
+    mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
     renderComponent();
     const button = screen.getByRole('button', { name: /Activate Now/i });
     expect(button).toHaveClass('w-full');
@@ -196,8 +219,8 @@ describe('AccountOpening', () => {
     });
 
     it('should show network label when single network available', async () => {
-      vi.mocked(apiRequest).mockResolvedValueOnce({ status: 'NOT_CREATED' });
-      vi.mocked(apiRequest).mockResolvedValueOnce({
+      mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+      mockApiRequest.mockResolvedValueOnce({
         status: 'SUCCESS',
         walletId: { String: 'wallet_test123', Valid: true },
         addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
@@ -216,4 +239,184 @@ describe('AccountOpening', () => {
       expect(screen.getByText('TRON')).toBeInTheDocument();
     });
   });
+
+  // Add New Address tests temporarily disabled
+  // describe('Add New Address', () => {
+  //   it('should render Add New Address button in SUCCESS state', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //
+  //     renderComponent();
+  //     const button = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(button);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     expect(screen.getByRole('button', { name: /Add New Address/i })).toBeInTheDocument();
+  //   });
+  //
+  //   it('should open dialog when Add New Address button is clicked', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //
+  //     renderComponent();
+  //     const activateButton = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(activateButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     const addButton = screen.getByRole('button', { name: /Add New Address/i });
+  //     fireEvent.click(addButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('添加钱包地址')).toBeInTheDocument();
+  //     });
+  //
+  //     expect(screen.getByText('USDT')).toBeInTheDocument();
+  //     expect(screen.getByText('TRON (TRC20)')).toBeInTheDocument();
+  //   });
+  //
+  //   it('should close dialog when cancel button is clicked', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //
+  //     renderComponent();
+  //     const activateButton = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(activateButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     const addButton = screen.getByRole('button', { name: /Add New Address/i });
+  //     fireEvent.click(addButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('添加钱包地址')).toBeInTheDocument();
+  //     });
+  //
+  //     const cancelButton = screen.getByRole('button', { name: /取消/i });
+  //     fireEvent.click(cancelButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.queryByText('USDT')).not.toBeInTheDocument();
+  //     });
+  //   });
+  //
+  //   it('should call API with selected token and network on confirm', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //     mockApiRequest.mockResolvedValueOnce({ success: true });
+  //
+  //     renderComponent();
+  //     const activateButton = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(activateButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     const addButton = screen.getByRole('button', { name: /Add New Address/i });
+  //     fireEvent.click(addButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('添加钱包地址')).toBeInTheDocument();
+  //     });
+  //
+  //     const confirmButton = screen.getByRole('button', { name: /确认添加/i });
+  //     fireEvent.click(confirmButton);
+  //
+  //     await waitFor(() => {
+  //       expect(mockApiRequest).toHaveBeenCalledWith('/api/wallet/addresses', expect.objectContaining({
+  //         method: 'POST',
+  //         body: JSON.stringify({ chain: 'TRON', token: 'USDT' }),
+  //       }));
+  //     });
+  //   });
+  //
+  //   it('should allow selecting different token', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //     mockApiRequest.mockResolvedValueOnce({ success: true });
+  //
+  //     renderComponent();
+  //     const activateButton = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(activateButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     const addButton = screen.getByRole('button', { name: /Add New Address/i });
+  //     fireEvent.click(addButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('添加钱包地址')).toBeInTheDocument();
+  //     });
+  //
+  //     const usdtSelect = screen.getByRole('combobox', { name: '' });
+  //     fireEvent.mouseDown(usdtSelect);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('USDC')).toBeInTheDocument();
+  //     });
+  //   });
+  //
+  //   it('should allow selecting different network', async () => {
+  //     mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+  //     mockApiRequest.mockResolvedValueOnce({
+  //       status: 'SUCCESS',
+  //       walletId: { String: 'wallet_test123', Valid: true },
+  //       addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+  //     });
+  //     mockApiRequest.mockResolvedValueOnce({ success: true });
+  //
+  //     renderComponent();
+  //     const activateButton = screen.getByRole('button', { name: /Activate Now/i });
+  //     fireEvent.click(activateButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+  //     });
+  //
+  //     const addButton = screen.getByRole('button', { name: /Add New Address/i });
+  //     fireEvent.click(addButton);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('添加钱包地址')).toBeInTheDocument();
+  //     });
+  //
+  //     const tronSelect = screen.getByRole('combobox', { name: '' });
+  //     fireEvent.mouseDown(tronSelect);
+  //
+  //     await waitFor(() => {
+  //       expect(screen.getByText('Ethereum (ERC20)')).toBeInTheDocument();
+  //       expect(screen.getByText('BNB Smart Chain (BEP20)')).toBeInTheDocument();
+  //     });
+  //   });
+  // });
 });

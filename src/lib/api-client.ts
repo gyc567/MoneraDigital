@@ -6,8 +6,9 @@
  */
 
 // API base URL configuration
-// API基础URL配置 - 临时修复：使用可用的Replit后端
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://monera-digital--gyc567.replit.app';
+// Development: Use Vite proxy (empty string means relative paths)
+// Production: Set VITE_API_BASE_URL to your backend URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // Helper function to build full API URLs
 export function getApiUrl(path: string): string {
@@ -33,10 +34,14 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const url = getApiUrl(path);
 
+  // Get token from localStorage for authenticated requests
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
   const defaultOptions: RequestInit = {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...options.headers,
     },
   };

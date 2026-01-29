@@ -11,6 +11,11 @@
 
 set -e  # 遇到错误立即退出
 
+# 获取脚本所在目录并切换到项目根目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_DIR"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,15 +65,21 @@ stop_existing() {
     if lsof -i :8081 > /dev/null 2>&1; then
         kill $(lsof -t -i :8081) 2>/dev/null || true
         log_info "已停止端口 8081 上的进程"
+        sleep 1
     fi
     
     # 停止 Vite 开发服务器 (端口 5001)
     if lsof -i :5001 > /dev/null 2>&1; then
         kill $(lsof -t -i :5001) 2>/dev/null || true
         log_info "已停止端口 5001 上的进程"
+        sleep 1
     fi
     
-    sleep 1
+    # 额外清理：停止任何残留的 node 和 go 进程
+    pkill -f "vite" 2>/dev/null || true
+    pkill -f "monera-server" 2>/dev/null || true
+    
+    log_info "进程清理完成"
 }
 
 # 启动后端
@@ -85,12 +96,13 @@ start_backend() {
     log_info "编译 Go 后端..."
     go build -o /tmp/monera-server ./cmd/server/main.go
     
-    # 导出环境变量
-    export PORT=8081
-    export GIN_MODE=debug
-    
-    # 启动服务器
-    log_info "启动服务器 (端口 8081, 数据库: neondb)..."
+# 导出环境变量
+export PORT=8081
+export GIN_MODE=debug
+export MONNAIRE_CORE_API_URL=http://198.13.57.142:8080
+
+# 启动服务器
+log_info "启动服务器 (端口 8081, 数据库: neondb, Core API: http://198.13.57.142:8080)..."
     /tmp/monera-server &
     
     # 等待服务器启动

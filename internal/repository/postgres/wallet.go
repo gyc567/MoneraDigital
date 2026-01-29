@@ -19,10 +19,10 @@ func NewWalletRepository(db *sql.DB) repository.Wallet {
 
 func (r *WalletRepository) CreateRequest(ctx context.Context, req *models.WalletCreationRequest) error {
 	query := `
-		INSERT INTO wallet_creation_requests (request_id, user_id, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO wallet_creation_requests (request_id, user_id, product_code, currency, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id`
-	return r.db.QueryRowContext(ctx, query, req.RequestID, req.UserID, req.Status, time.Now(), time.Now()).Scan(&req.ID)
+	return r.db.QueryRowContext(ctx, query, req.RequestID, req.UserID, req.ProductCode, req.Currency, req.Status, time.Now(), time.Now()).Scan(&req.ID)
 }
 
 func (r *WalletRepository) GetRequestByUserID(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {

@@ -20,7 +20,7 @@ func TestCreateWallet_SuccessResponseFormat(t *testing.T) {
 
 	reqBody := dto.CreateWalletRequest{
 		UserID:      "123",
-		ProductCode: "BANK_ACCOUNT",
+		ProductCode: "X_FINANCE",
 		Currency:    "USD",
 	}
 	body, _ := json.Marshal(reqBody)
@@ -68,7 +68,7 @@ func TestCreateWallet_ErrorResponseFormat(t *testing.T) {
 
 	reqBody := dto.CreateWalletRequest{
 		UserID:      "", // Invalid request
-		ProductCode: "BANK_ACCOUNT",
+		ProductCode: "X_FINANCE",
 		Currency:    "USD",
 	}
 	body, _ := json.Marshal(reqBody)
