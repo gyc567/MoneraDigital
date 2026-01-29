@@ -242,18 +242,6 @@ const AccountOpening = () => {
           {t("wallet.opening.description")}
         </p>
       </div>
-    </div>
-  );
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">{t("wallet.opening.title")}</h1>
-        <p className="text-muted-foreground mt-2">
-          {t("wallet.opening.description")}
-        </p>
-      </div>
 
       {/* Add Address Dialog */}
       <Dialog open={showAddAddressDialog} onOpenChange={setShowAddAddressDialog}>

@@ -585,7 +585,16 @@
       "errorDescription": "无法创建钱包账户，请稍后重试。",
       "error": "钱包账户创建失败",
       "retry": "重试",
-      "currencyLabel": "选择币种"
+      "currencyLabel": "选择币种",
+      "addAddressDialogTitle": "添加新地址",
+      "tokenLabel": "选择代币",
+      "networkLabel": "选择网络",
+      "confirmAddAddress": "添加地址",
+      "addNewAddress": "添加新地址",
+      "addingAddress": "正在添加地址...",
+      "addressAdded": "地址已添加",
+      "addressAddedDesc": "新地址已成功添加",
+      "addAddressErrorTitle": "添加地址失败"
     }
   }
 }

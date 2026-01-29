@@ -620,7 +620,16 @@
       "errorDescription": "Unable to create wallet account. Please try again later.",
       "error": "Failed to create wallet account",
       "retry": "Try Again",
-      "currencyLabel": "Select Currency"
+      "currencyLabel": "Select Currency",
+      "addAddressDialogTitle": "Add New Address",
+      "tokenLabel": "Select Token",
+      "networkLabel": "Select Network",
+      "confirmAddAddress": "Add Address",
+      "addNewAddress": "Add New Address",
+      "addingAddress": "Adding address...",
+      "addressAdded": "Address Added",
+      "addressAddedDesc": "New address has been added successfully",
+      "addAddressErrorTitle": "Failed to Add Address"
     }
   }
 }
