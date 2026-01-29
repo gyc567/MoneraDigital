@@ -3,6 +3,11 @@ package services
 import (
 	"context"
 	"database/sql"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"monera-digital/internal/models"
+	"testing"
+	"time"
 	"testing"
 	"time"
 
@@ -20,6 +25,7 @@ func TestWalletService_CreateWallet_New(t *testing.T) {
 	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "C_SPOT", "USDT_ERC20").Return(nil, nil)
 	mockRepo.On("CreateRequest", mock.Anything, mock.AnythingOfType("*models.WalletCreationRequest")).Return(nil)
 
+	req, err := service.CreateWallet(context.Background(), 1)
 	req, err := service.CreateWallet(context.Background(), 1, "C_SPOT", "USDT_ERC20")
 
 	assert.NoError(t, err)

@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
-	"testing"
-	"time"
-	"monera-digital/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"monera-digital/internal/models"
+	"testing"
+	"time"
 )
 
 func TestDepositService_GetDeposits(t *testing.T) {

@@ -75,14 +75,6 @@ func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, user
 	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
-func (m *MockWalletRepository) GetWalletByUserProductCurrency(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
-	args := m.Called(ctx, userID, productCode, currency)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
-}
-
 // MockAccountRepository
 type MockAccountRepository struct {
 	mock.Mock
@@ -144,6 +136,47 @@ func (m *MockAccountRepository) FreezeBalance(ctx context.Context, accountID int
 
 func (m *MockAccountRepository) UnfreezeBalance(ctx context.Context, accountID int64, amount string) error {
 	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) GetAccountByUserIDAndCurrency(ctx context.Context, userID int64, currency string) (*repository.AccountModel, error) {
+	args := m.Called(ctx, userID, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.AccountModel), args.Error(1)
+}
+
+func (m *MockAccountRepository) GetAccountsByUserID(ctx context.Context, userID int64) ([]*repository.AccountModel, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*repository.AccountModel), args.Error(1)
+}
+
+func (m *MockAccountRepository) FreezeBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) UnfreezeBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) AddBalance(ctx context.Context, accountID int64, amount string) error {
+	args := m.Called(ctx, accountID, amount)
+	return args.Error(0)
+}
+
+// MockJournalRepository
+type MockJournalRepository struct {
+	mock.Mock
+}
+
+func (m *MockJournalRepository) CreateJournalRecord(ctx context.Context, record *repository.JournalModel) error {
+	args := m.Called(ctx, record)
 	return args.Error(0)
 }
 

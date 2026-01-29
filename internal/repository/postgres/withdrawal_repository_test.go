@@ -20,15 +20,15 @@ func TestWithdrawalRepository_CreateOrder(t *testing.T) {
 	repo := NewWithdrawalRepository(db)
 
 	order := &models.WithdrawalOrder{
-		UserID:      1,
-		Amount:      "100.00",
-		ChainType:   "TRC20",
-		CoinType:    "USDT",
-		ToAddress:   "Txyz...",
-		NetworkFee:  "1.00",
-		PlatformFee: "0.50",
+		UserID:       1,
+		Amount:       "100.00",
+		ChainType:    "TRC20",
+		CoinType:     "USDT",
+		ToAddress:    "Txyz...",
+		NetworkFee:   "1.00",
+		PlatformFee:  "0.50",
 		ActualAmount: "98.50",
-		Status:      "PENDING",
+		Status:       "PENDING",
 	}
 
 	mock.ExpectQuery("INSERT INTO withdrawal_order").

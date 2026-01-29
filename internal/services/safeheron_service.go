@@ -13,18 +13,18 @@ func NewSafeheronService() *SafeheronService {
 }
 
 type SafeheronWithdrawalResponse struct {
-	TxHash          string
+	TxHash           string
 	SafeheronOrderID string
-	NetworkFee      string
+	NetworkFee       string
 }
 
 func (s *SafeheronService) Withdraw(ctx context.Context, req SafeheronWithdrawalRequest) (*SafeheronWithdrawalResponse, error) {
 	// Stub implementation
 	// In real life, call Safeheron API
 	return &SafeheronWithdrawalResponse{
-		TxHash:          "0xmocktxhash",
+		TxHash:           "0xmocktxhash",
 		SafeheronOrderID: "mock-sh-id",
-		NetworkFee:      "1.0",
+		NetworkFee:       "1.0",
 	}, nil
 }
 

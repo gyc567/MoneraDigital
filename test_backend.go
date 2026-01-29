@@ -106,7 +106,7 @@ func testDocs() {
 func testRegister() {
 	fmt.Println("[TEST] Register Endpoint")
 	url := baseURL + "/api/auth/register"
-	
+
 	reqBody := RegisterRequest{
 		Email:    "test@example.com",
 		Password: "password123",

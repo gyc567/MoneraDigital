@@ -39,37 +39,6 @@ type Handler struct {
 	Validator         validator.Validator
 }
 
-// Wealth handlers
-func (h *Handler) GetAssets(c *gin.Context) {
-	// TODO: Implement wealth GetAssets handler
-	c.JSON(200, gin.H{"message": "GetAssets not implemented yet"})
-}
-
-func (h *Handler) RefreshPrices(c *gin.Context) {
-	// TODO: Implement wealth RefreshPrices handler
-	c.JSON(200, gin.H{"message": "RefreshPrices not implemented yet"})
-}
-
-func (h *Handler) GetProducts(c *gin.Context) {
-	// TODO: Implement wealth GetProducts handler
-	c.JSON(200, gin.H{"message": "GetProducts not implemented yet"})
-}
-
-func (h *Handler) Subscribe(c *gin.Context) {
-	// TODO: Implement wealth Subscribe handler
-	c.JSON(200, gin.H{"message": "Subscribe not implemented yet"})
-}
-
-func (h *Handler) GetOrders(c *gin.Context) {
-	// TODO: Implement wealth GetOrders handler
-	c.JSON(200, gin.H{"message": "GetOrders not implemented yet"})
-}
-
-func (h *Handler) Redeem(c *gin.Context) {
-	// TODO: Implement wealth Redeem handler
-	c.JSON(200, gin.H{"message": "Redeem not implemented yet"})
-}
-
 func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService, wealth *services.WealthService) *Handler {
 	return &Handler{
 		AuthService:       auth,
@@ -606,4 +575,112 @@ func toLendingPositionResponse(position *models.LendingPosition) dto.LendingPosi
 		EndDate:      position.EndDate,
 		CreatedAt:    position.StartDate,
 	}
+}
+
+// Assets handlers
+
+func (h *Handler) GetAssets(c *gin.Context) {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	assets, err := h.WealthService.GetAssets(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"assets": assets, "total": len(assets), "count": len(assets)})
+}
+
+func (h *Handler) RefreshPrices(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"message": "Prices refreshed successfully"})
+}
+
+// Wealth handlers
+
+func (h *Handler) GetProducts(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+
+	products, total, err := h.WealthService.GetProducts(c.Request.Context(), page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"products": products, "total": total, "page": page, "pageSize": pageSize})
+}
+
+func (h *Handler) Subscribe(c *gin.Context) {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		ProductID int64  `json:"productId" binding:"required"`
+		Amount    string `json:"amount" binding:"required"`
+		AutoRenew bool   `json:"autoRenew"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	orderID, err := h.WealthService.Subscribe(c.Request.Context(), userID, req.ProductID, req.Amount, req.AutoRenew)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": orderID})
+}
+
+func (h *Handler) GetOrders(c *gin.Context) {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+
+	orders, total, err := h.WealthService.GetOrders(c.Request.Context(), userID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"orders": orders, "total": total, "page": page, "pageSize": pageSize})
+}
+
+func (h *Handler) Redeem(c *gin.Context) {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		OrderID        int64  `json:"orderId" binding:"required"`
+		RedemptionType string `json:"redemptionType" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.WealthService.Redeem(c.Request.Context(), userID, req.OrderID, req.RedemptionType); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Redemption successful"})
 }

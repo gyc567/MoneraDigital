@@ -236,7 +236,11 @@
     "edit": "编辑",
     "add": "添加",
     "submit": "提交",
+<<<<<<< HEAD
     "copied": "已复制"
+=======
+    "refresh": "刷新"
+>>>>>>> 392e0ad (fix: API 404 errors and i18n missing keys)
   },
   "addresses": {
     "title": "地址管理",
@@ -286,11 +290,22 @@
       "frozen": "冻结",
       "source": "来源",
       "owned": "自有",
-      "borrowed": "借入"
+      "borrowed": "借入",
+      "noAssets": "暂无资产",
+      "noAssetsDesc": "充值后您的资产将显示在这里",
+      "goDeposit": "去充值",
+      "pageDesc": "查看和管理您的数字资产",
+      "assetBreakdown": "资产明细",
+      "valueUSD": "价值 (USD)",
+      "totalValue": "总价值",
+      "currencyUnit": "USD",
+      "actions": "操作",
+      "withdraw": "提币"
     },
     "security": {
       "title": "安全设置",
       "password": "登录密码",
+<<<<<<< HEAD
       "passwordDescription": "更新您的密码以保护账户安全",
       "currentPassword": "当前密码",
       "newPassword": "新密码",
@@ -300,6 +315,18 @@
       "whitelist": "提币地址白名单",
       "whitelistDescription": "管理允许提币的地址列表",
       "manageAddresses": "管理地址",
+=======
+      "passwordDescription": "修改您的登录密码以提高账户安全性",
+      "currentPassword": "当前密码",
+      "newPassword": "新密码",
+      "twoFactor": "双因素认证 (2FA)",
+      "twoFactorDescription": "为您的账户添加额外的安全保护层",
+      "apiKeys": "API 密钥",
+      "whitelist": "提币地址白名单",
+      "whitelistDescription": "管理您的提币地址白名单，提高提币安全性",
+      "manageAddresses": "管理地址",
+      "status": "状态",
+>>>>>>> 392e0ad (fix: API 404 errors and i18n missing keys)
       "enable2FA": "开启 2FA",
       "disable2FA": "关闭 2FA",
       "setup2FA": "设置 2FA",
@@ -310,11 +337,18 @@
       "verifying": "验证中...",
       "enabled": "已开启",
       "disabled": "未开启",
+<<<<<<< HEAD
       "status": "状态",
       "secretKeyManual": "密钥（手动输入）",
       "openInApp": "在应用中打开",
       "nextBackupCodes": "下一步：备用码",
       "backupCodeInfo": "如果您丢失了 2FA 设备，可以使用这些备用码访问您的账户。请妥善保存。",
+=======
+      "secretKeyManual": "密钥（手动输入）",
+      "openInApp": "在应用中打开",
+      "nextBackupCodes": "下一步：备用码",
+      "backupCodeInfo": "这些备用码可在您丢失 2FA 设备时用于访问账户。请妥善保管。",
+>>>>>>> 392e0ad (fix: API 404 errors and i18n missing keys)
       "disable2FAConfirm": "您确定要关闭 2FA 吗？这会降低您的账户安全性。"
     },
     "lending": {
@@ -447,6 +481,7 @@
       "minAmount": "起购金额",
       "amountBelowMinError": "申购金额不能低于",
       "amountAboveMaxError": "申购金额不能超过",
+      "invalidAmount": "金额无效",
       "interest": "预期利息",
       "maturityDate": "到期时间",
       "autoRenewTitle": "到期自动续期",
