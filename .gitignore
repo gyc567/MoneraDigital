@@ -37,3 +37,4 @@ nohup.out
 /coverage
 /.sisyphus
 .env*.local
+.worktrees/
