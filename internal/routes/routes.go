@@ -47,6 +47,11 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 	// Public routes
 	public := router.Group("/api")
 	{
+		// API Health check
+		public.GET("/health", func(c *gin.Context) {
+			c.JSON(200, gin.H{"status": "ok"})
+		})
+
 		auth := public.Group("/auth")
 		{
 			auth.POST("/register", h.Register)
