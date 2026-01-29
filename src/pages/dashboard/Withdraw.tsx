@@ -104,11 +104,18 @@ function Withdraw() {
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [isVerifying2FA, setIsVerifying2FA] = useState(false);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<Withdrawal | null>(null);
 
   // Fetch verified addresses
   const fetchAddresses = async () => {
     try {
       const token = localStorage.getItem("token");
+      if (!token) {
+        setAddresses([]);
+        setIsLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/addresses", {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -149,6 +156,13 @@ function Withdraw() {
   const handleCreateAddress = async () => {
     if (isCreatingAddress) return;
 
+    // Check authentication first
+    const token = localStorage.getItem("token");
+    if (!token) {
+      toast.error("Please log in to add addresses");
+      return;
+    }
+
     if (!newAddressAlias || !newAddress || !newAddressChain) {
       toast.error("Please fill in all fields");
       return;
@@ -161,7 +175,6 @@ function Withdraw() {
 
     setIsCreatingAddress(true);
     try {
-      const token = localStorage.getItem("token");
       const csrfToken = localStorage.getItem("csrf_token");
 
       const res = await fetch("/api/addresses", {
