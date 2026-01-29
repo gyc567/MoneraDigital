@@ -60,7 +60,7 @@ func main() {
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgres://postgres:postgres@localhost:5432/monera_digital?sslmode=disable"
+		log.Fatal("DATABASE_URL environment variable is required (e.g., postgresql://user:pass@host:5432/db?sslmode=require)")
 	}
 
 	database, err := db.InitDB(databaseURL)

@@ -1,62 +1,47 @@
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
+	"database/sql"
+	"fmt"
 	"log"
+	"os"
 
-	"github.com/joho/godotenv"
-	"monera-digital/internal/config"
-	"monera-digital/internal/db"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"monera-digital/internal/migration"
 	"monera-digital/internal/migration/migrations"
 )
 
 func main() {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
-	// Load configuration
-	cfg := config.Load()
-
-	// Initialize database
-	database, err := db.InitDB(cfg.DatabaseURL)
+	db, err := sql.Open("pgx", dbURL)
 	if err != nil {
-		log.Fatal("Failed to initialize database:", err)
+		log.Fatal("Failed to connect:", err)
 	}
-	defer database.Close()
+	defer db.Close()
 
-	// Initialize migrator
-	migrator := migration.NewMigrator(database)
-
-	// Register migrations
-	migrator.Register(&migrations.CreateUsersTable{})
-	migrator.Register(&migrations.CreateLendingPositionsTable{})
-	migrator.Register(&migrations.CreateWithdrawalTables{})
-	migrator.Register(&migrations.AddTwoFactorColumnsMigration{})
-	migrator.Register(&migrations.AddTwoFactorTimestampMigration{})
+	migrator := migration.NewMigrator(db)
 	migrator.Register(&migrations.UpdateWalletRequestsTable{})
 
-	// Initialize migrations table
-	if err := migrator.Init(); err != nil {
-		log.Fatal("Failed to initialize migrations:", err)
-	}
-
-	// Check status
-	status, err := migrator.GetStatus()
-	if err != nil {
-		log.Fatal("Failed to get migration status:", err)
-	}
-
-	for _, s := range status {
-		log.Printf("Migration %s: %s (%s)\n", s.Version, s.Name, s.Status)
-	}
-
-	// Run migrations
-	log.Println("Running migrations...")
 	if err := migrator.Migrate(); err != nil {
 		log.Fatal("Migration failed:", err)
 	}
 
-	log.Println("Migrations completed successfully")
+	status, err := migrator.GetStatus()
+	if err != nil {
+		log.Fatal("Failed to get status:", err)
+	}
+
+	fmt.Println("\nMigration Status:")
+	for _, s := range status {
+		fmt.Printf("  %s: %s - %s\n", s.Version, s.Status, s.Name)
+	}
+
+	fmt.Println("\nDone!")
 }

@@ -4,8 +4,10 @@ package container
 import (
 	"database/sql"
 	"log"
+	"os"
 
 	"monera-digital/internal/cache"
+	"monera-digital/internal/coreapi"
 	"monera-digital/internal/middleware"
 	"monera-digital/internal/repository"
 	"monera-digital/internal/repository/postgres"
@@ -47,6 +49,9 @@ type Container struct {
 	TokenBlacklist *cache.TokenBlacklist
 	RateLimiter    *middleware.RateLimiter
 
+	// 外部 API 客户端
+	CoreAPIClient *coreapi.Client
+
 	// 仓储
 	Repository *repository.Repository
 
@@ -73,6 +78,13 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	c.TokenBlacklist = cache.NewTokenBlacklist()
 	c.RateLimiter = middleware.NewRateLimiter(5, 60)
 
+	// 初始化 Core API 客户端
+	coreAPIURL := os.Getenv("MONNAIRE_CORE_API_URL")
+	if coreAPIURL == "" {
+		coreAPIURL = "http://198.13.57.142:8080" // 默认测试环境
+	}
+	c.CoreAPIClient = coreapi.NewClient(coreAPIURL)
+
 	// 初始化仓储
 	c.Repository = &repository.Repository{
 		User:       postgres.NewUserRepository(db),
@@ -92,7 +104,7 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 	c.AddressService = services.NewAddressService(c.Repository.Address)
 	c.WithdrawalService = services.NewWithdrawalService(db, c.Repository, services.NewSafeheronService())
 	c.DepositService = services.NewDepositService(c.Repository.Deposit)
-	c.WalletService = services.NewWalletService(c.Repository.Wallet)
+	c.WalletService = services.NewWalletService(c.Repository.Wallet, c.CoreAPIClient)
 	c.WealthService = services.NewWealthService(c.Repository.Wealth, c.Repository.AccountV2, c.Repository.Journal)
 
 	// 应用配置选项 (按顺序执行)

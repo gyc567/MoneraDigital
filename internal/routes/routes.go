@@ -2,6 +2,8 @@
 package routes
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -40,8 +42,12 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 	// Create 2FA handler
 	twofaHandler := handlers.NewTwoFAHandler(cont.TwoFAService)
 
-	// Account System Client
-	accountClient := account.NewClient("http://localhost:8081") // TODO: Use config
+	// Account System Client - Use BACKEND_URL from environment, default to localhost for backward compatibility
+	accountBaseURL := os.Getenv("BACKEND_URL")
+	if accountBaseURL == "" {
+		accountBaseURL = "http://localhost:8081"
+	}
+	accountClient := account.NewClient(accountBaseURL)
 	accountHandler := &handlers.AccountHandler{Client: accountClient}
 
 	// Public routes
