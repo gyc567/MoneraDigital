@@ -1,43 +1,150 @@
 import { useTranslation } from "react-i18next";
-import { Shield, Copy, Check, AlertCircle, Loader2, Wallet } from "lucide-react";
-import { useState } from "react";
+import { Shield, Copy, Check, AlertCircle, Loader2, Wallet, Globe } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api-client";
+
+// SQL NullString format from backend (sql.NullString serializes to {String, Valid})
+interface NullString {
+  String: string;
+  Valid: boolean;
+}
+
+// Wallet info response type - matches backend WalletCreationRequest structure
+interface WalletInfoResponse {
+  status: string;
+  walletId?: NullString;
+  address?: NullString;
+  addresses?: NullString | string; // Can be NullString or plain string
+}
+
+// Network option type
+interface NetworkOption {
+  value: string;
+  label: string;
+}
+
+// Parse addresses JSON and extract available networks
+export const parseAvailableNetworks = (addressesJson: string): NetworkOption[] => {
+  if (!addressesJson) return [];
+  try {
+    const addrMap = JSON.parse(addressesJson);
+    return Object.keys(addrMap).map((network) => ({
+      value: network,
+      label: network,
+    }));
+  } catch {
+    return [];
+  }
+};
+
+// Get display address for selected network
+export const getDisplayAddress = (addressesJson: string, selectedNetwork: string): string => {
+  if (!addressesJson) return "";
+  try {
+    const addrMap = JSON.parse(addressesJson);
+    return addrMap[selectedNetwork] || "";
+  } catch {
+    return "";
+  }
+};
+
+// Currency options
+const CURRENCY_OPTIONS = [
+  { value: "USDT_ERC20", label: "USDT (ERC20)" },
+  { value: "USDT_TRC20", label: "USDT (TRC20)" },
+  { value: "USDT_BSC", label: "USDT (BSC)" },
+  { value: "ETH", label: "Ethereum (ETH)" },
+  { value: "TRON", label: "TRON (TRX)" },
+  { value: "BSC", label: "BSC (BNB)" },
+];
 
 const AccountOpening = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [copied, setCopied] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState("TRON");
   const queryClient = useQueryClient();
 
-  const { data: walletInfo, isLoading } = useQuery({
+  // Get token for API calls
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+  // Auth guard: redirect to login if not authenticated
+  useEffect(() => {
+    if (!token) {
+      toast({
+        variant: "destructive",
+        title: t("auth.required"),
+        description: t("auth.pleaseLoginFirst"),
+      });
+      navigate("/login", { state: { returnTo: location.pathname } });
+    }
+  }, [token, navigate, location.pathname, toast, t]);
+
+  const { data: walletInfo, isLoading } = useQuery<WalletInfoResponse>({
     queryKey: ["walletInfo"],
+    enabled: !!token,
     queryFn: async () => {
+      if (!token) {
+        return { status: "NONE" };
+      }
       return apiRequest("/api/wallet/info", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
     },
     refetchInterval: (query) => {
-        const data = query.state.data;
-        return data?.status === "CREATING" ? 2000 : false
+      const data = query.state.data;
+      return data?.status === "CREATING" ? 2000 : false;
     },
   });
 
+  // Parse addresses and extract available networks
+  const addressesJson = useMemo(() => {
+    if (!walletInfo?.addresses) return "";
+    return typeof walletInfo.addresses === "string"
+      ? walletInfo.addresses
+      : walletInfo.addresses.String || "";
+  }, [walletInfo?.addresses]);
+
+  const availableNetworks = useMemo(
+    () => parseAvailableNetworks(addressesJson),
+    [addressesJson]
+  );
+
+  const [selectedNetwork, setSelectedNetwork] = useState<string>("");
+
+  useEffect(() => {
+    if (availableNetworks.length > 0 && !selectedNetwork) {
+      setSelectedNetwork(availableNetworks[0].value);
+    }
+  }, [availableNetworks, selectedNetwork]);
+
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
       return apiRequest("/api/wallet/create", {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`
+            Authorization: `Bearer ${token}`
         },
+        body: JSON.stringify({
+          productCode: "X_FINANCE",
+          currency: selectedCurrency
+        })
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["walletInfo"] });
-      // Toast handled by UI state change usually, but good to notify
     },
     onError: (err) => {
       toast({
@@ -61,18 +168,12 @@ const AccountOpening = () => {
   const status = walletInfo?.status || "NONE";
   const isCreating = status === "CREATING" || createMutation.isPending;
 
-  // Parse address for display (Pick TRON or first available)
-  let displayAddress = "";
-  let walletId = "";
-  if (status === "SUCCESS" && walletInfo?.addresses?.Valid) {
-      try {
-          const addrMap = JSON.parse(walletInfo.addresses.String);
-          displayAddress = addrMap["TRON"] || addrMap["ETH"] || Object.values(addrMap)[0] as string || "";
-          walletId = walletInfo.wallet_id?.String || "";
-      } catch (e) {
-          console.error("Failed to parse address", e);
-      }
-  }
+  const displayAddress = useMemo(
+    () => getDisplayAddress(addressesJson, selectedNetwork),
+    [addressesJson, selectedNetwork]
+  );
+
+  const walletId = walletInfo?.walletId?.String || walletInfo?.address?.String || "";
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -102,6 +203,25 @@ const AccountOpening = () => {
             <p>{t("wallet.opening.securityInfo")}</p>
           </div>
 
+          {/* Currency Selection */}
+          {(status === "NONE" || status === "FAILED") && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("wallet.opening.currencyLabel") || "Select Currency"}</label>
+              <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Action Button */}
           {(status === "NONE" || status === "FAILED") && (
             <Button
@@ -122,12 +242,12 @@ const AccountOpening = () => {
           {/* Loading State Display */}
           {status === "CREATING" && !createMutation.isPending && (
              <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <Loader2 className="w-12 h-12 text-primary animate-spin" />
-              <p className="text-muted-foreground">{t("wallet.opening.creating")}</p>
-            </div>
+               <Loader2 className="w-12 h-12 text-primary animate-spin" />
+               <p className="text-muted-foreground">{t("wallet.opening.creating")}</p>
+             </div>
           )}
 
-          {/* Success State */}
+              {/* Success State */}
           {status === "SUCCESS" && (
             <div className="space-y-4">
               <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
@@ -139,6 +259,40 @@ const AccountOpening = () => {
                   {t("wallet.opening.addressLabel")}
                 </p>
               </div>
+
+              {/* Network Display */}
+              {availableNetworks.length > 0 && (
+                <>
+                  {availableNetworks.length > 1 ? (
+                    <Tabs value={selectedNetwork} onValueChange={setSelectedNetwork}>
+                      <TabsList
+                        className="grid w-full"
+                        style={{
+                          gridTemplateColumns: `repeat(${availableNetworks.length}, minmax(0, 1fr))`,
+                        }}
+                      >
+                        {availableNetworks.map((network) => (
+                          <TabsTrigger
+                            key={network.value}
+                            value={network.value}
+                            className="flex items-center gap-1"
+                          >
+                            <Globe className="w-3 h-3" />
+                            {network.label}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-secondary/50 border border-border">
+                      <Globe className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">
+                        {availableNetworks[0].label}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Address Display */}
               <div className="p-4 rounded-lg bg-secondary/50 border border-border">
