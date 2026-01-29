@@ -637,6 +637,7 @@
       "activated": "账户开通成功",
       "addressLabel": "您的首选充值地址",
       "walletId": "钱包 ID",
+      "currency": "币种",
       "depositHint": "您现在可以使用此地址充值支持的资产。",
       "feature1Title": "银行级安全",
       "feature1Description": "采用机构级安全标准的多重签名托管技术。",

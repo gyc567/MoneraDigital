@@ -607,6 +607,7 @@
       "activated": "Account Activated Successfully",
       "addressLabel": "Your Primary Deposit Address",
       "walletId": "Wallet ID",
+      "currency": "Currency",
       "depositHint": "You can now use this address to deposit supported assets.",
       "feature1Title": "Bank-Level Security",
       "feature1Description": "Multi-signature custody technology with institutional-grade security standards.",

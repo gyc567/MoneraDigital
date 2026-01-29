@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider, ToastViewport } from '@/components/ui/toast';
 import { BrowserRouter } from 'react-router-dom';
 import i18n from '@/i18n';
-import AccountOpening, { parseAvailableNetworks, getDisplayAddress } from './AccountOpening';
+import AccountOpening, { parseAvailableNetworks, getDisplayAddress, formatCurrency } from './AccountOpening';
 import '@testing-library/jest-dom';
 import * as React from 'react';
 import { vi } from 'vitest';
@@ -237,6 +237,73 @@ describe('AccountOpening', () => {
       // Single network should show static label, not tabs
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
       expect(screen.getByText('TRON')).toBeInTheDocument();
+    });
+  });
+
+  describe('Currency Display', () => {
+    it('should format USDT_TRC20 as USDT', () => {
+      expect(formatCurrency('USDT_TRC20')).toBe('USDT');
+      expect(formatCurrency('USDT_ERC20')).toBe('USDT');
+      expect(formatCurrency('USDT_BSC')).toBe('USDT');
+    });
+
+    it('should format TRON as TRX', () => {
+      expect(formatCurrency('TRON')).toBe('TRX');
+    });
+
+    it('should format BSC as BNB', () => {
+      expect(formatCurrency('BSC')).toBe('BNB');
+    });
+
+    it('should return ETH and USDC as-is', () => {
+      expect(formatCurrency('ETH')).toBe('ETH');
+      expect(formatCurrency('USDC')).toBe('USDC');
+    });
+
+    it('should return empty string for empty currency', () => {
+      expect(formatCurrency('')).toBe('');
+    });
+
+    it('should show currency in SUCCESS state', async () => {
+      mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+      mockApiRequest.mockResolvedValueOnce({
+        status: 'SUCCESS',
+        currency: 'TRON',
+        walletId: { String: 'wallet_test123', Valid: true },
+        addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      });
+
+      renderComponent();
+      const button = screen.getByRole('button', { name: /Activate Now/i });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Currency/i)).toBeInTheDocument();
+      expect(screen.getByText(/TRX/i)).toBeInTheDocument();
+    });
+
+    it('should show formatted USDT currency', async () => {
+      mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+      mockApiRequest.mockResolvedValueOnce({
+        status: 'SUCCESS',
+        currency: 'USDT_TRC20',
+        walletId: { String: 'wallet_test123', Valid: true },
+        addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      });
+
+      renderComponent();
+      const button = screen.getByRole('button', { name: /Activate Now/i });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText('账户开通成功')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Currency/i)).toBeInTheDocument();
+      expect(screen.getByText(/USDT/i)).toBeInTheDocument();
     });
   });
 

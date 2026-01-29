@@ -20,6 +20,7 @@ interface NullString {
 // Wallet info response type - matches backend WalletCreationRequest structure
 interface WalletInfoResponse {
   status: string;
+  currency?: string;
   walletId?: NullString;
   address?: NullString;
   addresses?: NullString | string; // Can be NullString or plain string
@@ -54,6 +55,24 @@ export const getDisplayAddress = (addressesJson: string, selectedNetwork: string
   } catch {
     return "";
   }
+};
+
+// Format currency for display (e.g., "USDT_TRC20" -> "USDT", "TRON" -> "TRX")
+export const formatCurrency = (currency: string): string => {
+  if (!currency) return "";
+  // Handle compound currencies like USDT_TRC20, USDT_ERC20, USDT_BSC
+  if (currency.startsWith("USDT_") || currency.startsWith("USDC_")) {
+    return currency.split("_")[0];
+  }
+  // Map TRON to TRX for display
+  if (currency === "TRON") {
+    return "TRX";
+  }
+  // Map BSC to BNB for display
+  if (currency === "BSC") {
+    return "BNB";
+  }
+  return currency;
 };
 
 // Currency options
@@ -421,8 +440,11 @@ const AccountOpening = () => {
 
               {/* Address Display */}
               <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-                <p className="text-xs text-muted-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-1">
                   {t("wallet.opening.walletId")}: {walletId}
+                </p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {t("wallet.opening.currency")}: {formatCurrency(walletInfo?.currency || "")}
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-sm font-mono break-all bg-background p-3 rounded-md">
