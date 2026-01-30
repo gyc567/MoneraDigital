@@ -87,6 +87,112 @@ func (c *Client) CreateWallet(ctx context.Context, req CreateWalletRequest) (*Cr
 	return &walletResp, nil
 }
 
+// GetIncomeHistoryRequest 请求结构
+type GetIncomeHistoryRequest struct {
+	Address string `json:"address"`
+}
+
+// GetAddressRequest 请求结构
+type GetAddressRequest struct {
+	UserID      int    `json:"userId"`
+	ProductCode string `json:"productCode"`
+	Currency    string `json:"currency"`
+}
+
+// AddressInfo 钱包地址信息
+type AddressInfo struct {
+	Address     string  `json:"address"`
+	AddressType *string `json:"addressType"`
+	DerivePath  *string `json:"derivePath"`
+}
+
+// AddressIncomeRecord 收款记录结构
+type AddressIncomeRecord struct {
+	TxKey             string `json:"txKey"`
+	TxHash            string `json:"txHash"`
+	CoinKey           string `json:"coinKey"`
+	TxAmount          string `json:"txAmount"`
+	Address           string `json:"address"`
+	TransactionStatus string `json:"transactionStatus"`
+	BlockHeight       int64  `json:"blockHeight"`
+	CreateTime        string `json:"createTime"`
+	CompletedTime     string `json:"completedTime"`
+}
+
+// GetAddress 获取钱包地址
+func (c *Client) GetAddress(ctx context.Context, req GetAddressRequest) (*AddressInfo, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/wallet/address/get", c.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	var resp CoreAPIResponse
+	if err := c.doRequest(httpReq, &resp); err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("get address failed: %s", resp.Message)
+	}
+
+	respData, err := json.Marshal(resp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal response data: %w", err)
+	}
+
+	var addressInfo AddressInfo
+	if err := json.Unmarshal(respData, &addressInfo); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &addressInfo, nil
+}
+
+// GetIncomeHistory 获取地址链上收款记录
+func (c *Client) GetIncomeHistory(ctx context.Context, req GetIncomeHistoryRequest) ([]AddressIncomeRecord, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/wallet/address/incomeHistory", c.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	var resp CoreAPIResponse
+	if err := c.doRequest(httpReq, &resp); err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("income history query failed: %s", resp.Message)
+	}
+
+	respData, err := json.Marshal(resp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal response data: %w", err)
+	}
+
+	var incomeRecords []AddressIncomeRecord
+	if err := json.Unmarshal(respData, &incomeRecords); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return incomeRecords, nil
+}
+
 func (c *Client) doRequest(req *http.Request, v interface{}) error {
 	req.Header.Set("Content-Type", "application/json")
 
@@ -111,3 +217,13 @@ func (c *Client) doRequest(req *http.Request, v interface{}) error {
 
 	return nil
 }
+
+// CoreAPIClientInterface defines the interface for Core API client operations.
+// This allows for easier testing with mocks.
+type CoreAPIClientInterface interface {
+	CreateWallet(ctx context.Context, req CreateWalletRequest) (*CreateWalletResponse, error)
+	GetAddress(ctx context.Context, req GetAddressRequest) (*AddressInfo, error)
+	GetIncomeHistory(ctx context.Context, req GetIncomeHistoryRequest) ([]AddressIncomeRecord, error)
+}
+
+var _ CoreAPIClientInterface = (*Client)(nil)

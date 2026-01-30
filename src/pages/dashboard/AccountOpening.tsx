@@ -39,7 +39,7 @@ export const parseAvailableNetworks = (addressesJson: string): NetworkOption[] =
     const addrMap = JSON.parse(addressesJson);
     return Object.keys(addrMap).map((network) => ({
       value: network,
-      label: network,
+      label: formatNetworkLabel(network),
     }));
   } catch {
     return [];
@@ -75,6 +75,34 @@ export const formatCurrency = (currency: string): string => {
   return currency;
 };
 
+// Format network label for display (e.g., "USDT_TRON" -> "USDT (TRON)", "ETH" -> "ETH")
+export const formatNetworkLabel = (networkKey: string): string => {
+  if (!networkKey) return "";
+  // Handle compound keys like USDT_TRON, USDC_TRON, USDT_ERC20, USDT_BSC
+  if (networkKey.includes("_")) {
+    const parts = networkKey.split("_");
+    const token = parts[0];
+    const chain = parts[1];
+    // Map chain abbreviations to full names
+    const chainDisplayName = getChainDisplayName(chain);
+    return `${token} (${chainDisplayName})`;
+  }
+  return networkKey;
+};
+
+// Get display name for chain abbreviation
+const getChainDisplayName = (chain: string): string => {
+  const chainMap: Record<string, string> = {
+    TRON: "TRON",
+    TRC20: "TRC20",
+    ERC20: "ERC20",
+    BSC: "BSC",
+    BEP20: "BEP20",
+    ETH: "Ethereum",
+  };
+  return chainMap[chain] || chain;
+};
+
 // Currency options
 const CURRENCY_OPTIONS = [
   { value: "USDT_ERC20", label: "USDT (ERC20)" },
@@ -104,6 +132,29 @@ interface AddAddressRequest {
   token: string;
 }
 
+// Get wallet address request type
+interface GetWalletAddressRequest {
+  userId: string;
+  productCode: string;
+  currency: string;
+}
+
+// Wallet address data from API
+interface WalletAddressData {
+  address: string;
+  addressType?: string;
+  derivePath?: string;
+}
+
+// Get wallet address response type
+interface GetWalletAddressResponse {
+  code: string;
+  message: string;
+  data: WalletAddressData;
+  success: boolean;
+  timestamp: number;
+}
+
 const AccountOpening = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -111,6 +162,7 @@ const AccountOpening = () => {
   const location = useLocation();
   const [copied, setCopied] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState("TRON");
+  const [walletAddress, setWalletAddress] = useState<string>("");
   const queryClient = useQueryClient();
 
   // Get token for API calls
@@ -187,6 +239,8 @@ const AccountOpening = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["walletInfo"] });
+      // Fetch wallet address after successful wallet creation
+      getAddressMutation.mutate();
     },
     onError: (err) => {
       toast({
@@ -195,6 +249,34 @@ const AccountOpening = () => {
         description: err.message,
       });
     }
+  });
+
+  // Get wallet address after creation
+  const getAddressMutation = useMutation({
+    mutationFn: async () => {
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+      return apiRequest<GetWalletAddressResponse>("/api/wallet/address/get", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productCode: "X_FINANCE",
+          currency: selectedCurrency
+        }),
+      });
+    },
+    onSuccess: (data) => {
+      if (data?.data?.address) {
+        setWalletAddress(data.data.address);
+      }
+    },
+    onError: (err) => {
+      // Don't show error toast for address fetch failure - wallet is already created
+      console.error("Failed to fetch wallet address:", err.message);
+    },
   });
 
   const addAddressMutation = useMutation({
@@ -249,6 +331,9 @@ const AccountOpening = () => {
     () => getDisplayAddress(addressesJson, selectedNetwork),
     [addressesJson, selectedNetwork]
   );
+
+  // Use fetched walletAddress if available, fallback to displayAddress from walletInfo
+  const displayAddressValue = walletAddress || displayAddress;
 
   const walletId = walletInfo?.walletId?.String || walletInfo?.address?.String || "";
 
@@ -448,12 +533,12 @@ const AccountOpening = () => {
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-sm font-mono break-all bg-background p-3 rounded-md">
-                    {displayAddress}
+                    {displayAddressValue}
                   </code>
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={() => copyToClipboard(displayAddress)}
+                    onClick={() => copyToClipboard(displayAddressValue)}
                     className="shrink-0"
                   >
                     {copied ? (

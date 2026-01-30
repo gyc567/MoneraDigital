@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"monera-digital/internal/coreapi"
+	"monera-digital/internal/dto"
 	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
@@ -17,10 +19,10 @@ import (
 
 type WalletService struct {
 	repo          repository.Wallet
-	coreAPIClient *coreapi.Client
+	coreAPIClient coreapi.CoreAPIClientInterface
 }
 
-func NewWalletService(repo repository.Wallet, coreAPIClient *coreapi.Client) *WalletService {
+func NewWalletService(repo repository.Wallet, coreAPIClient coreapi.CoreAPIClientInterface) *WalletService {
 	return &WalletService{repo: repo, coreAPIClient: coreAPIClient}
 }
 
@@ -158,6 +160,17 @@ func (s *WalletService) generateAddress(currency string) string {
 	return "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
 }
 
+// normalizeCurrencyKey normalizes the currency key for Core API requests.
+// TRX on TRON chain is mapped to USDT_TRON since TRX is the native token
+// and users typically want a USDT address on TRON.
+func normalizeCurrencyKey(token, chain, currentKey string) string {
+	// Map TRX + TRON to USDT_TRON (most common use case)
+	if token == "TRX" && chain == "TRON" {
+		return "USDT_TRON"
+	}
+	return currentKey
+}
+
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
 	// First try to find active/success wallet
 	w, err := s.repo.GetActiveWalletByUserID(ctx, userID)
@@ -184,6 +197,8 @@ type AddAddressRequest struct {
 	Token string
 }
 
+// AddAddress adds a new wallet address for the given chain and token.
+// It first tries to get the address from Core API, falling back to local generation if it fails.
 func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddressRequest) (*models.WalletCreationRequest, error) {
 	wallet, err := s.repo.GetActiveWalletByUserID(ctx, userID)
 	if err != nil {
@@ -193,6 +208,7 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return nil, errors.New("wallet not found")
 	}
 
+	// Parse existing addresses
 	addresses := make(map[string]string)
 	if wallet.Addresses.Valid && wallet.Addresses.String != "" {
 		if err := json.Unmarshal([]byte(wallet.Addresses.String), &addresses); err != nil {
@@ -200,13 +216,33 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		}
 	}
 
+	// Check if address already exists
 	addressKey := req.Token + "_" + req.Chain
+	// Normalize currency key (e.g., TRX_TRON → USDT_TRON)
+	addressKey = normalizeCurrencyKey(req.Token, req.Chain, addressKey)
 	if _, exists := addresses[addressKey]; exists {
 		return wallet, nil
 	}
 
-	addresses[addressKey] = s.generateAddress(addressKey)
+	// Get address from Core API (REQUIRED, no fallback)
+	if s.coreAPIClient == nil {
+		return nil, fmt.Errorf("Core API client not initialized")
+	}
 
+	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+		UserID:      userID,
+		ProductCode: wallet.ProductCode,
+		Currency:    addressKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address from Core API: %w", err)
+	}
+
+	newAddress := coreResp.Address
+	logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
+
+	// Update addresses map
+	addresses[addressKey] = newAddress
 	addressesJSON, _ := json.Marshal(addresses)
 	wallet.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
 	wallet.UpdatedAt = time.Now()
@@ -216,4 +252,78 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 	}
 
 	return wallet, nil
+}
+
+// GetAddressIncomeHistory 获取地址链上收款记录
+func (s *WalletService) GetAddressIncomeHistory(ctx context.Context, userID int, address string) ([]coreapi.AddressIncomeRecord, error) {
+	if s.coreAPIClient == nil {
+		return nil, fmt.Errorf("Core API client not initialized")
+	}
+
+	return s.coreAPIClient.GetIncomeHistory(ctx, coreapi.GetIncomeHistoryRequest{
+		Address: address,
+	})
+}
+
+// GetWalletAddress 获取钱包地址
+// 优先从 Core API 获取，如果失败则从本地数据库获取
+func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dto.GetWalletAddressRequest) (*dto.WalletAddress, error) {
+	// 优先从 Core API 获取
+	if s.coreAPIClient != nil {
+		addressInfo, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+			UserID:      userID,
+			ProductCode: req.ProductCode,
+			Currency:    req.Currency,
+		})
+		if err == nil {
+			return &dto.WalletAddress{
+				Address:     addressInfo.Address,
+				AddressType: addressInfo.AddressType,
+				DerivePath:  addressInfo.DerivePath,
+			}, nil
+		}
+		// 如果 Core API 返回错误，继续尝试从本地数据库获取
+		logger.Info("Core API GetAddress failed, falling back to local database", "error", err.Error())
+	}
+
+	// 从本地数据库获取钱包信息作为降级方案
+	wallet, err := s.GetWalletInfo(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wallet address: %v", err)
+	}
+	if wallet == nil {
+		return nil, fmt.Errorf("wallet not found")
+	}
+
+	// 解析 addresses JSON 并获取对应 currency 的地址
+	var address string
+	if wallet.Addresses.Valid && wallet.Addresses.String != "" {
+		addresses := make(map[string]string)
+		if err := json.Unmarshal([]byte(wallet.Addresses.String), &addresses); err != nil {
+			logger.Info("Failed to parse addresses JSON", "error", err.Error())
+		} else {
+			// 优先查找对应 currency 的地址
+			address = addresses[req.Currency]
+			// 如果找不到，尝试查找任一地址
+			if address == "" {
+				for _, v := range addresses {
+					address = v
+					break
+				}
+			}
+		}
+	}
+
+	// 如果没有找到地址，尝试使用单一的 address 字段
+	if address == "" && wallet.Address.Valid && wallet.Address.String != "" {
+		address = wallet.Address.String
+	}
+
+	if address == "" {
+		return nil, fmt.Errorf("wallet address not found")
+	}
+
+	return &dto.WalletAddress{
+		Address: address,
+	}, nil
 }
