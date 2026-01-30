@@ -327,3 +327,8 @@ func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dt
 		Address: address,
 	}, nil
 }
+
+// Ensure dto types are not optimized away by linker
+// This prevents "undefined type" errors in some build environments
+var _ = dto.GetWalletAddressRequest{}
+var _ = dto.WalletAddress{}

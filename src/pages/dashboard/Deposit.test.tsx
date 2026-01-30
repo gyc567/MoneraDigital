@@ -74,10 +74,15 @@ describe('Deposit Network Display', () => {
       });
 
       // Mock wallet API to return wallet info
-      global.fetch = vi.fn((url) => {
-        if (url === '/api/wallet/info') {
+      global.fetch = vi.fn((url: string | URL | Request) => {
+        const urlString = typeof url === 'string' ? url : url.toString();
+        if (urlString === '/api/wallet/info') {
           return Promise.resolve({
             ok: true,
+            status: 200,
+            statusText: 'OK',
+            headers: new Headers(),
+            redirected: false,
             json: () => Promise.resolve({
               status: 'SUCCESS',
               addresses: {
@@ -89,15 +94,19 @@ describe('Deposit Network Display', () => {
                 }),
               },
             }),
-          });
+          } as unknown as Response;
         }
-        if (url.startsWith('/api/deposits')) {
+        if (urlString.startsWith('/api/deposits')) {
           return Promise.resolve({
             ok: true,
+            status: 200,
+            statusText: 'OK',
+            headers: new Headers(),
+            redirected: false,
             json: () => Promise.resolve({ deposits: [] }),
-          });
+          } as unknown as Response);
         }
-        return Promise.reject(new Error(`Unexpected request to ${url}`));
+        return Promise.reject(new Error(`Unexpected request to ${urlString}`));
       });
 
       localStorage.setItem('token', 'mock-token');

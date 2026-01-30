@@ -38,3 +38,5 @@ nohup.out
 /.sisyphus
 .env*.local
 .worktrees/
+test-artifacts/
+openspec/

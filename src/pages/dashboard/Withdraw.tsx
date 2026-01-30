@@ -355,7 +355,6 @@ function Withdraw() {
         setIsConfirming(false);
         setIs2FADialogOpen(false);
         setTwoFactorCode("");
-        setPendingWithdrawal(null);
         await fetchHistory();
       } else {
         toast.error(data.error || "Failed to initiate withdrawal");
@@ -708,7 +707,6 @@ function Withdraw() {
               onClick={() => {
                 setIs2FADialogOpen(false);
                 setTwoFactorCode("");
-                setPendingWithdrawal(null);
               }}
               disabled={isVerifying2FA}
             >

@@ -119,6 +119,8 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		{
 			wallet.GET("/info", h.GetWalletInfo)
 			wallet.POST("/addresses", h.AddWalletAddress)
+			wallet.POST("/address/incomeHistory", h.GetAddressIncomeHistory)
+			wallet.POST("/address/get", h.GetWalletAddress)
 		}
 
 		deposits := protected.Group("/deposits")

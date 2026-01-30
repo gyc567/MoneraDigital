@@ -217,3 +217,122 @@ func (h *Handler) AddWalletAddress(c *gin.Context) {
 
 	c.JSON(http.StatusOK, wallet)
 }
+
+func (h *Handler) GetAddressIncomeHistory(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.GetAddressIncomeHistoryResponse{
+			Code:      "401",
+			Message:   "Unauthorized",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	var req dto.GetAddressIncomeHistoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.GetAddressIncomeHistoryResponse{
+			Code:      "400",
+			Message:   "Invalid request: address is required",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	// 调用 Core API 获取收入历史
+	records, err := h.WalletService.GetAddressIncomeHistory(c.Request.Context(), userID.(int), req.Address)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.GetAddressIncomeHistoryResponse{
+			Code:      "500",
+			Message:   "Failed to get income history: " + err.Error(),
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	// 转换为 DTO 类型
+	data := make([]dto.AddressIncomeRecord, len(records))
+	for i, r := range records {
+		data[i] = dto.AddressIncomeRecord{
+			TxKey:             r.TxKey,
+			TxHash:            r.TxHash,
+			CoinKey:           r.CoinKey,
+			TxAmount:          r.TxAmount,
+			Address:           r.Address,
+			TransactionStatus: r.TransactionStatus,
+			BlockHeight:       r.BlockHeight,
+			CreateTime:        r.CreateTime,
+			CompletedTime:     r.CompletedTime,
+		}
+	}
+
+	c.JSON(http.StatusOK, dto.GetAddressIncomeHistoryResponse{
+		Code:      "200",
+		Message:   "成功",
+		Data:      data,
+		Success:   true,
+		Timestamp: time.Now().UnixMilli(),
+	})
+}
+
+func (h *Handler) GetWalletAddress(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.GetWalletAddressResponse{
+			Code:      "401",
+			Message:   "Unauthorized",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	var req dto.GetWalletAddressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.GetWalletAddressResponse{
+			Code:      "400",
+			Message:   "Invalid request format",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	// 如果请求中没有 userId，从 JWT token 中获取
+	if req.UserID == "" {
+		req.UserID = strconv.Itoa(userID.(int))
+	}
+
+	// 验证必填字段
+	if req.UserID == "" || req.ProductCode == "" || req.Currency == "" {
+		c.JSON(http.StatusBadRequest, dto.GetWalletAddressResponse{
+			Code:      "400",
+			Message:   "userId, productCode and currency are required",
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	wallet, err := h.WalletService.GetWalletAddress(c.Request.Context(), userID.(int), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.GetWalletAddressResponse{
+			Code:      "500",
+			Message:   "Failed to get wallet address: " + err.Error(),
+			Success:   false,
+			Timestamp: time.Now().UnixMilli(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.GetWalletAddressResponse{
+		Code:      "200",
+		Message:   "成功",
+		Data:      *wallet,
+		Success:   true,
+		Timestamp: time.Now().UnixMilli(),
+	})
+}

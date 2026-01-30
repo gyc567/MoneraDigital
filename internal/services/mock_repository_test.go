@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"github.com/stretchr/testify/mock"
+	"monera-digital/internal/coreapi"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 )
@@ -75,6 +76,43 @@ func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, user
 	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
+func (m *MockWalletRepository) GetWalletByUserProductCurrency(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
+	args := m.Called(ctx, userID, productCode, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
+}
+
+// MockCoreAPIClient for testing Core API calls
+type MockCoreAPIClient struct {
+	mock.Mock
+}
+
+func (m *MockCoreAPIClient) CreateWallet(ctx context.Context, req coreapi.CreateWalletRequest) (*coreapi.CreateWalletResponse, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*coreapi.CreateWalletResponse), args.Error(1)
+}
+
+func (m *MockCoreAPIClient) GetAddress(ctx context.Context, req coreapi.GetAddressRequest) (*coreapi.AddressInfo, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*coreapi.AddressInfo), args.Error(1)
+}
+
+func (m *MockCoreAPIClient) GetIncomeHistory(ctx context.Context, req coreapi.GetIncomeHistoryRequest) ([]coreapi.AddressIncomeRecord, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]coreapi.AddressIncomeRecord), args.Error(1)
+}
+
 // MockAccountRepository
 type MockAccountRepository struct {
 	mock.Mock
@@ -139,40 +177,22 @@ func (m *MockAccountRepository) UnfreezeBalance(ctx context.Context, accountID i
 	return args.Error(0)
 }
 
-func (m *MockAccountRepository) GetAccountByUserIDAndCurrency(ctx context.Context, userID int64, currency string) (*repository.AccountModel, error) {
-	args := m.Called(ctx, userID, currency)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*repository.AccountModel), args.Error(1)
-}
-
-func (m *MockAccountRepository) GetAccountsByUserID(ctx context.Context, userID int64) ([]*repository.AccountModel, error) {
-	args := m.Called(ctx, userID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*repository.AccountModel), args.Error(1)
-}
-
-func (m *MockAccountRepository) FreezeBalance(ctx context.Context, accountID int64, amount string) error {
-	args := m.Called(ctx, accountID, amount)
-	return args.Error(0)
-}
-
-func (m *MockAccountRepository) UnfreezeBalance(ctx context.Context, accountID int64, amount string) error {
-	args := m.Called(ctx, accountID, amount)
-	return args.Error(0)
-}
-
-func (m *MockAccountRepository) AddBalance(ctx context.Context, accountID int64, amount string) error {
-	args := m.Called(ctx, accountID, amount)
-	return args.Error(0)
-}
-
 // MockJournalRepository
 type MockJournalRepository struct {
 	mock.Mock
+}
+
+func (m *MockJournalRepository) CreateJournal(ctx context.Context, journal *repository.JournalModel) error {
+	args := m.Called(ctx, journal)
+	return args.Error(0)
+}
+
+func (m *MockJournalRepository) GetJournalsByAccountID(ctx context.Context, accountID int64, limit, offset int) ([]*repository.JournalModel, int64, error) {
+	args := m.Called(ctx, accountID, limit, offset)
+	if args.Get(0) == nil {
+		return nil, 0, args.Error(2)
+	}
+	return args.Get(0).([]*repository.JournalModel), args.Get(1).(int64), args.Error(2)
 }
 
 func (m *MockJournalRepository) CreateJournalRecord(ctx context.Context, record *repository.JournalModel) error {
@@ -275,7 +295,7 @@ func (m *MockAddressRepository) GetByAddressAndChain(ctx context.Context, addres
 }
 
 // MockWealthRepository
- type MockWealthRepository struct {
+type MockWealthRepository struct {
 	mock.Mock
 }
 
@@ -366,27 +386,4 @@ func (m *MockWealthRepository) RenewOrder(ctx context.Context, order *repository
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*repository.WealthOrderModel), args.Error(1)
-}
-
-// MockJournalRepository
- type MockJournalRepository struct {
-	mock.Mock
-}
-
-func (m *MockJournalRepository) CreateJournal(ctx context.Context, journal *repository.JournalModel) error {
-	args := m.Called(ctx, journal)
-	return args.Error(0)
-}
-
-func (m *MockJournalRepository) GetJournalsByAccountID(ctx context.Context, accountID int64, limit, offset int) ([]*repository.JournalModel, int64, error) {
-	args := m.Called(ctx, accountID, limit, offset)
-	if args.Get(0) == nil {
-		return nil, 0, args.Error(2)
-	}
-	return args.Get(0).([]*repository.JournalModel), args.Get(1).(int64), args.Error(2)
-}
-
-func (m *MockJournalRepository) CreateJournalRecord(ctx context.Context, record *repository.JournalModel) error {
-	args := m.Called(ctx, record)
-	return args.Error(0)
 }

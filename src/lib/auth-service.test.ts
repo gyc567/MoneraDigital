@@ -2,13 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Set environment variable for JWT secret
 process.env.JWT_SECRET = 'test-secret';
 
-import { db } from './db';
 import { AuthService } from './auth-service';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-// Mock dependencies
-vi.mock('./db');
+// Mock db module - db module doesn't exist in frontend, so we mock it completely
+const mockDb = {
+  insert: vi.fn(),
+  select: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+};
+
+vi.mock('./db', () => ({
+  default: mockDb,
+  db: mockDb,
+}));
+
 vi.mock('jsonwebtoken');
 
 describe('AuthService', () => {
@@ -20,8 +30,8 @@ describe('AuthService', () => {
     it('should successfully register a user', async () => {
       const mockUser = { id: 1, email: 'test@example.com' };
       vi.spyOn(bcrypt, 'hash').mockResolvedValue('hashed_password' as never);
-      
-      (db as any).insert.mockReturnValue({
+
+      mockDb.insert.mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([mockUser]),
         }),
@@ -47,7 +57,7 @@ describe('AuthService', () => {
 
     it('should throw error if user already exists', async () => {
       vi.spyOn(bcrypt, 'hash').mockResolvedValue('hashed_password' as never);
-      (db as any).insert.mockReturnValue({
+      mockDb.insert.mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockRejectedValue({ code: '23505' }),
         }),
@@ -58,7 +68,7 @@ describe('AuthService', () => {
 
     it('should rethrow unknown errors', async () => {
       vi.spyOn(bcrypt, 'hash').mockResolvedValue('hashed_password' as never);
-      (db as any).insert.mockReturnValue({
+      mockDb.insert.mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockRejectedValue(new Error('DB Error')),
         }),
@@ -70,7 +80,7 @@ describe('AuthService', () => {
   describe('login', () => {
     it('should successfully login a user and return a token', async () => {
       const mockUser = { id: 1, email: 'test@example.com', password: 'hashed_password', twoFactorEnabled: false };
-      (db as any).select.mockReturnValue({
+      mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([mockUser]),
         }),
@@ -86,7 +96,7 @@ describe('AuthService', () => {
     });
 
     it('should throw error if user not found', async () => {
-      (db as any).select.mockReturnValue({
+      mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([]),
         }),
@@ -96,7 +106,7 @@ describe('AuthService', () => {
 
     it('should throw error if password incorrect', async () => {
       const mockUser = { id: 1, email: 'test@example.com', password: 'hashed_password' };
-      (db as any).select.mockReturnValue({
+      mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([mockUser]),
         }),

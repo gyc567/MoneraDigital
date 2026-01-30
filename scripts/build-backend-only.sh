@@ -9,13 +9,17 @@ echo "Current directory: $(pwd)"
 echo "Installing Go dependencies..."
 go mod download
 
-echo "Building Go backend..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/server/main.go
+echo "Cleaning build cache to avoid stale artifacts..."
+go clean -cache
+
+echo "Force rebuilding all packages..."
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags="-s -w" -o server ./cmd/server/main.go
 
 echo "Verifying server binary..."
 ls -la server
 chmod +x server
 
+echo ""
 echo "Build complete!"
 echo ""
 echo "Note: Frontend is deployed separately on Vercel"
