@@ -17,32 +17,13 @@
     ".opencode/rules/patterns.md"
   ],
 
-  "default_agent": "build",
-
-  "tui": {
-    "scroll_speed": 3,
-    "scroll_acceleration": {
-      "enabled": true
-    },
-    "diff_style": "auto"
-  },
-
-  "server": {
-    "port": 4096,
-    "hostname": "0.0.0.0",
-    "mdns": true
-  },
-
-  "compaction": {
-    "auto": true,
-    "prune": true
-  },
-
   "watcher": {
     "ignore": ["node_modules/**", "dist/**", ".git/**", ".next/**"]
   },
 
-  "permission": "allow",
+  "permission": {
+    "*": "allow"
+  },
 
   "formatter": {
     "prettier": {
