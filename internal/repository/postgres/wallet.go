@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"monera-digital/internal/models"
@@ -91,3 +92,106 @@ func (r *WalletRepository) GetActiveWalletByUserID(ctx context.Context, userID i
 	}
 	return &w, nil
 }
+
+// CreateUserWallet inserts a new user wallet record
+func (r *WalletRepository) CreateUserWallet(ctx context.Context, wallet *models.UserWallet) error {
+	query := `
+		INSERT INTO user_wallets (user_id, request_id, wallet_id, currency, address, address_type, derive_path, is_primary, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id`
+	return r.db.QueryRowContext(ctx, query,
+		wallet.UserID, wallet.RequestID, wallet.WalletID, wallet.Currency,
+		wallet.Address, wallet.AddressType, wallet.DerivePath, wallet.IsPrimary,
+		time.Now(), time.Now(),
+	).Scan(&wallet.ID)
+}
+
+// GetUserWalletsByUserID retrieves all wallets for a user
+func (r *WalletRepository) GetUserWalletsByUserID(ctx context.Context, userID int) ([]*models.UserWallet, error) {
+	query := `
+		SELECT id, user_id, request_id, wallet_id, currency, address, address_type, derive_path, status, is_primary, created_at, updated_at
+		FROM user_wallets WHERE user_id = $1 ORDER BY created_at DESC`
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var wallets []*models.UserWallet
+	for rows.Next() {
+		var w models.UserWallet
+		err := rows.Scan(
+			&w.ID, &w.UserID, &w.RequestID, &w.WalletID, &w.Currency,
+			&w.Address, &w.AddressType, &w.DerivePath, &w.Status, &w.IsPrimary,
+			&w.CreatedAt, &w.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		wallets = append(wallets, &w)
+	}
+	return wallets, rows.Err()
+}
+
+// GetUserWalletByCurrency retrieves a specific wallet by currency
+func (r *WalletRepository) GetUserWalletByCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	query := `
+		SELECT id, user_id, request_id, wallet_id, currency, address, address_type, derive_path, status, is_primary, created_at, updated_at
+		FROM user_wallets WHERE user_id = $1 AND currency = $2 LIMIT 1`
+
+	var w models.UserWallet
+	err := r.db.QueryRowContext(ctx, query, userID, currency).Scan(
+		&w.ID, &w.UserID, &w.RequestID, &w.WalletID, &w.Currency,
+		&w.Address, &w.AddressType, &w.DerivePath, &w.Status, &w.IsPrimary,
+		&w.CreatedAt, &w.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+// UpdateUserWalletStatus updates the status of a user wallet
+func (r *WalletRepository) UpdateUserWalletStatus(ctx context.Context, id int, status models.UserWalletStatus) error {
+	query := `UPDATE user_wallets SET status = $1, updated_at = NOW() WHERE id = $2`
+	result, err := r.db.ExecContext(ctx, query, status, id)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("user wallet not found: %d", id)
+	}
+	return nil
+}
+
+// GetActiveUserWallet retrieves the first active (non-cancelled) wallet for a user from user_wallets
+func (r *WalletRepository) GetActiveUserWallet(ctx context.Context, userID int) (*models.UserWallet, error) {
+	query := `
+		SELECT id, user_id, request_id, wallet_id, currency, address, address_type, derive_path, status, is_primary, created_at, updated_at
+		FROM user_wallets WHERE user_id = $1 AND status != 'CANCELLED' ORDER BY created_at DESC LIMIT 1`
+
+	var w models.UserWallet
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(
+		&w.ID, &w.UserID, &w.RequestID, &w.WalletID, &w.Currency,
+		&w.Address, &w.AddressType, &w.DerivePath, &w.Status, &w.IsPrimary,
+		&w.CreatedAt, &w.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+// Ensure WalletRepository implements repository.Wallet
+var _ repository.Wallet = (*WalletRepository)(nil)

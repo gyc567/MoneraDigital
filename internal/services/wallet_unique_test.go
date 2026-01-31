@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"monera-digital/internal/coreapi"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // MockWalletRepository implements WalletRepository interface for testing
@@ -83,6 +86,29 @@ func (m *MockWalletRepositoryUnique) GetActiveWalletByUserID(ctx context.Context
 	return m.GetRequestByUserID(ctx, userID)
 }
 
+func (m *MockWalletRepositoryUnique) CreateUserWallet(ctx context.Context, wallet *models.UserWallet) error {
+	wallet.ID = len(m.wallets) + 1
+	wallet.CreatedAt = time.Now()
+	wallet.UpdatedAt = time.Now()
+	return nil
+}
+
+func (m *MockWalletRepositoryUnique) GetUserWalletsByUserID(ctx context.Context, userID int) ([]*models.UserWallet, error) {
+	return nil, nil
+}
+
+func (m *MockWalletRepositoryUnique) GetUserWalletByCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	return nil, nil
+}
+
+func (m *MockWalletRepositoryUnique) UpdateUserWalletStatus(ctx context.Context, id int, status models.UserWalletStatus) error {
+	return nil
+}
+
+func (m *MockWalletRepositoryUnique) GetActiveUserWallet(ctx context.Context, userID int) (*models.UserWallet, error) {
+	return nil, nil
+}
+
 func getKey(userID int, productCode, currency string) string {
 	return string(rune(userID)) + "-" + productCode + "-" + currency
 }
@@ -92,7 +118,17 @@ var _ repository.Wallet = (*MockWalletRepositoryUnique)(nil)
 
 func TestCreateWallet_UniqueCheck(t *testing.T) {
 	repo := NewMockWalletRepositoryUnique()
-	service := NewWalletService(repo, nil)
+
+	// Create mock Core API client
+	mockCoreAPI := new(MockCoreAPIClient)
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Return(&coreapi.CreateWalletResponse{
+		WalletID:  "wallet_test_123",
+		Address:   "0xTestAddress",
+		Addresses: map[string]string{"USD": "0xTestAddress"},
+		Status:    "SUCCESS",
+	}, nil)
+
+	service := NewWalletService(repo, mockCoreAPI)
 
 	// Create first wallet
 	ctx := context.Background()
@@ -100,9 +136,6 @@ func TestCreateWallet_UniqueCheck(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create first wallet: %v", err)
 	}
-	// Manually set status to Success for mock because async task won't run in unit test environment effectively
-	w1.Status = models.WalletCreationStatusSuccess
-	repo.UpdateRequest(ctx, w1)
 
 	// Try to create duplicate wallet (same user, product, currency)
 	// Should return existing wallet, not create new one
@@ -111,8 +144,8 @@ func TestCreateWallet_UniqueCheck(t *testing.T) {
 		t.Fatalf("Failed to request duplicate wallet: %v", err)
 	}
 
-	if wallet2.ID != 1 {
-		t.Errorf("Expected wallet ID 1, got %d", wallet2.ID)
+	if wallet2.ID != w1.ID {
+		t.Errorf("Expected wallet ID %d, got %d", w1.ID, wallet2.ID)
 	}
 
 	// Try to create different wallet (same user, different currency)
@@ -121,7 +154,7 @@ func TestCreateWallet_UniqueCheck(t *testing.T) {
 		t.Fatalf("Failed to create different wallet: %v", err)
 	}
 
-	if wallet3.ID == 1 {
-		t.Errorf("Expected new wallet ID, got 1")
+	if wallet3.ID == w1.ID {
+		t.Errorf("Expected new wallet ID, got %d", w1.ID)
 	}
 }

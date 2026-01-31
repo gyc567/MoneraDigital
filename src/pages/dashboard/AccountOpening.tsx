@@ -146,15 +146,6 @@ interface WalletAddressData {
   derivePath?: string;
 }
 
-// Get wallet address response type
-interface GetWalletAddressResponse {
-  code: string;
-  message: string;
-  data: WalletAddressData;
-  success: boolean;
-  timestamp: number;
-}
-
 const AccountOpening = () => {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -162,7 +153,6 @@ const AccountOpening = () => {
   const location = useLocation();
   const [copied, setCopied] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState("TRON");
-  const [walletAddress, setWalletAddress] = useState<string>("");
   const queryClient = useQueryClient();
 
   // Get token for API calls
@@ -238,9 +228,9 @@ const AccountOpening = () => {
       });
     },
     onSuccess: () => {
+      // Invalidate walletInfo cache - data will be refreshed from wallet_creation_requests
       queryClient.invalidateQueries({ queryKey: ["walletInfo"] });
-      // Fetch wallet address after successful wallet creation
-      getAddressMutation.mutate();
+      // Address will be available from walletInfo.addresses after cache refresh
     },
     onError: (err) => {
       toast({
@@ -249,34 +239,6 @@ const AccountOpening = () => {
         description: err.message,
       });
     }
-  });
-
-  // Get wallet address after creation
-  const getAddressMutation = useMutation({
-    mutationFn: async () => {
-      if (!token) {
-        throw new Error("Not authenticated");
-      }
-      return apiRequest<GetWalletAddressResponse>("/api/wallet/address/get", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          productCode: "X_FINANCE",
-          currency: selectedCurrency
-        }),
-      });
-    },
-    onSuccess: (data) => {
-      if (data?.data?.address) {
-        setWalletAddress(data.data.address);
-      }
-    },
-    onError: (err) => {
-      // Don't show error toast for address fetch failure - wallet is already created
-      console.error("Failed to fetch wallet address:", err.message);
-    },
   });
 
   const addAddressMutation = useMutation({
@@ -332,8 +294,8 @@ const AccountOpening = () => {
     [addressesJson, selectedNetwork]
   );
 
-  // Use fetched walletAddress if available, fallback to displayAddress from walletInfo
-  const displayAddressValue = walletAddress || displayAddress;
+  // Address comes from walletInfo.addresses after cache refresh
+  const displayAddressValue = displayAddress;
 
   const walletId = walletInfo?.walletId?.String || walletInfo?.address?.String || "";
 

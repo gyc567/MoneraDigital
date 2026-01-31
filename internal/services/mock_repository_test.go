@@ -84,6 +84,40 @@ func (m *MockWalletRepository) GetWalletByUserProductCurrency(ctx context.Contex
 	return args.Get(0).(*models.WalletCreationRequest), args.Error(1)
 }
 
+func (m *MockWalletRepository) CreateUserWallet(ctx context.Context, wallet *models.UserWallet) error {
+	args := m.Called(ctx, wallet)
+	return args.Error(0)
+}
+
+func (m *MockWalletRepository) GetUserWalletsByUserID(ctx context.Context, userID int) ([]*models.UserWallet, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.UserWallet), args.Error(1)
+}
+
+func (m *MockWalletRepository) GetUserWalletByCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	args := m.Called(ctx, userID, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserWallet), args.Error(1)
+}
+
+func (m *MockWalletRepository) UpdateUserWalletStatus(ctx context.Context, id int, status models.UserWalletStatus) error {
+	args := m.Called(ctx, id, status)
+	return args.Error(0)
+}
+
+func (m *MockWalletRepository) GetActiveUserWallet(ctx context.Context, userID int) (*models.UserWallet, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserWallet), args.Error(1)
+}
+
 // MockCoreAPIClient for testing Core API calls
 type MockCoreAPIClient struct {
 	mock.Mock

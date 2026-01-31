@@ -85,11 +85,6 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			accounts.POST("/unfreeze", accountHandler.UnfreezeBalance)
 			accounts.POST("/transfer", accountHandler.Transfer)
 		}
-
-		wallet := public.Group("/wallet")
-		{
-			wallet.POST("/create", h.CreateWallet)
-		}
 	}
 
 	// Protected routes
@@ -118,6 +113,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		wallet := protected.Group("/wallet")
 		{
 			wallet.GET("/info", h.GetWalletInfo)
+			wallet.POST("/create", h.CreateWallet)
 			wallet.POST("/addresses", h.AddWalletAddress)
 			wallet.POST("/address/incomeHistory", h.GetAddressIncomeHistory)
 			wallet.POST("/address/get", h.GetWalletAddress)

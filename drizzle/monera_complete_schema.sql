@@ -370,6 +370,31 @@ CREATE TABLE IF NOT EXISTS wallet_creation_requests (
 CREATE INDEX IF NOT EXISTS idx_wallet_creation_requests_user_id ON wallet_creation_requests(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_requests_user_product_currency ON wallet_creation_requests(user_id, product_code, currency) WHERE status = 'SUCCESS';
 
+-- 3.10 User Wallets
+CREATE TABLE IF NOT EXISTS user_wallets (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_id VARCHAR(36) REFERENCES wallet_creation_requests(request_id) ON DELETE SET NULL,
+  wallet_id VARCHAR(100) NOT NULL,
+  currency VARCHAR(50) NOT NULL,
+  address VARCHAR(255) NOT NULL,
+  address_type VARCHAR(50),
+  derive_path VARCHAR(100),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL' CHECK (status IN ('NORMAL', 'FROZEN', 'CANCELLED')),
+  is_primary BOOLEAN DEFAULT FALSE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_wallets_user_id ON user_wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_wallets_user_currency ON user_wallets(user_id, currency);
+
+COMMENT ON TABLE user_wallets IS 'Individual wallet addresses for users';
+COMMENT ON COLUMN user_wallets.request_id IS 'Reference to wallet_creation_requests (nullable for manual additions)';
+COMMENT ON COLUMN user_wallets.currency IS 'Currency/network (e.g., USDT_ERC20, TRON)';
+COMMENT ON COLUMN user_wallets.status IS 'Wallet status: NORMAL, FROZEN, CANCELLED';
+COMMENT ON COLUMN user_wallets.is_primary IS 'Primary wallet for the currency';
+
 -- 4.1 Wealth Product Approval
 CREATE TABLE IF NOT EXISTS wealth_product_approval (
   id BIGSERIAL PRIMARY KEY,
@@ -546,6 +571,10 @@ COMMENT ON TABLE withdrawal_verification IS 'Withdrawal verification codes and a
 COMMENT ON TABLE wallet_creation_requests IS 'Wallet creation requests with product and currency support';
 COMMENT ON COLUMN wallet_creation_requests.product_code IS 'Product code for the wallet (e.g., X_FINANCE)';
 COMMENT ON COLUMN wallet_creation_requests.currency IS 'Currency code for the wallet (e.g., TRON, USDT)';
+COMMENT ON TABLE user_wallets IS 'Individual wallet addresses for users';
+COMMENT ON COLUMN user_wallets.request_id IS 'Reference to wallet_creation_requests';
+COMMENT ON COLUMN user_wallets.currency IS 'Currency/network (e.g., USDT_ERC20, TRON)';
+COMMENT ON COLUMN user_wallets.is_primary IS 'Primary wallet for the currency';
 COMMENT ON TABLE wealth_product_approval IS 'Wealth product approval workflow';
 COMMENT ON TABLE account_adjustment IS 'Manual account adjustments';
 COMMENT ON TABLE audit_trail IS 'Comprehensive audit trail for all operations';
@@ -556,6 +585,72 @@ COMMENT ON TABLE reconciliation_error_log IS 'Reconciliation error records';
 COMMENT ON TABLE manual_review_queue IS 'Manual review queue items';
 COMMENT ON TABLE business_freeze_status IS 'Global business freeze status';
 COMMENT ON VIEW v_account_available IS 'Available account balance view';
+
+-- ====================================================================
+-- MIGRATION SCRIPTS (Reference)
+-- ====================================================================
+
+-- Migration 008: Create user_wallets table (Initial creation)
+-- This creates the table with NOT NULL request_id (later made nullable by migration 009)
+/*
+CREATE TABLE IF NOT EXISTS user_wallets (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    request_id VARCHAR(36) NOT NULL REFERENCES wallet_creation_requests(request_id) ON DELETE SET NULL,
+    wallet_id VARCHAR(100) NOT NULL,
+    currency VARCHAR(50) NOT NULL,
+    address VARCHAR(255) NOT NULL,
+    address_type VARCHAR(50),
+    derive_path VARCHAR(100),
+    is_primary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_wallets_user_id ON user_wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_wallets_user_currency ON user_wallets(user_id, currency);
+*/
+
+-- Migration 009: Add status field and make request_id nullable
+-- Applied to fix: 500 error on POST /api/wallet/addresses
+-- Root cause: GetActiveUserWallet query referenced status column that didn't exist
+/*
+-- Step 1: Remove NOT NULL from request_id
+ALTER TABLE user_wallets ALTER COLUMN request_id DROP NOT NULL;
+
+-- Step 2: Add status column with default NORMAL
+ALTER TABLE user_wallets ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'NORMAL';
+
+-- Step 3: Add check constraint for valid status values
+ALTER TABLE user_wallets DROP CONSTRAINT IF EXISTS ck_user_wallets_status;
+ALTER TABLE user_wallets ADD CONSTRAINT ck_user_wallets_status CHECK (status IN ('NORMAL', 'FROZEN', 'CANCELLED'));
+
+-- Verification query:
+-- SELECT column_name, data_type, is_nullable, column_default
+-- FROM information_schema.columns
+-- WHERE table_name = 'user_wallets'
+-- ORDER BY ordinal_position;
+*/
+
+-- ====================================================================
+-- MIGRATION HISTORY TABLE
+-- ====================================================================
+
+-- Migration tracking table (if not already exists)
+/*
+CREATE TABLE IF NOT EXISTS migrations (
+    id SERIAL PRIMARY KEY,
+    version VARCHAR(10) NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    executed_at TIMESTAMP DEFAULT NOW() NOT NULL
+);
+
+-- Record migrations
+INSERT INTO migrations (version, name, executed_at) VALUES
+('008', 'Create user_wallets table for storing individual wallet addresses', NOW()),
+('009', 'Add status field to user_wallets and remove NOT NULL from request_id', NOW())
+ON CONFLICT (version) DO NOTHING;
+*/
 
 -- ====================================================================
 -- END OF SCHEMA

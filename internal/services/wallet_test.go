@@ -117,8 +117,9 @@ func TestWalletService_AddAddress_NotFound(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
 	service := NewWalletService(mockRepo, nil)
 
-	// No wallet exists
+	// No wallet exists in either table
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(nil, nil)
+	mockRepo.On("GetActiveUserWallet", mock.Anything, 1).Return(nil, nil)
 
 	_, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
 		Chain: "TRON",
@@ -127,6 +128,41 @@ func TestWalletService_AddAddress_NotFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "wallet not found")
+}
+
+func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
+	mockRepo := new(MockWalletRepository)
+	mockCoreAPI := new(MockCoreAPIClient)
+	service := NewWalletService(mockRepo, mockCoreAPI)
+
+	// wallet_creation_requests returns nil (no active request)
+	// but user_wallets has an active wallet with USDT_TRON
+	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(nil, nil)
+	mockRepo.On("GetActiveUserWallet", mock.Anything, 1).Return(&models.UserWallet{
+		ID:        1,
+		UserID:    1,
+		WalletID:  "wallet123",
+		Currency:  "USDT_TRON",
+		Address:   "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
+		Status:    models.UserWalletStatusNormal,
+		IsPrimary: true,
+	}, nil)
+
+	// Request for ETH_ERC20 - should call Core API since it doesn't exist yet
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
+		Address: "0xTMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9",
+	}, nil)
+	mockRepo.On("UpdateRequest", mock.Anything, mock.AnythingOfType("*models.WalletCreationRequest")).Return(nil)
+
+	result, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
+		Chain: "ERC20",
+		Token: "ETH",
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, mock.Anything)
+	mockRepo.AssertCalled(t, "UpdateRequest", mock.Anything, mock.Anything)
 }
 
 func TestWalletService_AddAddress_InvalidJSON(t *testing.T) {

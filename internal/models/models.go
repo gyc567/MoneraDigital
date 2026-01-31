@@ -48,6 +48,15 @@ const (
 	WalletCreationStatusFailed   WalletCreationStatus = "FAILED"
 )
 
+// UserWalletStatus represents the status of a user wallet
+type UserWalletStatus string
+
+const (
+	UserWalletStatusNormal    UserWalletStatus = "NORMAL"
+	UserWalletStatusFrozen    UserWalletStatus = "FROZEN"
+	UserWalletStatusCancelled UserWalletStatus = "CANCELLED"
+)
+
 // User model
 type User struct {
 	ID                   int            `json:"id" db:"id"`
@@ -101,6 +110,22 @@ type WalletCreationRequest struct {
 	ErrorMessage sql.NullString       `json:"errorMessage" db:"error_message"`
 	CreatedAt    time.Time            `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time            `json:"updatedAt" db:"updated_at"`
+}
+
+// UserWallet model - stores individual wallet addresses for users
+type UserWallet struct {
+	ID          int              `json:"id" db:"id"`
+	UserID      int              `json:"userId" db:"user_id"`
+	RequestID   sql.NullString   `json:"requestId,omitempty" db:"request_id"` // Reference to wallet_creation_requests (nullable for manual additions)
+	WalletID    string           `json:"walletId" db:"wallet_id"`
+	Currency    string           `json:"currency" db:"currency"` // e.g., USDT_ERC20, TRON
+	Address     string           `json:"address" db:"address"`
+	AddressType sql.NullString   `json:"addressType,omitempty" db:"address_type"`
+	DerivePath  sql.NullString   `json:"derivePath,omitempty" db:"derive_path"`
+	Status      UserWalletStatus `json:"status" db:"status"`
+	IsPrimary   bool             `json:"isPrimary" db:"is_primary"`
+	CreatedAt   time.Time        `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time        `json:"updatedAt" db:"updated_at"`
 }
 
 // LendingPosition model

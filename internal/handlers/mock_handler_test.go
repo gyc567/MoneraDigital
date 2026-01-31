@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"context"
+	"monera-digital/internal/coreapi"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
 	"monera-digital/internal/services"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // MockWalletRepository for handler tests
@@ -53,13 +56,72 @@ func (m *MockWalletRepository) GetActiveWalletByUserID(ctx context.Context, user
 	return nil, nil
 }
 
+func (m *MockWalletRepository) CreateUserWallet(ctx context.Context, wallet *models.UserWallet) error {
+	return nil
+}
+
+func (m *MockWalletRepository) GetUserWalletsByUserID(ctx context.Context, userID int) ([]*models.UserWallet, error) {
+	return nil, nil
+}
+
+func (m *MockWalletRepository) GetUserWalletByCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	return nil, nil
+}
+
+func (m *MockWalletRepository) UpdateUserWalletStatus(ctx context.Context, id int, status models.UserWalletStatus) error {
+	return nil
+}
+
+func (m *MockWalletRepository) GetActiveUserWallet(ctx context.Context, userID int) (*models.UserWallet, error) {
+	return nil, nil
+}
+
 // Interface check
 var _ repository.Wallet = (*MockWalletRepository)(nil)
+
+// MockCoreAPIClient for handler tests
+type MockCoreAPIClientForHandler struct {
+	mock.Mock
+}
+
+func (m *MockCoreAPIClientForHandler) CreateWallet(ctx context.Context, req coreapi.CreateWalletRequest) (*coreapi.CreateWalletResponse, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*coreapi.CreateWalletResponse), args.Error(1)
+}
+
+func (m *MockCoreAPIClientForHandler) GetAddress(ctx context.Context, req coreapi.GetAddressRequest) (*coreapi.AddressInfo, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*coreapi.AddressInfo), args.Error(1)
+}
+
+func (m *MockCoreAPIClientForHandler) GetIncomeHistory(ctx context.Context, req coreapi.GetIncomeHistoryRequest) ([]coreapi.AddressIncomeRecord, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]coreapi.AddressIncomeRecord), args.Error(1)
+}
 
 // Setup test handler with mock service
 func newMockHandler() *Handler {
 	mockRepo := NewMockWalletRepository()
-	walletService := services.NewWalletService(mockRepo, nil)
+	mockCoreAPI := new(MockCoreAPIClientForHandler)
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Return(&coreapi.CreateWalletResponse{
+		WalletID:  "wallet_test_123",
+		Address:   "0xTestAddress",
+		Addresses: map[string]string{"USD": "0xTestAddress"},
+		Status:    "SUCCESS",
+	}, nil)
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
+		Address: "0xTestAddress",
+	}, nil)
+	walletService := services.NewWalletService(mockRepo, mockCoreAPI)
 
 	h := &Handler{
 		WalletService: walletService,

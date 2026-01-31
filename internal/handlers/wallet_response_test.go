@@ -8,9 +8,14 @@ import (
 	"testing"
 
 	"monera-digital/internal/dto"
+	"monera-digital/internal/logger"
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	_ = logger.Init("test")
+}
 
 func TestCreateWallet_SuccessResponseFormat(t *testing.T) {
 	h := newMockHandler()

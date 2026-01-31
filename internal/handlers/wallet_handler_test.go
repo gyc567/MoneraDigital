@@ -9,10 +9,15 @@ import (
 
 	"monera-digital/internal/coreapi"
 	"monera-digital/internal/dto"
+	"monera-digital/internal/logger"
 	"monera-digital/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	_ = logger.Init("test")
+}
 
 func TestCreateWallet_MissingFields(t *testing.T) {
 	h := newTestHandler()
@@ -354,15 +359,15 @@ func TestGetWalletAddress_MissingUserId(t *testing.T) {
 	// 直接调用 Handler
 	h.GetWalletAddress(c)
 
-	// 验证返回错误响应
+	// 验证返回成功响应（因为 JWT 中有 userID，handler 会使用它）
 	var response dto.GetWalletAddressResponse
 	if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	// 因为 WalletService.coreAPIClient 是 nil，应该返回错误
-	if response.Code != "500" && response.Code != "400" {
-		t.Errorf("Expected code '500' or '400', got '%s'", response.Code)
+	// 因为 JWT 中有 userID，handler 应该成功返回
+	if response.Code != "200" {
+		t.Errorf("Expected code '200', got '%s'", response.Code)
 	}
 }
 

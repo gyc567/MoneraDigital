@@ -112,9 +112,9 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 
 	wallet, err := h.WalletService.CreateWallet(c.Request.Context(), userID, req.ProductCode, req.Currency)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.CreateWalletResponse{
-			Code:      "500",
-			Message:   "Failed to create wallet",
+		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
+			Code:      "WALLET_CREATE_FAILED",
+			Message:   err.Error(),
 			Success:   false,
 			Timestamp: time.Now().UnixMilli(),
 		})
@@ -207,9 +207,19 @@ func (h *Handler) AddWalletAddress(c *gin.Context) {
 		Token: req.Token,
 	})
 	if err != nil {
+		// Return 400 for business logic errors (wallet not found, etc.)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "wallet not found") {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "WALLET_NOT_FOUND",
+				"message": "Please create a wallet first before adding addresses",
+				"code":    "WALLET_NOT_FOUND",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Internal Server Error",
-			"message": err.Error(),
+			"message": errMsg,
 			"code":    "ADD_ADDRESS_ERROR",
 		})
 		return
