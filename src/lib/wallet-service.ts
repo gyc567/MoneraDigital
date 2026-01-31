@@ -32,7 +32,7 @@ export class WalletService {
       throw new Error('Not authenticated');
     }
 
-    const response = await fetch('/api/v1/wallet/create', {
+    const response = await fetch('/api/wallet/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
