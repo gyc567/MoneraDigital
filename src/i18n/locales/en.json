@@ -609,7 +609,7 @@
     "copy": "Copy Address",
     "copied": "Copied!",
     "minDeposit": "Minimum deposit: 10 USDT",
-    "warning": "Ensure you are sending via {network} network. Sending to the wrong network may result in loss of funds.",
+    "warning": "Ensure you are sending via {{network}} network. Sending to the wrong network may result in loss of funds.",
     "history": "Deposit History",
     "status": {
       "PENDING": "Pending",

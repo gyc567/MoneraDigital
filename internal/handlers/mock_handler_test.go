@@ -76,6 +76,14 @@ func (m *MockWalletRepository) GetActiveUserWallet(ctx context.Context, userID i
 	return nil, nil
 }
 
+func (m *MockWalletRepository) AddUserWalletAddress(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
+	return wallet, nil
+}
+
+func (m *MockWalletRepository) GetUserWalletByUserAndCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	return nil, nil
+}
+
 // Interface check
 var _ repository.Wallet = (*MockWalletRepository)(nil)
 

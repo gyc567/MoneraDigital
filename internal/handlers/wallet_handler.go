@@ -225,7 +225,16 @@ func (h *Handler) AddWalletAddress(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, wallet)
+	c.JSON(http.StatusOK, gin.H{
+		"walletId":    wallet.WalletID,
+		"currency":    wallet.Currency,
+		"address":     wallet.Address,
+		"addressType": wallet.AddressType.String,
+		"derivePath":  wallet.DerivePath.String,
+		"status":      string(wallet.Status),
+		"isPrimary":   wallet.IsPrimary,
+		"createdAt":   wallet.CreatedAt.Format("2006-01-02 15:04:05"),
+	})
 }
 
 func (h *Handler) GetAddressIncomeHistory(c *gin.Context) {

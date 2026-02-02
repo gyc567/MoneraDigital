@@ -193,5 +193,32 @@ func (r *WalletRepository) GetActiveUserWallet(ctx context.Context, userID int) 
 	return &w, nil
 }
 
+// AddUserWalletAddress adds a new address for the user, checking if it already exists.
+// Returns the existing wallet if found, or creates a new one.
+func (r *WalletRepository) AddUserWalletAddress(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
+	// Check if wallet already exists for this user and currency
+	existing, err := r.GetUserWalletByCurrency(ctx, wallet.UserID, wallet.Currency)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	// Create new wallet address
+	wallet.Status = models.UserWalletStatusNormal
+	wallet.IsPrimary = false
+	err = r.CreateUserWallet(ctx, wallet)
+	if err != nil {
+		return nil, err
+	}
+	return wallet, nil
+}
+
+// GetUserWalletByUserAndCurrency gets wallet by user and currency
+func (r *WalletRepository) GetUserWalletByUserAndCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	return r.GetUserWalletByCurrency(ctx, userID, currency)
+}
+
 // Ensure WalletRepository implements repository.Wallet
 var _ repository.Wallet = (*WalletRepository)(nil)

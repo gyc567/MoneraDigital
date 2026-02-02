@@ -109,6 +109,14 @@ func (m *MockWalletRepositoryUnique) GetActiveUserWallet(ctx context.Context, us
 	return nil, nil
 }
 
+func (m *MockWalletRepositoryUnique) AddUserWalletAddress(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
+	return wallet, nil
+}
+
+func (m *MockWalletRepositoryUnique) GetUserWalletByUserAndCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	return nil, nil
+}
+
 func getKey(userID int, productCode, currency string) string {
 	return string(rune(userID)) + "-" + productCode + "-" + currency
 }

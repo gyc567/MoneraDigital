@@ -118,6 +118,22 @@ func (m *MockWalletRepository) GetActiveUserWallet(ctx context.Context, userID i
 	return args.Get(0).(*models.UserWallet), args.Error(1)
 }
 
+func (m *MockWalletRepository) AddUserWalletAddress(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
+	args := m.Called(ctx, wallet)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserWallet), args.Error(1)
+}
+
+func (m *MockWalletRepository) GetUserWalletByUserAndCurrency(ctx context.Context, userID int, currency string) (*models.UserWallet, error) {
+	args := m.Called(ctx, userID, currency)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserWallet), args.Error(1)
+}
+
 // MockCoreAPIClient for testing Core API calls
 type MockCoreAPIClient struct {
 	mock.Mock

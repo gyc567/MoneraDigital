@@ -132,6 +132,34 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
 		}
 		return nil, nil
 	}
+
+	// Merge addresses from user_wallets into wallet_creation_requests
+	userWallets, err := s.repo.GetUserWalletsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(userWallets) > 0 {
+		// Parse existing addresses
+		addresses := make(map[string]string)
+		if w.Addresses.Valid && w.Addresses.String != "" {
+			if err := json.Unmarshal([]byte(w.Addresses.String), &addresses); err != nil {
+				logger.Warn("Failed to parse existing addresses", "error", err.Error())
+			}
+		}
+
+		// Merge user_wallets addresses
+		for _, uw := range userWallets {
+			if uw.Address != "" {
+				addresses[uw.Currency] = uw.Address
+			}
+		}
+
+		// Update addresses JSON
+		addressesJSON, _ := json.Marshal(addresses)
+		w.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
+	}
+
 	return w, nil
 }
 
@@ -141,15 +169,15 @@ type AddAddressRequest struct {
 }
 
 // AddAddress adds a new wallet address for the given chain and token.
-// It first tries to get the address from Core API, falling back to local generation if it fails.
-func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddressRequest) (*models.WalletCreationRequest, error) {
-	// Try wallet_creation_requests first (primary source)
+// It gets the address from Core API and stores it in user_wallets table.
+func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddressRequest) (*models.UserWallet, error) {
+	// Get user's wallet info to get wallet_id and productCode
 	wallet, err := s.repo.GetActiveWalletByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Fall back to user_wallets (secondary source)
+	// Fall back to user_wallets if no wallet_creation_requests
 	if wallet == nil {
 		userWallet, err := s.repo.GetActiveUserWallet(ctx, userID)
 		if err != nil {
@@ -164,20 +192,18 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return nil, errors.New("wallet not found")
 	}
 
-	// Parse existing addresses
-	addresses := make(map[string]string)
-	if wallet.Addresses.Valid && wallet.Addresses.String != "" {
-		if err := json.Unmarshal([]byte(wallet.Addresses.String), &addresses); err != nil {
-			return nil, errors.New("failed to parse existing addresses")
-		}
-	}
-
-	// Check if address already exists
+	// Calculate currency key for the address
 	addressKey := req.Token + "_" + req.Chain
-	// Normalize currency key (e.g., TRX_TRON → USDT_TRON)
 	addressKey = normalizeCurrencyKey(req.Token, req.Chain, addressKey)
-	if _, exists := addresses[addressKey]; exists {
-		return wallet, nil
+
+	// Check if address already exists in user_wallets
+	existingWallet, err := s.repo.GetUserWalletByUserAndCurrency(ctx, userID, addressKey)
+	if err != nil {
+		return nil, err
+	}
+	if existingWallet != nil {
+		logger.Info("Address already exists", "userId", userID, "currency", addressKey)
+		return existingWallet, nil
 	}
 
 	// Get address from Core API (REQUIRED, no fallback)
@@ -194,20 +220,36 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return nil, fmt.Errorf("failed to get address from Core API: %w", err)
 	}
 
-	newAddress := coreResp.Address
 	logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
 
-	// Update addresses map
-	addresses[addressKey] = newAddress
-	addressesJSON, _ := json.Marshal(addresses)
-	wallet.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
-	wallet.UpdatedAt = time.Now()
+	// Create new UserWallet record
+	newWallet := &models.UserWallet{
+		UserID:    userID,
+		WalletID:  wallet.WalletID.String,
+		Currency:  addressKey,
+		Address:   coreResp.Address,
+		Status:    models.UserWalletStatusNormal,
+		IsPrimary: false,
+	}
 
-	if err := s.repo.UpdateRequest(ctx, wallet); err != nil {
+	// Set optional fields if available
+	if coreResp.AddressType != nil {
+		newWallet.AddressType = sql.NullString{String: *coreResp.AddressType, Valid: true}
+	}
+	if coreResp.DerivePath != nil {
+		newWallet.DerivePath = sql.NullString{String: *coreResp.DerivePath, Valid: true}
+	}
+	if wallet.RequestID != "" {
+		newWallet.RequestID = sql.NullString{String: wallet.RequestID, Valid: true}
+	}
+
+	// Store in user_wallets table
+	result, err := s.repo.AddUserWalletAddress(ctx, newWallet)
+	if err != nil {
 		return nil, err
 	}
 
-	return wallet, nil
+	return result, nil
 }
 
 // GetAddressIncomeHistory 获取地址链上收款记录

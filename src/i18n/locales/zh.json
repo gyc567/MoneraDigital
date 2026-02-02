@@ -639,7 +639,7 @@
     "copy": "复制地址",
     "copied": "已复制！",
     "minDeposit": "最小充值金额：10 USDT",
-    "warning": "请务必确认您选择的是 {network} 网络。充值到错误的网络将无法找回。",
+    "warning": "请务必确认您选择的是 {{network}} 网络。充值到错误的网络将无法找回。",
     "history": "充值记录",
     "status": {
       "PENDING": "确认中",
