@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"os"
-
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -40,85 +38,34 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 	// Create 2FA handler
 	twofaHandler := handlers.NewTwoFAHandler(cont.TwoFAService)
 
-<<<<<<< Updated upstream
-	// Account System Client - Use BACKEND_URL from environment, default to localhost for backward compatibility
-	accountBaseURL := os.Getenv("BACKEND_URL")
-	if accountBaseURL == "" {
-		accountBaseURL = "http://localhost:8081"
-	}
-	accountClient := account.NewClient(accountBaseURL)
-	accountHandler := &handlers.AccountHandler{Client: accountClient}
+	// Root health check endpoint (backup)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
-	// Public routes
-	public := router.Group("/api")
+	// API routes
+	api := router.Group("/api")
+
+	// ==================== PUBLIC ROUTES (No Auth Required) ====================
+	public := api.Group("")
 	{
-		// API Health check
-=======
-	// Public routes with /api prefix
-	public := router.Group("/api")
-	{
-		// Health check endpoint for Vite proxy
->>>>>>> Stashed changes
+		// Health check
 		public.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})
 
-<<<<<<< Updated upstream
-=======
-		// Authentication routes (public for register/login, no auth required)
->>>>>>> Stashed changes
+		// Authentication routes
 		auth := public.Group("/auth")
 		{
 			auth.POST("/register", h.Register)
 			auth.POST("/login", h.Login)
 			auth.POST("/refresh", h.RefreshToken)
 			auth.POST("/logout", h.Logout)
-<<<<<<< Updated upstream
-			// 2FA验证登录 - 公开端点，因为此时还没有JWT
+
+			// 2FA verification login - public endpoint because no JWT exists yet
 			auth.POST("/2fa/verify-login", h.Verify2FALogin)
-			// 跳过2FA设置 - 公开端点
+			// Skip 2FA setup - public endpoint
 			auth.POST("/2fa/skip", h.Skip2FALogin)
-		}
-
-		webhooks := public.Group("/webhooks")
-		{
-			webhooks.POST("/core/deposit", h.HandleDepositWebhook)
-		}
-
-		// Account System Routes
-		accounts := public.Group("/accounts")
-		{
-			accounts.GET("", accountHandler.GetUserAccounts)
-			accounts.POST("", accountHandler.CreateAccount)
-			accounts.GET("/history", accountHandler.GetAccountHistory)
-			accounts.POST("/freeze", accountHandler.FreezeBalance)
-			accounts.POST("/unfreeze", accountHandler.UnfreezeBalance)
-			accounts.POST("/transfer", accountHandler.Transfer)
-		}
-	}
-
-	// Protected routes
-	protected := router.Group("/api")
-	protected.Use(middleware.AuthMiddleware(cont.JWTSecret))
-	{
-		auth := protected.Group("/auth")
-		{
-=======
->>>>>>> Stashed changes
-			auth.GET("/me", h.GetMe)
-
-			// 2FA endpoints (public for setup, no JWT required)
-			twofa := auth.Group("/2fa")
-			{
-				twofa.POST("/setup", twofaHandler.Setup2FA)
-				twofa.POST("/enable", twofaHandler.Enable2FA)
-				twofa.POST("/verify", twofaHandler.Verify2FA)
-				twofa.POST("/disable", twofaHandler.Disable2FA)
-				twofa.GET("/status", twofaHandler.Get2FAStatus)
-			}
-
-			// 2FA verification for login
-			auth.POST("/2fa/verify-login", h.Verify2FALogin)
 		}
 
 		// Webhook routes (public)
@@ -128,10 +75,26 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		}
 	}
 
-	// Protected routes (require JWT authentication)
-	protected := public.Group("/")
+	// ==================== PROTECTED ROUTES (JWT Auth Required) ====================
+	protected := api.Group("")
 	protected.Use(middleware.AuthMiddleware(cont.JWTSecret))
 	{
+		// Auth routes
+		protectedAuth := protected.Group("/auth")
+		{
+			protectedAuth.GET("/me", h.GetMe)
+
+			// 2FA endpoints
+			twofa := protectedAuth.Group("/2fa")
+			{
+				twofa.POST("/setup", twofaHandler.Setup2FA)
+				twofa.POST("/enable", twofaHandler.Enable2FA)
+				twofa.POST("/verify", twofaHandler.Verify2FA)
+				twofa.POST("/disable", twofaHandler.Disable2FA)
+				twofa.GET("/status", twofaHandler.Get2FAStatus)
+			}
+		}
+
 		// Assets routes
 		assets := protected.Group("/assets")
 		{
@@ -189,13 +152,5 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			wealth.GET("/orders", h.GetOrders)
 			wealth.POST("/redeem", h.Redeem)
 		}
-
-		// Root health check endpoint (backup)
-		router.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok"})
-		})
-
-		// Core Account System Mock API
-		// core.SetupRoutes(router)
 	}
 }

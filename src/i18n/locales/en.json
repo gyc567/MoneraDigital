@@ -212,7 +212,13 @@
         "invalidAmount": "Invalid subscription amount format",
         "concurrentRequestError": "Request is being processed, please don't repeat operation",
         "requestTimeoutError": "Request timeout, please check network connection",
-        "systemBusyError": "System is busy, please try again later"
+        "systemBusyError": "System is busy, please try again later",
+        "idempotencyError": "Request validation failed",
+        "idempotencyKeyMissing": "System error: Missing request identifier. Please refresh the page and try again.",
+        "idempotencyUnavailable": "System is busy",
+        "idempotencyUnavailableDesc": "Request validation service is temporarily unavailable. Please try again later.",
+        "idempotencyCheckFailed": "Request validation failed",
+        "idempotencyCheckFailedDesc": "Please refresh the page and try again, or contact customer support."
       }
     },
     "2fa": {

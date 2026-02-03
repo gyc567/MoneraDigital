@@ -469,6 +469,31 @@ const FixedDeposit = () => {
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         
+        // 检查是否是幂等性相关错误
+        if (res.status === 400 && errorData.code === 'MISSING_IDEMPOTENCY_KEY') {
+          toast.error(t("dashboard.fixedDeposit.idempotencyError"), {
+            duration: 8000,
+            description: t("dashboard.fixedDeposit.idempotencyKeyMissing")
+          });
+          return;
+        }
+        
+        if (res.status === 503 && errorData.code === 'IDEMPOTENCY_UNAVAILABLE') {
+          toast.error(t("dashboard.fixedDeposit.idempotencyUnavailable"), {
+            duration: 8000,
+            description: t("dashboard.fixedDeposit.idempotencyUnavailableDesc")
+          });
+          return;
+        }
+        
+        if (res.status === 503 && errorData.code === 'IDEMPOTENCY_CHECK_FAILED') {
+          toast.error(t("dashboard.fixedDeposit.idempotencyCheckFailed"), {
+            duration: 8000,
+            description: t("dashboard.fixedDeposit.idempotencyCheckFailedDesc")
+          });
+          return;
+        }
+        
         // 检查是否是并发请求冲突
         if (res.status === 409 || errorData.error?.includes('concurrent') || errorData.error?.includes('duplicate')) {
           throw new Error(t("dashboard.fixedDeposit.concurrentRequestError"));

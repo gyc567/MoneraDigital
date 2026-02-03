@@ -212,7 +212,13 @@
         "invalidAmount": "申购金额格式不正确",
         "concurrentRequestError": "请求正在处理中，请勿重复操作",
         "requestTimeoutError": "请求超时，请检查网络连接",
-        "systemBusyError": "系统繁忙，请稍后再试"
+        "systemBusyError": "系统繁忙，请稍后再试",
+        "idempotencyError": "请求验证失败",
+        "idempotencyKeyMissing": "系统错误：缺少请求标识符。请刷新页面后重试。",
+        "idempotencyUnavailable": "系统繁忙",
+        "idempotencyUnavailableDesc": "请求验证服务暂时不可用，请稍后重试。",
+        "idempotencyCheckFailed": "请求验证失败",
+        "idempotencyCheckFailedDesc": "请刷新页面后重试，或联系客服。"
       }
     },
     "2fa": {

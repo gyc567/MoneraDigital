@@ -182,11 +182,11 @@ func (r *WealthRepository) UpdateOrder(ctx context.Context, order *repository.We
 func (r *WealthRepository) UpdateProductSoldQuota(ctx context.Context, id int64, amount string) error {
 	query := `
 		UPDATE wealth_product SET
-			sold_quota = CAST(CAST(sold_quota AS NUMERIC) + CAST($1 AS NUMERIC) AS TEXT),
-			updated_at = $2
-		WHERE id = $3
+			sold_quota = CAST(sold_quota AS NUMERIC) + CAST($1 AS NUMERIC),
+			updated_at = NOW()
+		WHERE id = $2
 	`
-	_, err := r.db.ExecContext(ctx, query, amount, "now()", id)
+	_, err := r.db.ExecContext(ctx, query, amount, id)
 	return err
 }
 
@@ -275,12 +275,12 @@ func (r *AccountRepository) UnfreezeBalance(ctx context.Context, accountID int64
 func (r *AccountRepository) DeductBalance(ctx context.Context, accountID int64, amount string) error {
 	query := `
 		UPDATE account SET
-			balance = CAST(CAST(balance AS NUMERIC) - CAST($1 AS NUMERIC) AS TEXT),
+			balance = CAST(balance AS NUMERIC) - CAST($1 AS NUMERIC),
 			version = version + 1,
-			updated_at = $2
-		WHERE id = $3
+			updated_at = NOW()
+		WHERE id = $2
 	`
-	_, err := r.db.ExecContext(ctx, query, amount, "now()", accountID)
+	_, err := r.db.ExecContext(ctx, query, amount, accountID)
 	return err
 }
 

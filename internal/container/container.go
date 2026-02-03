@@ -2,6 +2,7 @@
 package container
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"os"
@@ -41,9 +42,15 @@ func WithEncryption(key string) ContainerOption {
 func WithRedisCache(redisCache *cache.RedisCache) ContainerOption {
 	return func(c *Container) {
 		c.RedisCache = redisCache
-		if redisCache != nil {
-			c.IdempotencyService = services.NewIdempotencyService(redisCache)
+		// 初始化幂等性仓库（始终使用数据库）
+		c.IdempotencyRepository = postgres.NewIdempotencyRepository(c.DB)
+		// 确保幂等性表存在
+		ctx := context.Background()
+		if err := c.IdempotencyRepository.EnsureTableExists(ctx); err != nil {
+			log.Printf("Warning: Failed to create idempotency table: %v", err)
 		}
+		// 创建幂等性服务（传入 Redis 和数据库仓库）
+		c.IdempotencyService = services.NewIdempotencyService(redisCache, c.IdempotencyRepository)
 	}
 }
 
@@ -61,7 +68,8 @@ type Container struct {
 	RedisCache     *cache.RedisCache
 
 	// 幂等服务
-	IdempotencyService *services.IdempotencyService
+	IdempotencyService    *services.IdempotencyService
+	IdempotencyRepository *postgres.IdempotencyRepository
 
 	// 外部 API 客户端
 	CoreAPIClient *coreapi.Client

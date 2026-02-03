@@ -189,8 +189,8 @@ func (h *Handler) Skip2FALogin(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-			"code": "INVALID_REQUEST",
+			"error":  err.Error(),
+			"code":   "INVALID_REQUEST",
 			"userId": req.UserID,
 		})
 		return
@@ -199,8 +199,8 @@ func (h *Handler) Skip2FALogin(c *gin.Context) {
 	resp, err := h.AuthService.Skip2FAAndLogin(req.UserID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-			"code": "SKIP_2FA_FAILED",
+			"error":  err.Error(),
+			"code":   "SKIP_2FA_FAILED",
 			"userId": req.UserID,
 		})
 		return
@@ -636,44 +636,54 @@ func (h *Handler) Subscribe(c *gin.Context) {
 		return
 	}
 
-	// Get idempotency key from header
+	// Get idempotency key from header (REQUIRED)
 	idempotencyKey := c.GetHeader("Idempotency-Key")
 	if idempotencyKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Idempotency-Key header"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Idempotency-Key header", "code": "MISSING_IDEMPOTENCY_KEY"})
+		return
+	}
+
+	// Check if idempotency service is available (Redis or DB)
+	if h.IdempotencyService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Idempotency service is unavailable, please try again later", "code": "IDEMPOTENCY_UNAVAILABLE"})
 		return
 	}
 
 	// Check for duplicate request
-	if h.IdempotencyService != nil {
-		record, isNew, err := h.IdempotencyService.CheckOrCreate(c.Request.Context(), idempotencyKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Idempotency check failed"})
+	var isNew bool = true
+	var idempotencyErr error = nil
+	record, isNew, idempotencyErr := h.IdempotencyService.CheckOrCreate(c.Request.Context(), idempotencyKey)
+	if idempotencyErr != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Idempotency check failed, please try again", "code": "IDEMPOTENCY_CHECK_FAILED"})
+		return
+	}
+
+	if !isNew {
+		// Request already processed, return cached result
+		switch record.Status {
+		case services.IdempotencyStatusCompleted:
+			c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": record.Result})
+			return
+		case services.IdempotencyStatusProcessing:
+			c.JSON(http.StatusAccepted, gin.H{"message": "Request is being processed"})
+			return
+		case services.IdempotencyStatusFailed:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": record.Error})
 			return
 		}
-
-		if !isNew {
-			// Request already processed, return cached result
-			switch record.Status {
-			case services.IdempotencyCompleted:
-				c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": record.Result})
-				return
-			case services.IdempotencyProcessing:
-				c.JSON(http.StatusAccepted, gin.H{"message": "Request is being processed"})
-				return
-			case services.IdempotencyFailed:
-				c.JSON(http.StatusInternalServerError, gin.H{"error": record.Error})
-				return
-			}
-		}
-
-		// Process request
-		defer func() {
-			if err != nil {
-				// Mark as failed
-				h.IdempotencyService.Fail(c.Request.Context(), idempotencyKey, err.Error())
-			}
-		}()
 	}
+
+	// Process request - mark as failed if panic or error occurs
+	defer func() {
+		if r := recover(); r != nil {
+			errMsg := fmt.Sprintf("%v", r)
+			h.IdempotencyService.Fail(c.Request.Context(), idempotencyKey, errMsg)
+			panic(r)
+		}
+		if idempotencyErr != nil {
+			h.IdempotencyService.Fail(c.Request.Context(), idempotencyKey, idempotencyErr.Error())
+		}
+	}()
 
 	// 处理interest_expected字段的类型转换
 	interestExpected := ""
@@ -699,14 +709,13 @@ func (h *Handler) Subscribe(c *gin.Context) {
 
 	orderID, err := h.WealthService.Subscribe(c.Request.Context(), userID, req.ProductID, req.Amount, req.AutoRenew, interestExpected)
 	if err != nil {
+		idempotencyErr = err
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Mark as completed
-	if h.IdempotencyService != nil {
-		h.IdempotencyService.Complete(c.Request.Context(), idempotencyKey, orderID)
-	}
+	h.IdempotencyService.Complete(c.Request.Context(), idempotencyKey, orderID)
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": orderID})
 }
