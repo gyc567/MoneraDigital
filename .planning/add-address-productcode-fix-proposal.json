@@ -1,0 +1,86 @@
+{
+  "title": "AddAddress ProductCode Missing Fix",
+  "version": "1.0.0",
+  "date": "2026-02-03",
+  "status": "draft",
+  "summary": "Fix '参数验证失败: 产品编码不能为空' error when adding wallet address",
+  "problem_statement": {
+    "description": "When adding a new wallet address, Core API returns error: '参数验证失败: 产品编码不能为空' (product code cannot be empty)",
+    "error_details": {
+      "endpoint": "POST /api/wallet/addresses",
+      "error": "failed to get address from Core API: API error: status=4",
+      "core_api_error": "参数验证失败: 产品编码不能为空"
+    },
+    "impact": "Users cannot add new wallet addresses"
+  },
+  "root_cause_analysis": {
+    "description": "In WalletService.AddAddress(), when calling Core API GetAddress(), the ProductCode is taken from wallet.ProductCode. If this field is empty in the database, an empty string is passed to Core API, which rejects it.",
+    "code_locations": [
+      {
+        "file": "internal/services/wallet.go",
+        "line": 223-227,
+        "code": "coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{\n    UserID:      userID,\n    ProductCode: wallet.ProductCode,  // May be empty string!\n    Currency:    addressKey,\n})"
+      }
+    ],
+    "causes": [
+      "wallet_creation_requests.product_code may be NULL/empty in database",
+      "Go maps NULL string to empty string \"\"",
+      "Core API requires non-empty productCode"
+    ]
+  },
+  "proposed_solution": {
+    "overview": "Add default productCode 'X_FINANCE' when wallet.ProductCode is empty",
+    "principles": [
+      "KISS (Keep It Simple, Stupid)",
+      "High cohesion, low coupling",
+      "No breaking changes"
+    ],
+    "changes": [
+      {
+        "file": "internal/services/wallet.go",
+        "change_type": "modify",
+        "description": "Add default productCode in AddAddress method",
+        "line_range": "220-230",
+        "priority": "high"
+      }
+    ]
+  },
+  "implementation_plan": [
+    {
+      "phase": 1,
+      "tasks": [
+        {
+          "task_id": "FIX-001",
+          "description": "Fix AddAddress to use default ProductCode 'X_FINANCE'",
+          "code_change": "productCode := wallet.ProductCode\nif productCode == \"\" {\n    productCode = \"X_FINANCE\"\n}",
+          "test_coverage": "100%"
+        },
+        {
+          "task_id": "TEST-001",
+          "description": "Add unit test for AddAddress with empty productCode",
+          "test_cases": [
+            "AddAddress with empty wallet.ProductCode uses X_FINANCE",
+            "AddAddress with valid wallet.ProductCode uses provided value",
+            "AddAddress with user_wallets fallback uses X_FINANCE"
+          ]
+        }
+      ]
+    }
+  ],
+  "testing_strategy": {
+    "unit_tests": [
+      "TestAddAddress_EmptyProductCode_UsesDefault",
+      "TestAddAddress_ValidProductCode_UsesProvided",
+      "TestAddAddress_UserWalletFallback_UsesDefault"
+    ],
+    "integration_tests": [
+      "Full add address flow with empty productCode in database"
+    ],
+    "coverage_target": "100%"
+  },
+  "constraints": [
+    "Must not affect unrelated functionality",
+    "Must maintain backward compatibility",
+    "Must follow KISS principles"
+  ]
+}

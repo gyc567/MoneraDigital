@@ -1,0 +1,118 @@
+{
+  "title": "401 Unauthorized Error Fix for Wallet Info API",
+  "version": "1.0.0",
+  "date": "2025-02-03",
+  "status": "draft",
+  "summary": "Fix 401 Unauthorized error when accessing /dashboard/account-opening and calling /api/wallet/info",
+  "problem_statement": {
+    "description": "Users encounter 401 Unauthorized error when accessing account opening page and wallet info API",
+    "impact": "Users cannot view wallet information or create wallets",
+    "error_details": {
+      "endpoint": "GET /api/wallet/info",
+      "error": "401 (Unauthorized)",
+      "location": "index-DNyomD6X.js:1352"
+    }
+  },
+  "root_cause_analysis": {
+    "primary_causes": [
+      {
+        "cause": "Token availability race condition",
+        "description": "React Query may execute before token is available in localStorage",
+        "severity": "high"
+      },
+      {
+        "cause": "Missing global 401 error handling",
+        "description": "No error boundary or global handler for 401 errors in React Query",
+        "severity": "high"
+      },
+      {
+        "cause": "Inconsistent error response format",
+        "description": "api-client.ts doesn't properly handle 401 errors from API",
+        "severity": "medium"
+      }
+    ]
+  },
+  "proposed_solution": {
+    "overview": "Implement comprehensive 401 error handling with token refresh and graceful degradation",
+    "principles": [
+      "KISS (Keep It Simple, Stupid)",
+      "High cohesion, low coupling",
+      "No breaking changes to existing functionality"
+    ],
+    "changes": [
+      {
+        "file": "src/lib/api-client.ts",
+        "change_type": "modify",
+        "description": "Add 401 error detection and consistent error handling",
+        "priority": "high"
+      },
+      {
+        "file": "src/pages/dashboard/AccountOpening.tsx",
+        "change_type": "modify",
+        "description": "Improve token handling and add error boundary for 401",
+        "priority": "high"
+      },
+      {
+        "file": "src/providers/QueryProvider.tsx",
+        "change_type": "create",
+        "description": "Create QueryClient provider with global 401 error handling",
+        "priority": "high"
+      },
+      {
+        "file": "src/lib/auth-middleware.ts",
+        "change_type": "modify",
+        "description": "Add detailed error logging for debugging",
+        "priority": "medium"
+      }
+    ]
+  },
+  "implementation_plan": [
+    {
+      "phase": 1,
+      "tasks": [
+        {
+          "task_id": "API-001",
+          "description": "Modify api-client.ts to detect and handle 401 errors",
+          "test_coverage": "100%"
+        },
+        {
+          "task_id": "API-002",
+          "description": "Create QueryProvider with global error handling",
+          "test_coverage": "100%"
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "tasks": [
+        {
+          "task_id": "UI-001",
+          "description": "Update AccountOpening.tsx to use QueryProvider",
+          "test_coverage": "100%"
+        },
+        {
+          "task_id": "AUTH-001",
+          "description": "Enhance auth-middleware.ts with better error logging",
+          "test_coverage": "N/A"
+        }
+      ]
+    }
+  ],
+  "testing_strategy": {
+    "unit_tests": [
+      "api-client 401 error handling",
+      "QueryProvider global error handling",
+      "AccountOpening token availability"
+    ],
+    "integration_tests": [
+      "Full authentication flow",
+      "401 error recovery"
+    ],
+    "coverage_target": "100%"
+  },
+  "constraints": [
+    "Must not affect unrelated functionality",
+    "Must maintain backward compatibility",
+    "Must follow KISS principles"
+  ]
+}
