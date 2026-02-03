@@ -115,9 +115,7 @@ function Withdraw() {
   const [is2FADialogOpen, setIs2FADialogOpen] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [isVerifying2FA, setIsVerifying2FA] = useState(false);
-<<<<<<< Updated upstream
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-=======
   const [pendingWithdrawal, setPendingWithdrawal] = useState<{
     addressId: number;
     amount: string;
@@ -136,10 +134,9 @@ function Withdraw() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 7,
     }).format(num);
-    
+
     return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
   };
->>>>>>> Stashed changes
 
   // Fetch verified addresses
   const fetchAddresses = async () => {
