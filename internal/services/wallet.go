@@ -220,9 +220,15 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return nil, fmt.Errorf("Core API client not initialized")
 	}
 
+	// Use wallet's ProductCode or default to X_FINANCE
+	productCode := wallet.ProductCode
+	if productCode == "" {
+		productCode = "X_FINANCE"
+	}
+
 	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 		UserID:      userID,
-		ProductCode: wallet.ProductCode,
+		ProductCode: productCode,
 		Currency:    addressKey,
 	})
 	if err != nil {

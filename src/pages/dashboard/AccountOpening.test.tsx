@@ -9,7 +9,7 @@ import AccountOpening, { parseAvailableNetworks, getDisplayAddress, formatCurren
 import '@testing-library/jest-dom';
 import * as React from 'react';
 import { vi } from 'vitest';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, ApiError } from '@/lib/api-client';
 
 const queryClient = new QueryClient();
 
@@ -17,6 +17,17 @@ const mockApiRequest = vi.fn();
 
 vi.mock('@/lib/api-client', () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  ApiError: class ApiError extends Error {
+    constructor(
+      message: string,
+      public readonly code: string,
+      public readonly status: number,
+      public readonly originalResponse?: unknown
+    ) {
+      super(message);
+      this.name = 'ApiError';
+    }
+  },
 }));
 
 Object.defineProperty(window, 'localStorage', {

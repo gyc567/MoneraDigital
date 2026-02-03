@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, ApiError } from "@/lib/api-client";
 
 // SQL NullString format from backend (sql.NullString serializes to {String, Valid})
 interface NullString {
@@ -159,7 +159,7 @@ const AccountOpening = () => {
     }
   }, [token, navigate, location.pathname, toast, t]);
 
-  const { data: walletInfo, isLoading } = useQuery<WalletInfoResponse>({
+  const { data: walletInfo, isLoading, error } = useQuery<WalletInfoResponse>({
     queryKey: ["walletInfo"],
     enabled: !!token,
     queryFn: async () => {
@@ -170,11 +170,43 @@ const AccountOpening = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
     },
+    retry: (failureCount, err) => {
+      // Don't retry 401 errors
+      if (err instanceof ApiError && err.status === 401) {
+        return false;
+      }
+      return failureCount < 3;
+    },
     refetchInterval: (query) => {
       const data = query.state.data;
       return data?.status === "CREATING" ? 2000 : false;
     },
   });
+
+  // Handle query errors
+  useEffect(() => {
+    if (error) {
+      // Check if it's a 401 error
+      if (error instanceof ApiError && error.status === 401) {
+        // Clear token and redirect to login
+        localStorage.removeItem('token');
+        toast({
+          variant: 'destructive',
+          title: t("auth.sessionExpired"),
+          description: t("auth.pleaseLoginAgain"),
+        });
+        navigate('/login', { state: { returnTo: location.pathname } });
+        return;
+      }
+
+      // Handle other errors
+      toast({
+        variant: 'destructive',
+        title: t("wallet.opening.errorTitle"),
+        description: error instanceof Error ? error.message : t("common.error"),
+      });
+    }
+  }, [error, navigate, location.pathname, toast, t]);
 
   // Parse addresses and extract available networks
   const addressesJson = useMemo(() => {

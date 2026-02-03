@@ -5,6 +5,8 @@
  * It supports both development (Vite proxy) and production (direct backend URL) environments.
  */
 
+import { useNavigate } from "react-router-dom";
+
 // API base URL configuration
 // Development: Use Vite proxy (empty string means relative paths)
 // Production: Set VITE_API_BASE_URL to your backend URL
@@ -23,6 +25,21 @@ export function getApiUrl(path: string): string {
 
   // Development: use relative path (Vite proxy handles it)
   return path;
+}
+
+/**
+ * API Error class with structured error information
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly status: number,
+    public readonly originalResponse?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
 /**
@@ -48,15 +65,55 @@ export async function apiRequest<T>(
 
   const response = await fetch(url, defaultOptions);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      code: 'UNKNOWN_ERROR',
-      message: response.statusText,
-    }));
-    throw new Error(error.message || 'Request failed');
+  // Parse response body
+  let responseData: unknown;
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType?.includes('application/json') || contentType?.includes('text/json');
+
+  if (isJson) {
+    try {
+      responseData = await response.json();
+    } catch {
+      responseData = null;
+    }
   }
 
-  return response.json() as Promise<T>;
+  // Handle error responses
+  if (!response.ok) {
+    const status = response.status;
+    const statusText = response.statusText;
+
+    // Extract error message from response
+    let errorMessage = statusText;
+    let errorCode = 'UNKNOWN_ERROR';
+
+    if (isJson && responseData && typeof responseData === 'object') {
+      const data = responseData as Record<string, unknown>;
+      errorMessage = (data.message as string) || statusText;
+      errorCode = (data.code as string) || `HTTP_${status}`;
+    }
+
+    // Handle 401 Unauthorized specifically
+    if (status === 401) {
+      // Clear invalid token
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('token');
+      }
+
+      // Create error with specific code for 401
+      errorCode = 'UNAUTHORIZED';
+      errorMessage = 'Authentication required. Please log in again.';
+    }
+
+    throw new ApiError(errorMessage, errorCode, status, responseData);
+  }
+
+  // Return parsed JSON or empty object
+  if (isJson && responseData) {
+    return responseData as T;
+  }
+
+  return {} as T;
 }
 
 /**
