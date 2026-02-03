@@ -69,7 +69,7 @@ const Assets = () => {
 
       if (res.ok) {
         const data = await res.json();
-        const assetList = Array.isArray(data) ? data : [];
+        const assetList = Array.isArray(data.assets) ? data.assets : [];
         setAssets(assetList);
 
         // Generate chart data based on USD value
@@ -100,10 +100,12 @@ const Assets = () => {
       if (isNaN(parsed)) return num;
       num = parsed;
     }
-    return new Intl.NumberFormat("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 8,
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 7,
     }).format(num);
+    
+    return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
   };
 
   const totalValue = assets.reduce((sum, a) => sum + (a.usdValue || 0), 0);

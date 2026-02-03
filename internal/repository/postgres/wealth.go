@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"monera-digital/internal/config"
 	"monera-digital/internal/repository"
 	"strconv"
 	"time"
@@ -74,12 +75,12 @@ func (r *WealthRepository) CreateOrder(ctx context.Context, order *repository.We
 		INSERT INTO wealth_order (user_id, product_id, product_title, currency, amount,
 			principal_redeemed, interest_expected, interest_paid, interest_accrued,
 			start_date, end_date, auto_renew, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, '0', '0', '0', '0', $6, $7, $8, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, $4, $5, '0', $6, '0', '0', $7, $8, $9, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		RETURNING id
 	`
 	err := r.db.QueryRowContext(ctx, query,
 		order.UserID, order.ProductID, order.ProductTitle, order.Currency, order.Amount,
-		order.StartDate, order.EndDate, order.AutoRenew,
+		order.InterestExpected, order.StartDate, order.EndDate, order.AutoRenew,
 	).Scan(&order.ID)
 	if err != nil {
 		fmt.Printf("[DEBUG] CreateOrder - error: %v\n", err)
@@ -90,7 +91,7 @@ func (r *WealthRepository) CreateOrder(ctx context.Context, order *repository.We
 func (r *WealthRepository) GetOrdersByUserID(ctx context.Context, userID int64) ([]*repository.WealthOrderModel, error) {
 	query := `
 		SELECT o.id, o.user_id, o.product_id, p.title as product_title, p.currency,
-			o.amount,
+			o.amount, p.duration,
 			o.interest_expected, o.interest_paid, o.interest_accrued, o.start_date, o.end_date,
 			o.auto_renew, o.status, o.renewed_from_order_id, o.renewed_to_order_id,
 			o.redemption_amount, o.redemption_type, o.redeemed_at, o.created_at, o.updated_at
@@ -112,7 +113,7 @@ func (r *WealthRepository) GetOrdersByUserID(ctx context.Context, userID int64) 
 		var redemptionType sql.NullString
 		err := rows.Scan(
 			&o.ID, &o.UserID, &o.ProductID, &o.ProductTitle, &o.Currency,
-			&o.Amount,
+			&o.Amount, &o.Duration,
 			&o.InterestExpected, &o.InterestPaid, &o.InterestAccrued,
 			&o.StartDate, &o.EndDate, &o.AutoRenew, &o.Status,
 			&o.RenewedFromOrderID, &o.RenewedToOrderID,
@@ -123,7 +124,7 @@ func (r *WealthRepository) GetOrdersByUserID(ctx context.Context, userID int64) 
 			return nil, err
 		}
 		o.RedemptionAmount = redemptionAmount.String
-		o.RedemptionType = redemptionType
+		o.RedeemedAt = redeemedAt.String
 		o.RedeemedAt = redeemedAt.String
 		orders = append(orders, &o)
 	}
@@ -158,7 +159,6 @@ func (r *WealthRepository) GetOrderByID(ctx context.Context, id int64) (*reposit
 		return nil, err
 	}
 	o.RedemptionAmount = redemptionAmount.String
-	o.RedemptionType = redemptionType
 	o.RedeemedAt = redeemedAt.String
 	return &o, nil
 }
@@ -223,7 +223,7 @@ func (r *AccountRepository) GetAccountsByUserID(ctx context.Context, userID int6
 	query := `
 		SELECT id, user_id, type, currency, balance, frozen_balance, version, created_at, updated_at
 		FROM account
-		WHERE user_id = $1
+		WHERE user_id = $1 AND type = 'FUND'
 		ORDER BY currency
 	`
 	rows, err := r.db.QueryContext(ctx, query, userID)
@@ -330,7 +330,6 @@ func (r *WealthRepository) GetActiveOrders(ctx context.Context) ([]*repository.W
 			return nil, err
 		}
 		o.RedemptionAmount = redemptionAmount.String
-		o.RedemptionType = redemptionType
 		o.RedeemedAt = redeemedAt.String
 		orders = append(orders, &o)
 	}
@@ -371,7 +370,6 @@ func (r *WealthRepository) GetExpiredOrders(ctx context.Context) ([]*repository.
 			return nil, err
 		}
 		o.RedemptionAmount = redemptionAmount.String
-		o.RedemptionType = redemptionType
 		o.RedeemedAt = redeemedAt.String
 		orders = append(orders, &o)
 	}
@@ -381,7 +379,7 @@ func (r *WealthRepository) GetExpiredOrders(ctx context.Context) ([]*repository.
 func (r *WealthRepository) AccrueInterest(ctx context.Context, orderID int64, amount string, date string) error {
 	query := `
 		UPDATE wealth_order SET
-			interest_accrued = CAST(CAST(interest_accrued AS NUMERIC) + CAST($1 AS NUMERIC) AS TEXT),
+			interest_accrued = interest_accrued + CAST($1 AS NUMERIC),
 			last_interest_date = $2,
 			updated_at = $3
 		WHERE id = $4
@@ -405,9 +403,14 @@ func (r *WealthRepository) SettleOrder(ctx context.Context, orderID int64, inter
 }
 
 func (r *WealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel) (*repository.WealthOrderModel, error) {
-	now := time.Now()
-	startDate := now.Format("2006-01-02")
-	endDate := now.AddDate(0, 0, product.Duration).Format("2006-01-02")
+	loc := config.GetLocation()
+	now := time.Now().In(loc)
+
+	// 计算新加坡时区(UTC+8)的日期
+	today := now.Format("2006-01-02")
+	todayDate, _ := time.Parse("2006-01-02", today)
+	startDate := todayDate.Format("2006-01-02")
+	endDate := todayDate.AddDate(0, 0, product.Duration).Format("2006-01-02")
 
 	apy, _ := strconv.ParseFloat(product.APY, 64)
 	amountFloat, _ := strconv.ParseFloat(order.Amount, 64)

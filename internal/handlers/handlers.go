@@ -1,17 +1,18 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
-
 	"monera-digital/internal/dto"
 	"monera-digital/internal/models"
 	"monera-digital/internal/services"
 	"monera-digital/internal/validator"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -29,26 +30,28 @@ var supportedAssets = map[string]bool{
 
 // Handler contains all HTTP handlers
 type Handler struct {
-	AuthService       *services.AuthService
-	LendingService    *services.LendingService
-	AddressService    *services.AddressService
-	WithdrawalService *services.WithdrawalService
-	DepositService    *services.DepositService
-	WalletService     *services.WalletService
-	WealthService     *services.WealthService
-	Validator         validator.Validator
+	AuthService        *services.AuthService
+	LendingService     *services.LendingService
+	AddressService     *services.AddressService
+	WithdrawalService  *services.WithdrawalService
+	DepositService     *services.DepositService
+	WalletService      *services.WalletService
+	WealthService      *services.WealthService
+	IdempotencyService *services.IdempotencyService
+	Validator          validator.Validator
 }
 
-func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService, wealth *services.WealthService) *Handler {
+func NewHandler(auth *services.AuthService, lending *services.LendingService, address *services.AddressService, withdrawal *services.WithdrawalService, deposit *services.DepositService, wallet *services.WalletService, wealth *services.WealthService, idempotency *services.IdempotencyService) *Handler {
 	return &Handler{
-		AuthService:       auth,
-		LendingService:    lending,
-		AddressService:    address,
-		WithdrawalService: withdrawal,
-		DepositService:    deposit,
-		WalletService:     wallet,
-		WealthService:     wealth,
-		Validator:         validator.NewValidator(),
+		AuthService:        auth,
+		LendingService:     lending,
+		AddressService:     address,
+		WithdrawalService:  withdrawal,
+		DepositService:     deposit,
+		WalletService:      wallet,
+		WealthService:      wealth,
+		IdempotencyService: idempotency,
+		Validator:          validator.NewValidator(),
 	}
 }
 
@@ -258,7 +261,7 @@ func (h *Handler) ApplyForLending(c *gin.Context) {
 
 	position, err := h.LendingService.ApplyForLending(userID, models.ApplyLendingRequest{
 		Asset:        req.Asset,
-		Amount:       fmt.Sprintf("%.8f", req.Amount),
+		Amount:       fmt.Sprintf("%.7f", req.Amount),
 		DurationDays: req.DurationDays,
 	})
 	if err != nil {
@@ -622,20 +625,87 @@ func (h *Handler) Subscribe(c *gin.Context) {
 	}
 
 	var req struct {
-		ProductID int64  `json:"productId" binding:"required"`
-		Amount    string `json:"amount" binding:"required"`
-		AutoRenew bool   `json:"autoRenew"`
+		ProductID        int64       `json:"productId" binding:"required"`
+		Amount           string      `json:"amount" binding:"required"`
+		AutoRenew        bool        `json:"autoRenew"`
+		InterestExpected interface{} `json:"interest_expected"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("JSON解析错误: %v", err.Error())})
 		return
 	}
 
-	orderID, err := h.WealthService.Subscribe(c.Request.Context(), userID, req.ProductID, req.Amount, req.AutoRenew)
+	// Get idempotency key from header
+	idempotencyKey := c.GetHeader("Idempotency-Key")
+	if idempotencyKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing Idempotency-Key header"})
+		return
+	}
+
+	// Check for duplicate request
+	if h.IdempotencyService != nil {
+		record, isNew, err := h.IdempotencyService.CheckOrCreate(c.Request.Context(), idempotencyKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Idempotency check failed"})
+			return
+		}
+
+		if !isNew {
+			// Request already processed, return cached result
+			switch record.Status {
+			case services.IdempotencyCompleted:
+				c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": record.Result})
+				return
+			case services.IdempotencyProcessing:
+				c.JSON(http.StatusAccepted, gin.H{"message": "Request is being processed"})
+				return
+			case services.IdempotencyFailed:
+				c.JSON(http.StatusInternalServerError, gin.H{"error": record.Error})
+				return
+			}
+		}
+
+		// Process request
+		defer func() {
+			if err != nil {
+				// Mark as failed
+				h.IdempotencyService.Fail(c.Request.Context(), idempotencyKey, err.Error())
+			}
+		}()
+	}
+
+	// 处理interest_expected字段的类型转换
+	interestExpected := ""
+	if req.InterestExpected != nil {
+		switch v := req.InterestExpected.(type) {
+		case string:
+			interestExpected = v
+		case float64:
+			interestExpected = strconv.FormatFloat(v, 'f', -1, 64)
+		case int:
+			interestExpected = strconv.Itoa(v)
+		case json.Number:
+			interestExpected = v.String()
+		default:
+			interestExpected = fmt.Sprintf("%v", v)
+		}
+	}
+
+	// 验证转换后的值
+	if interestExpected == "" {
+		interestExpected = "0"
+	}
+
+	orderID, err := h.WealthService.Subscribe(c.Request.Context(), userID, req.ProductID, req.Amount, req.AutoRenew, interestExpected)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Mark as completed
+	if h.IdempotencyService != nil {
+		h.IdempotencyService.Complete(c.Request.Context(), idempotencyKey, orderID)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Subscription successful", "orderId": orderID})

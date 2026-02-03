@@ -37,6 +37,16 @@ func WithEncryption(key string) ContainerOption {
 	}
 }
 
+// WithRedisCache 配置 Redis 缓存服务
+func WithRedisCache(redisCache *cache.RedisCache) ContainerOption {
+	return func(c *Container) {
+		c.RedisCache = redisCache
+		if redisCache != nil {
+			c.IdempotencyService = services.NewIdempotencyService(redisCache)
+		}
+	}
+}
+
 // Container 依赖注入容器
 type Container struct {
 	// 基础设施
@@ -48,6 +58,10 @@ type Container struct {
 	// 缓存
 	TokenBlacklist *cache.TokenBlacklist
 	RateLimiter    *middleware.RateLimiter
+	RedisCache     *cache.RedisCache
+
+	// 幂等服务
+	IdempotencyService *services.IdempotencyService
 
 	// 外部 API 客户端
 	CoreAPIClient *coreapi.Client
@@ -90,10 +104,12 @@ func NewContainer(db *sql.DB, jwtSecret string, opts ...ContainerOption) *Contai
 		User:       postgres.NewUserRepository(db),
 		Deposit:    postgres.NewDepositRepository(db),
 		Wallet:     postgres.NewWalletRepository(db),
-		Account:    postgres.NewAccountRepositoryV1(db), // Legacy interface
-		AccountV2:  postgres.NewAccountRepository(db),   // New detailed interface
+		Account:    postgres.NewAccountRepositoryV1(db),
+		AccountV2:  postgres.NewAccountRepository(db),
 		Address:    postgres.NewAddressRepository(db),
 		Withdrawal: postgres.NewWithdrawalRepository(db),
+		Wealth:     postgres.NewWealthRepository(db),
+		Journal:    postgres.NewJournalRepository(db),
 	}
 
 	// 初始化核心服务

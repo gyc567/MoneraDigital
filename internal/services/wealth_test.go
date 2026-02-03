@@ -74,7 +74,7 @@ func TestWealthService_Subscribe_InsufficientBalance(t *testing.T) {
 		FrozenBalance: "0",
 	}, nil)
 
-	_, err := service.Subscribe(context.Background(), 1, 1, "5000", false)
+	_, err := service.Subscribe(context.Background(), 1, 1, "5000", false, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient")

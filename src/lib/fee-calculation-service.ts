@@ -72,7 +72,7 @@ export class FeeCalculationService {
         const feeAmount = safeheronFee.fee;
         const numericAmount = parseFloat(validated.amount);
         const numericFee = parseFloat(feeAmount);
-        const receivedAmount = Math.max(0, numericAmount - numericFee).toFixed(8);
+        const receivedAmount = Math.max(0, numericAmount - numericFee).toFixed(7);
 
         return {
           asset: validated.asset,
@@ -110,13 +110,13 @@ export class FeeCalculationService {
     const fixedFee = parseFloat(selectedRates.fixed);
     const percentageFee = numericAmount * selectedRates.percentage;
     const totalFee = Math.max(fixedFee, percentageFee);
-    const receivedAmount = Math.max(0, numericAmount - totalFee).toFixed(8);
+    const receivedAmount = Math.max(0, numericAmount - totalFee).toFixed(7);
 
     return {
       asset,
       amount,
       chain,
-      fee: totalFee.toFixed(8),
+      fee: totalFee.toFixed(7),
       receivedAmount,
       feePercentage: (totalFee / numericAmount) * 100,
     };
@@ -152,7 +152,7 @@ export class FeeCalculationService {
 
     if (numericAmount > numericBalance) {
       const fee = await this.calculateFeeOnly(asset, numericAmount);
-      const maxAmount = Math.max(0, numericBalance - parseFloat(fee.fee)).toFixed(8);
+       const maxAmount = Math.max(0, numericBalance - parseFloat(fee.fee)).toFixed(7);
       return {
         valid: false,
         error: `Insufficient balance. Maximum withdrawal: ${maxAmount} ${asset}`,

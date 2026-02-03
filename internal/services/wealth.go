@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"monera-digital/internal/binance"
+	"monera-digital/internal/config"
 	"monera-digital/internal/repository"
 )
 
@@ -108,9 +109,9 @@ func (s *WealthService) GetAssets(ctx context.Context, userID int) ([]*Asset, er
 
 		result = append(result, &Asset{
 			Currency:      a.Currency,
-			Total:         a.Balance,
+			Total:         formatTo7Decimal(a.Balance),
 			Available:     available,
-			FrozenBalance: a.FrozenBalance,
+			FrozenBalance: formatTo7Decimal(a.FrozenBalance),
 			UsdValue:      usdValue,
 		})
 	}
@@ -133,7 +134,16 @@ func subtractStrings(a, b string) string {
 		diff = 0
 	}
 
-	return strconv.FormatFloat(diff, 'f', -1, 64)
+	return strconv.FormatFloat(diff, 'f', 7, 64)
+}
+
+// formatTo7Decimal formats a string number to 7 decimal places
+func formatTo7Decimal(s string) string {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return s
+	}
+	return strconv.FormatFloat(f, 'f', 7, 64)
 }
 
 type Product struct {
@@ -158,6 +168,7 @@ type Order struct {
 	InterestAccrued  string `json:"interestAccrued"`
 	StartDate        string `json:"startDate"`
 	EndDate          string `json:"endDate"`
+	Duration         int64  `json:"duration"`
 	AutoRenew        bool   `json:"autoRenew"`
 	Status           int    `json:"status"`
 	RedemptionAmount string `json:"redemptionAmount,omitempty"`
@@ -206,7 +217,7 @@ func (s *WealthService) GetProducts(ctx context.Context, page, pageSize int) ([]
 	return result, total, nil
 }
 
-func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int64, amount string, autoRenew bool) (string, error) {
+func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int64, amount string, autoRenew bool, interestExpected string) (string, error) {
 	idempotencyKey := s.generateIdempotencyKey(userID, productID, amount)
 	mu := s.getLock(idempotencyKey)
 
@@ -268,13 +279,28 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 	}
 
 	now := time.Now()
-	startDate := now.Format("2006-01-02")
-	endDate := now.AddDate(0, 0, product.Duration).Format("2006-01-02")
+	loc := config.GetLocation()
+	nowInLoc := now.In(loc)
 
-	apy, _ := strconv.ParseFloat(product.APY, 64)
-	amountFloat, _ := strconv.ParseFloat(amount, 64)
-	dailyInterest := amountFloat * (apy / 100) / 365
-	interestExpected := strconv.FormatFloat(dailyInterest*float64(product.Duration), 'f', -1, 64)
+	// 计算新加坡时区(UTC+8)的日期
+	today := nowInLoc.Format("2006-01-02")
+	todayDate, _ := time.Parse("2006-01-02", today)
+	startDate := todayDate.AddDate(0, 0, 1).Format("2006-01-02")
+	endDate := todayDate.AddDate(0, 0, 1+product.Duration).Format("2006-01-02")
+
+	// 使用前端计算的利息，如果前端没有提供则使用后端计算作为后备
+	var finalInterestExpected string
+	if interestExpected != "" {
+		finalInterestExpected = interestExpected
+		fmt.Printf("[INFO] Using frontend calculated interest: %s\n", interestExpected)
+	} else {
+		// 后备计算：后端自己计算利息
+		apy, _ := strconv.ParseFloat(product.APY, 64)
+		amountFloat, _ := strconv.ParseFloat(amount, 64)
+		dailyInterest := amountFloat * (apy / 100) / 365
+		finalInterestExpected = strconv.FormatFloat(dailyInterest*float64(product.Duration), 'f', -1, 64)
+		fmt.Printf("[INFO] Using backend calculated interest: %s\n", finalInterestExpected)
+	}
 
 	order := &repository.WealthOrderModel{
 		UserID:            int64(userID),
@@ -287,7 +313,7 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 		StartDate:         startDate,
 		EndDate:           endDate,
 		PrincipalRedeemed: "0",
-		InterestExpected:  interestExpected,
+		InterestExpected:  finalInterestExpected,
 		InterestPaid:      "0",
 		InterestAccrued:   "0",
 		LastInterestDate:  "",
@@ -325,7 +351,7 @@ func (s *WealthService) Subscribe(ctx context.Context, userID int, productID int
 		return "", ErrJournalCreateFailed
 	}
 
-	return interestExpected, nil
+	return strconv.FormatInt(order.ID, 10), nil
 }
 
 func (s *WealthService) GetOrders(ctx context.Context, userID int, page, pageSize int) ([]*Order, int64, error) {
@@ -364,6 +390,7 @@ func (s *WealthService) GetOrders(ctx context.Context, userID int, page, pageSiz
 			InterestAccrued:  o.InterestAccrued,
 			StartDate:        o.StartDate,
 			EndDate:          o.EndDate,
+			Duration:         o.Duration,
 			AutoRenew:        o.AutoRenew,
 			Status:           o.Status,
 			CreatedAt:        o.CreatedAt,

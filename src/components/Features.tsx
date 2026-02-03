@@ -13,7 +13,8 @@ const iconMap = {
 const Features = () => {
   const { t } = useTranslation();
 
-  const features = t("features.items", { returnObjects: true }) as any[];
+  const rawFeatures = t("features.items", { returnObjects: true });
+  const features = Array.isArray(rawFeatures) ? rawFeatures : [];
 
   return (
     <section id="products" className="py-24 relative">

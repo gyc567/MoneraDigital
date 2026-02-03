@@ -7,7 +7,10 @@ const LanguageSwitcher = () => {
 
   const toggleLanguage = () => {
     const newLng = i18n.language === 'en' ? 'zh' : 'en';
-    i18n.changeLanguage(newLng);
+    console.log('Switching to:', newLng);
+    i18n.changeLanguage(newLng).then(() => {
+      console.log('Language changed to:', i18n.language);
+    });
   };
 
   const displayText = i18n.language === 'en' ? '中' : 'EN';

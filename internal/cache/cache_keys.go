@@ -31,6 +31,9 @@ const (
 
 	// Token blacklist cache keys
 	TokenBlacklistPrefix = "token:blacklist:"
+
+	// Idempotency cache keys
+	IdempotencyKeyPrefix = "idempotency:"
 )
 
 // User cache key builders
@@ -82,4 +85,9 @@ func SessionCacheKey(sessionID string) string {
 // Token blacklist cache key builder
 func TokenBlacklistCacheKey(token string) string {
 	return fmt.Sprintf("%s%s", TokenBlacklistPrefix, token)
+}
+
+// Idempotency cache key builder
+func IdempotencyCacheKey(key string) string {
+	return fmt.Sprintf("%s%s", IdempotencyKeyPrefix, key)
 }

@@ -17,7 +17,7 @@ const API_REGISTER = `${BACKEND_URL}/api/auth/register`;
 const API_ENABLE = `${BACKEND_URL}/api/auth/2fa/enable`;
 
 let testToken: string;
-let testEmail = `test-2fa-${Date.now()}@example.com`;
+const testEmail = `test-2fa-${Date.now()}@example.com`;
 
 /**
  * Helper to make authenticated API calls

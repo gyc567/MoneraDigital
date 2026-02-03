@@ -115,7 +115,31 @@ function Withdraw() {
   const [is2FADialogOpen, setIs2FADialogOpen] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [isVerifying2FA, setIsVerifying2FA] = useState(false);
+<<<<<<< Updated upstream
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+=======
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<{
+    addressId: number;
+    amount: string;
+    asset: string;
+    chain: string;
+   } | null>(null);
+
+  // Format number with 7 decimal places
+  const formatNumber = (num: string | number): string => {
+    if (typeof num === "string") {
+      const parsed = parseFloat(num);
+      if (isNaN(parsed)) return num;
+      num = parsed;
+    }
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 7,
+    }).format(num);
+    
+    return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
+  };
+>>>>>>> Stashed changes
 
   // Fetch verified addresses
   const fetchAddresses = async () => {
@@ -572,8 +596,8 @@ function Withdraw() {
                       <div className="flex items-start gap-3 flex-1">
                         <div className="mt-1">{getStatusIcon(withdrawal.status)}</div>
                         <div className="space-y-2 flex-1">
-                           <div className="flex items-center gap-2">
-                             <span className="font-semibold">{withdrawal.amount} {withdrawal.coin_type}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{formatNumber(withdrawal.amount)} {withdrawal.coin_type}</span>
                              <Badge variant={
                                withdrawal.status === "COMPLETED"
                                  ? "default"
