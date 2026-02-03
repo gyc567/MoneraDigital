@@ -37,7 +37,7 @@ func TestWalletService_AddAddress_Success(t *testing.T) {
 
 	// Setup expectations - wallet exists, no existing address for this currency
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(existingWallet, nil)
-	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRON").Return(nil, nil)
+	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRC20").Return(nil, nil)
 	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
 		Address: "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
 	}, nil)
@@ -45,7 +45,7 @@ func TestWalletService_AddAddress_Success(t *testing.T) {
 		ID:        10,
 		UserID:    1,
 		WalletID:  "wallet-123",
-		Currency:  "USDT_TRON",
+		Currency:  "USDT_TRC20",
 		Address:   "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
@@ -61,7 +61,7 @@ func TestWalletService_AddAddress_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", result.Address)
-	assert.Equal(t, "USDT_TRON", result.Currency)
+	assert.Equal(t, "USDT_TRC20", result.Currency)
 	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, mock.Anything)
 	mockRepo.AssertCalled(t, "AddUserWalletAddress", mock.Anything, mock.Anything)
 }
@@ -84,7 +84,7 @@ func TestWalletService_AddAddress_AlreadyExists(t *testing.T) {
 		ID:        5,
 		UserID:    1,
 		WalletID:  "wallet-123",
-		Currency:  "USDT_TRON",
+		Currency:  "USDT_TRC20",
 		Address:   "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: true,
@@ -94,7 +94,7 @@ func TestWalletService_AddAddress_AlreadyExists(t *testing.T) {
 
 	// Setup expectations - wallet exists and address already exists
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(existingWallet, nil)
-	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRON").Return(existingUserWallet, nil)
+	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRC20").Return(existingUserWallet, nil)
 
 	result, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
 		Chain: "TRON",
@@ -125,7 +125,7 @@ func TestWalletService_AddAddress_CoreAPIError(t *testing.T) {
 
 	// Setup expectations - Core API fails, should return error (no fallback)
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(existingWallet, nil)
-	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRON").Return(nil, nil)
+	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRC20").Return(nil, nil)
 	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(nil, fmt.Errorf("Core API unavailable"))
 
 	_, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
@@ -170,7 +170,7 @@ func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
 		ID:        1,
 		UserID:    1,
 		WalletID:  "wallet123",
-		Currency:  "USDT_TRON",
+		Currency:  "USDT_TRC20",
 		Address:   "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: true,
@@ -178,8 +178,8 @@ func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
 		UpdatedAt: now,
 	}, nil)
 
-	// Request for ETH_ERC20 - should call Core API since it doesn't exist yet
-	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "ETH_ERC20").Return(nil, nil)
+	// Request for USDT_ERC20 - should call Core API since it doesn't exist yet
+	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_ERC20").Return(nil, nil)
 	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
 		Address: "0xTMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9",
 	}, nil)
@@ -187,7 +187,7 @@ func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
 		ID:        10,
 		UserID:    1,
 		WalletID:  "wallet123",
-		Currency:  "ETH_ERC20",
+		Currency:  "USDT_ERC20",
 		Address:   "0xTMuA6YqfCeX8EhbfYEg5y7S4DqzSJireY9",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
@@ -197,7 +197,7 @@ func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
 
 	result, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
 		Chain: "ERC20",
-		Token: "ETH",
+		Token: "USDT",
 	})
 
 	assert.NoError(t, err)
@@ -207,115 +207,67 @@ func TestWalletService_AddAddress_FallbackToUserWallets(t *testing.T) {
 	mockRepo.AssertCalled(t, "AddUserWalletAddress", mock.Anything, mock.Anything)
 }
 
-func TestNormalizeCurrencyKey(t *testing.T) {
+func TestBuildCurrencyKey(t *testing.T) {
 	tests := []struct {
 		name     string
 		token    string
-		chain    string
-		inputKey string
+		network  string
 		expected string
 	}{
 		{
-			name:     "TRX on TRON maps to USDT_TRON",
-			token:    "TRX",
-			chain:    "TRON",
-			inputKey: "TRX_TRON",
-			expected: "USDT_TRON",
-		},
-		{
-			name:     "USDT on TRON stays unchanged",
+			name:     "USDT on ERC20",
 			token:    "USDT",
-			chain:    "TRON",
-			inputKey: "USDT_TRON",
-			expected: "USDT_TRON",
+			network:  "ERC20",
+			expected: "USDT_ERC20",
 		},
 		{
-			name:     "ETH on ERC20 stays unchanged",
-			token:    "ETH",
-			chain:    "ERC20",
-			inputKey: "ETH_ERC20",
-			expected: "ETH_ERC20",
+			name:     "USDT on TRC20",
+			token:    "USDT",
+			network:  "TRC20",
+			expected: "USDT_TRC20",
 		},
 		{
-			name:     "TRX on BSC stays unchanged (unsupported chain)",
-			token:    "TRX",
-			chain:    "BSC",
-			inputKey: "TRX_BSC",
-			expected: "TRX_BSC",
+			name:     "USDT on BEP20",
+			token:    "USDT",
+			network:  "BEP20",
+			expected: "USDT_BEP20",
 		},
 		{
-			name:     "USDC on TRON stays unchanged",
+			name:     "USDC on ERC20",
 			token:    "USDC",
-			chain:    "TRON",
-			inputKey: "USDC_TRON",
-			expected: "USDC_TRON",
+			network:  "ERC20",
+			expected: "USDC_ERC20",
+		},
+		{
+			name:     "USDC on TRC20",
+			token:    "USDC",
+			network:  "TRC20",
+			expected: "USDC_TRC20",
+		},
+		{
+			name:     "USDC on BEP20",
+			token:    "USDC",
+			network:  "BEP20",
+			expected: "USDC_BEP20",
+		},
+		{
+			name:     "Invalid token",
+			token:    "INVALID",
+			network:  "ERC20",
+			expected: "",
+		},
+		{
+			name:     "Invalid network",
+			token:    "USDT",
+			network:  "INVALID",
+			expected: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := normalizeCurrencyKey(tt.token, tt.chain, tt.inputKey)
+			result := buildCurrencyKey(tt.token, tt.network)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestWalletService_AddAddress_TRX_TRON_Mapping(t *testing.T) {
-	mockRepo := new(MockWalletRepository)
-	mockCoreAPI := new(MockCoreAPIClient)
-	service := NewWalletService(mockRepo, mockCoreAPI)
-
-	now := time.Now()
-	existingWallet := &models.WalletCreationRequest{
-		ID:          1,
-		RequestID:   "req-123",
-		UserID:      1,
-		ProductCode: "X_FINANCE",
-		Status:      models.WalletCreationStatusSuccess,
-		WalletID:    sql.NullString{String: "wallet-123", Valid: true},
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	// Setup expectations - TRX_TRON should be mapped to USDT_TRON
-	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 1).Return(existingWallet, nil)
-	// Core API should be called with USDT_TRON (not TRX_TRON)
-	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRON").Return(nil, nil)
-	mockCoreAPI.On("GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      1,
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON",
-	}).Return(&coreapi.AddressInfo{
-		Address: "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-	}, nil)
-	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.Anything).Return(&models.UserWallet{
-		ID:        10,
-		UserID:    1,
-		WalletID:  "wallet-123",
-		Currency:  "USDT_TRON",
-		Address:   "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW",
-		Status:    models.UserWalletStatusNormal,
-		IsPrimary: false,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}, nil)
-	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.AnythingOfType("*models.UserWallet")).Return(func(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
-		wallet.ID = 10
-		return wallet, nil
-	}, nil)
-
-	// Request with TRX + TRON should map to USDT_TRON
-	result, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
-		Chain: "TRON",
-		Token: "TRX",
-	})
-
-	assert.NoError(t, err)
-	assert.NotNil(t, result)
-	// Verify Core API was called with the normalized currency key
-	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      1,
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON",
-	})
 }

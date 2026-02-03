@@ -110,7 +110,7 @@ describe('AccountOpening', () => {
     mockApiRequest.mockResolvedValueOnce({
       status: 'SUCCESS',
       walletId: { String: 'wallet_test123', Valid: true },
-      addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
     });
     renderComponent();
     const button = screen.getByRole('button', { name: /Activate Now/i });
@@ -126,7 +126,7 @@ describe('AccountOpening', () => {
     mockApiRequest.mockResolvedValueOnce({
       status: 'SUCCESS',
       walletId: { String: 'wallet_test123', Valid: true },
-      addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
     });
     renderComponent();
     const button = screen.getByRole('button', { name: /Activate Now/i });
@@ -190,10 +190,10 @@ describe('AccountOpening', () => {
 
   describe('Network Display', () => {
     it('should parse available networks from addresses JSON', () => {
-      const addresses = '{"USDT_TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW","USDC_ERC20":"0x71C7656EC7ab88b098defB751B7401B5f6d8976F"}';
+      const addresses = '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW","USDC_ERC20":"0x71C7656EC7ab88b098defB751B7401B5f6d8976F"}';
       const networks = parseAvailableNetworks(addresses);
       expect(networks).toHaveLength(2);
-      expect(networks).toContainEqual({ value: 'USDT_TRON', label: 'USDT (TRON)' });
+      expect(networks).toContainEqual({ value: 'USDT_TRC20', label: 'USDT (TRC20)' });
       expect(networks).toContainEqual({ value: 'USDC_ERC20', label: 'USDC (ERC20)' });
     });
 
@@ -207,15 +207,15 @@ describe('AccountOpening', () => {
     });
 
     it('should get display address for selected network', () => {
-      const addresses = '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW","ETH":"0x71C7656EC7ab88b098defB751B7401B5f6d8976F"}';
-      expect(getDisplayAddress(addresses, 'TRON')).toBe('TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW');
-      expect(getDisplayAddress(addresses, 'ETH')).toBe('0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
-      expect(getDisplayAddress(addresses, 'BSC')).toBe('');
+      const addresses = '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW","USDC_ERC20":"0x71C7656EC7ab88b098defB751B7401B5f6d8976F"}';
+      expect(getDisplayAddress(addresses, 'USDT_TRC20')).toBe('TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW');
+      expect(getDisplayAddress(addresses, 'USDC_ERC20')).toBe('0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
+      expect(getDisplayAddress(addresses, 'USDT_BEP20')).toBe('');
     });
 
     it('should return empty string for empty addresses', () => {
-      expect(getDisplayAddress('', 'TRON')).toBe('');
-      expect(getDisplayAddress(null as unknown as string, 'TRON')).toBe('');
+      expect(getDisplayAddress('', 'USDT_TRC20')).toBe('');
+      expect(getDisplayAddress(null as unknown as string, 'USDT_TRC20')).toBe('');
     });
 
     it('should show network label when single network available', async () => {
@@ -223,7 +223,7 @@ describe('AccountOpening', () => {
       mockApiRequest.mockResolvedValueOnce({
         status: 'SUCCESS',
         walletId: { String: 'wallet_test123', Valid: true },
-        addresses: { String: '{"USDT_TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+        addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
       });
 
       renderComponent();
@@ -236,32 +236,24 @@ describe('AccountOpening', () => {
 
       // Single network should show static label, not tabs
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
-      expect(screen.getByText('USDT (TRON)')).toBeInTheDocument();
+      expect(screen.getByText('USDT (TRC20)')).toBeInTheDocument();
     });
 
     describe('formatNetworkLabel', () => {
-      it('should format USDC_TRON as USDC (TRON)', () => {
-        expect(formatNetworkLabel('USDC_TRON')).toBe('USDC (TRON)');
+      it('should format USDC_TRC20 as USDC (TRC20)', () => {
+        expect(formatNetworkLabel('USDC_TRC20')).toBe('USDC (TRC20)');
       });
 
-      it('should format USDT_TRON as USDT (TRON)', () => {
-        expect(formatNetworkLabel('USDT_TRON')).toBe('USDT (TRON)');
+      it('should format USDT_TRC20 as USDT (TRC20)', () => {
+        expect(formatNetworkLabel('USDT_TRC20')).toBe('USDT (TRC20)');
       });
 
       it('should format USDT_ERC20 as USDT (ERC20)', () => {
         expect(formatNetworkLabel('USDT_ERC20')).toBe('USDT (ERC20)');
       });
 
-      it('should format USDT_BSC as USDT (BSC)', () => {
-        expect(formatNetworkLabel('USDT_BSC')).toBe('USDT (BSC)');
-      });
-
-      it('should return TRON as-is (no underscore)', () => {
-        expect(formatNetworkLabel('TRON')).toBe('TRON');
-      });
-
-      it('should return ETH as-is (no underscore)', () => {
-        expect(formatNetworkLabel('ETH')).toBe('ETH');
+      it('should format USDT_BEP20 as USDT (BEP20)', () => {
+        expect(formatNetworkLabel('USDT_BEP20')).toBe('USDT (BEP20)');
       });
 
       it('should return empty string for empty input', () => {
@@ -278,6 +270,52 @@ describe('AccountOpening', () => {
       expect(formatCurrency('USDC_TRC20')).toBe('USDC');
       expect(formatCurrency('USDC_ERC20')).toBe('USDC');
       expect(formatCurrency('USDC_BEP20')).toBe('USDC');
+    });
+
+    it('should return empty string for empty currency', () => {
+      expect(formatCurrency('')).toBe('');
+    });
+
+    it('should show currency in SUCCESS state', async () => {
+      mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+      mockApiRequest.mockResolvedValueOnce({
+        status: 'SUCCESS',
+        currency: 'USDT_TRC20',
+        walletId: { String: 'wallet_test123', Valid: true },
+        addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      });
+
+      renderComponent();
+      const button = screen.getByRole('button', { name: /Activate Now/i });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText('Account Activated Successfully')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Currency/i)).toBeInTheDocument();
+      expect(screen.getByText(/USDT/i)).toBeInTheDocument();
+    });
+
+    it('should show formatted USDT currency', async () => {
+      mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
+      mockApiRequest.mockResolvedValueOnce({
+        status: 'SUCCESS',
+        currency: 'USDT_TRC20',
+        walletId: { String: 'wallet_test123', Valid: true },
+        addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+      });
+
+      renderComponent();
+      const button = screen.getByRole('button', { name: /Activate Now/i });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        expect(screen.getByText('Account Activated Successfully')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Currency/i)).toBeInTheDocument();
+      expect(screen.getByText(/USDT/i)).toBeInTheDocument();
     });
 
     it('should format TRON as TRX', () => {
@@ -302,9 +340,9 @@ describe('AccountOpening', () => {
       mockApiRequest.mockResolvedValueOnce({ status: 'NOT_CREATED' });
       mockApiRequest.mockResolvedValueOnce({
         status: 'SUCCESS',
-        currency: 'TRON',
+        currency: 'USDT_TRC20',
         walletId: { String: 'wallet_test123', Valid: true },
-        addresses: { String: '{"TRON":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
+        addresses: { String: '{"USDT_TRC20":"TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW"}', Valid: true }
       });
 
       renderComponent();
@@ -316,7 +354,7 @@ describe('AccountOpening', () => {
       });
 
       expect(screen.getByText(/Currency/i)).toBeInTheDocument();
-      expect(screen.getByText(/TRX/i)).toBeInTheDocument();
+      expect(screen.getByText(/USDT/i)).toBeInTheDocument();
     });
 
     it('should show formatted USDT currency', async () => {

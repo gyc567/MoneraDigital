@@ -2,16 +2,32 @@ import { z } from 'zod';
 import logger from './logger.js';
 
 /**
- * Wallet Service
- * 
- * KISS: Simple API client for wallet operations
- * All database operations are handled by Go backend
+ * Supported currencies in token_network format
  */
+export const SUPPORTED_CURRENCIES = [
+  'USDT_ERC20',
+  'USDT_TRC20',
+  'USDT_BEP20',
+  'USDC_ERC20',
+  'USDC_TRC20',
+  'USDC_BEP20',
+] as const;
+
+export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
+
+/**
+ * Validate if a currency string is valid
+ */
+export function isValidCurrency(currency: string): currency is SupportedCurrency {
+  return SUPPORTED_CURRENCIES.includes(currency as SupportedCurrency);
+}
 
 const createWalletSchema = z.object({
   userId: z.number().int().positive(),
   productCode: z.string().min(1),
-  currency: z.string().min(1),
+  currency: z.string().min(1).refine(isValidCurrency, {
+    message: `Currency must be one of: ${SUPPORTED_CURRENCIES.join(', ')}`,
+  }),
 });
 
 export class WalletService {

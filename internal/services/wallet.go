@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"monera-digital/internal/coreapi"
+	"monera-digital/internal/currency"
 	"monera-digital/internal/dto"
 	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
@@ -103,15 +104,21 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	return newReq, nil
 }
 
-// normalizeCurrencyKey normalizes the currency key for Core API requests.
-// TRX on TRON chain is mapped to USDT_TRON since TRX is the native token
-// and users typically want a USDT address on TRON.
-func normalizeCurrencyKey(token, chain, currentKey string) string {
-	// Map TRX + TRON to USDT_TRON (most common use case)
-	if token == "TRX" && chain == "TRON" {
-		return "USDT_TRON"
+// buildCurrencyKey builds a valid currency key from token and network.
+// Normalizes network aliases (TRON -> TRC20) to standard names.
+func buildCurrencyKey(token, network string) string {
+	// Normalize network aliases
+	network = currency.NormalizeNetwork(network)
+
+	// Build the currency key
+	currencyKey := currency.BuildCurrency(token, network)
+
+	// Validate the currency is supported
+	if !currency.IsValid(currencyKey) {
+		return ""
 	}
-	return currentKey
+
+	return currencyKey
 }
 
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
@@ -193,8 +200,10 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 	}
 
 	// Calculate currency key for the address
-	addressKey := req.Token + "_" + req.Chain
-	addressKey = normalizeCurrencyKey(req.Token, req.Chain, addressKey)
+	addressKey := buildCurrencyKey(req.Token, req.Chain)
+	if addressKey == "" {
+		return nil, fmt.Errorf("invalid currency: %s_%s", req.Token, req.Chain)
+	}
 
 	// Check if address already exists in user_wallets
 	existingWallet, err := s.repo.GetUserWalletByUserAndCurrency(ctx, userID, addressKey)

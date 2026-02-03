@@ -57,20 +57,12 @@ export const getDisplayAddress = (addressesJson: string, selectedNetwork: string
   }
 };
 
-// Format currency for display (e.g., "USDT_TRC20" -> "USDT", "TRON" -> "TRX")
+// Format currency for display (e.g., "USDT_TRC20" -> "USDT", "USDC_BEP20" -> "USDC")
 export const formatCurrency = (currency: string): string => {
   if (!currency) return "";
-  // Handle compound currencies like USDT_TRC20, USDT_ERC20, USDT_BSC
+  // Handle compound currencies like USDT_TRC20, USDT_ERC20, USDT_BEP20, USDC_BEP20
   if (currency.startsWith("USDT_") || currency.startsWith("USDC_")) {
     return currency.split("_")[0];
-  }
-  // Map TRON to TRX for display
-  if (currency === "TRON") {
-    return "TRX";
-  }
-  // Map BSC to BNB for display
-  if (currency === "BSC") {
-    return "BNB";
   }
   return currency;
 };
@@ -93,24 +85,21 @@ export const formatNetworkLabel = (networkKey: string): string => {
 // Get display name for chain abbreviation
 const getChainDisplayName = (chain: string): string => {
   const chainMap: Record<string, string> = {
-    TRON: "TRON",
     TRC20: "TRC20",
     ERC20: "ERC20",
-    BSC: "BSC",
     BEP20: "BEP20",
-    ETH: "Ethereum",
   };
   return chainMap[chain] || chain;
 };
 
-// Currency options
+// Currency options (token_network format as per specification)
 const CURRENCY_OPTIONS = [
   { value: "USDT_ERC20", label: "USDT (ERC20)" },
   { value: "USDT_TRC20", label: "USDT (TRC20)" },
-  { value: "USDT_BSC", label: "USDT (BSC)" },
-  { value: "ETH", label: "Ethereum (ETH)" },
-  { value: "TRON", label: "TRON (TRX)" },
-  { value: "BSC", label: "BSC (BNB)" },
+  { value: "USDT_BEP20", label: "USDT (BEP20)" },
+  { value: "USDC_ERC20", label: "USDC (ERC20)" },
+  { value: "USDC_TRC20", label: "USDC (TRC20)" },
+  { value: "USDC_BEP20", label: "USDC (BEP20)" },
 ];
 
 // Token options for adding new address
@@ -121,9 +110,9 @@ const TOKEN_OPTIONS = [
 
 // Network options for adding new address
 const NETWORK_OPTIONS = [
-  { value: "TRON", label: "TRON (TRC20)", name: "TRON" },
-  { value: "ETH", label: "Ethereum (ERC20)", name: "Ethereum" },
-  { value: "BSC", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
+  { value: "TRC20", label: "TRON (TRC20)", name: "TRON" },
+  { value: "ERC20", label: "Ethereum (ERC20)", name: "Ethereum" },
+  { value: "BEP20", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
 ];
 
 // Add address request type
