@@ -1,17 +1,12 @@
-// internal/routes/routes.go
 package routes
 
 import (
-	"os"
-
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"monera-digital/internal/account"
 	"monera-digital/internal/container"
 	"monera-digital/internal/docs"
 	"monera-digital/internal/handlers"
-	"monera-digital/internal/handlers/core"
 	"monera-digital/internal/middleware"
 )
 
@@ -37,64 +32,60 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 		cont.DepositService,
 		cont.WalletService,
 		cont.WealthService,
+		cont.IdempotencyService,
 	)
 
 	// Create 2FA handler
 	twofaHandler := handlers.NewTwoFAHandler(cont.TwoFAService)
 
-	// Account System Client - Use BACKEND_URL from environment, default to localhost for backward compatibility
-	accountBaseURL := os.Getenv("BACKEND_URL")
-	if accountBaseURL == "" {
-		accountBaseURL = "http://localhost:8081"
-	}
-	accountClient := account.NewClient(accountBaseURL)
-	accountHandler := &handlers.AccountHandler{Client: accountClient}
+	// Root health check endpoint (backup)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
-	// Public routes
-	public := router.Group("/api")
+	// API routes
+	api := router.Group("/api")
+
+	// ==================== PUBLIC ROUTES (No Auth Required) ====================
+	public := api.Group("")
 	{
-		// API Health check
+		// Health check
 		public.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})
 
+		// Authentication routes
 		auth := public.Group("/auth")
 		{
 			auth.POST("/register", h.Register)
 			auth.POST("/login", h.Login)
 			auth.POST("/refresh", h.RefreshToken)
 			auth.POST("/logout", h.Logout)
-			// 2FA验证登录 - 公开端点，因为此时还没有JWT
+
+			// 2FA verification login - public endpoint because no JWT exists yet
 			auth.POST("/2fa/verify-login", h.Verify2FALogin)
-			// 跳过2FA设置 - 公开端点
+			// Skip 2FA setup - public endpoint
 			auth.POST("/2fa/skip", h.Skip2FALogin)
 		}
 
+		// Webhook routes (public)
 		webhooks := public.Group("/webhooks")
 		{
 			webhooks.POST("/core/deposit", h.HandleDepositWebhook)
 		}
-
-		// Account System Routes
-		accounts := public.Group("/accounts")
-		{
-			accounts.GET("", accountHandler.GetUserAccounts)
-			accounts.POST("", accountHandler.CreateAccount)
-			accounts.GET("/history", accountHandler.GetAccountHistory)
-			accounts.POST("/freeze", accountHandler.FreezeBalance)
-			accounts.POST("/unfreeze", accountHandler.UnfreezeBalance)
-			accounts.POST("/transfer", accountHandler.Transfer)
-		}
 	}
 
-	// Protected routes
-	protected := router.Group("/api")
+	// ==================== PROTECTED ROUTES (JWT Auth Required) ====================
+	protected := api.Group("")
 	protected.Use(middleware.AuthMiddleware(cont.JWTSecret))
 	{
-		auth := protected.Group("/auth")
+		// Auth routes
+		protectedAuth := protected.Group("/auth")
 		{
-			auth.GET("/me", h.GetMe)
-			twofa := auth.Group("/2fa")
+			protectedAuth.GET("/me", h.GetMe)
+
+			// 2FA endpoints
+			twofa := protectedAuth.Group("/2fa")
 			{
 				twofa.POST("/setup", twofaHandler.Setup2FA)
 				twofa.POST("/enable", twofaHandler.Enable2FA)
@@ -104,12 +95,21 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			}
 		}
 
+		// Assets routes
+		assets := protected.Group("/assets")
+		{
+			assets.GET("", h.GetAssets)
+			assets.POST("/refresh-prices", h.RefreshPrices)
+		}
+
+		// Lending routes
 		lending := protected.Group("/lending")
 		{
 			lending.POST("/apply", h.ApplyForLending)
 			lending.GET("/positions", h.GetUserPositions)
 		}
 
+		// Wallet routes
 		wallet := protected.Group("/wallet")
 		{
 			wallet.GET("/info", h.GetWalletInfo)
@@ -119,11 +119,13 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			wallet.POST("/address/get", h.GetWalletAddress)
 		}
 
+		// Deposit routes
 		deposits := protected.Group("/deposits")
 		{
 			deposits.GET("", h.GetDeposits)
 		}
 
+		// Address routes
 		addresses := protected.Group("/addresses")
 		{
 			addresses.GET("", h.GetAddresses)
@@ -133,6 +135,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			addresses.POST("/:id/deactivate", h.DeactivateAddress)
 		}
 
+		// Withdrawal routes
 		withdrawals := protected.Group("/withdrawals")
 		{
 			withdrawals.GET("", h.GetWithdrawals)
@@ -141,12 +144,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			withdrawals.GET("/:id", h.GetWithdrawalByID)
 		}
 
-		assets := protected.Group("/assets")
-		{
-			assets.GET("", h.GetAssets)
-			assets.POST("/refresh-prices", h.RefreshPrices)
-		}
-
+		// Wealth routes
 		wealth := protected.Group("/wealth")
 		{
 			wealth.GET("/products", h.GetProducts)
@@ -155,12 +153,4 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			wealth.POST("/redeem", h.Redeem)
 		}
 	}
-
-	// Health check endpoint
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	// Core Account System Mock API
-	core.SetupRoutes(router)
 }

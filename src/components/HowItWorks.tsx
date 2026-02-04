@@ -11,7 +11,8 @@ const iconMap = {
 const HowItWorks = () => {
   const { t } = useTranslation();
 
-  const steps = t("howItWorks.steps", { returnObjects: true }) as any[];
+  const rawSteps = t("howItWorks.steps", { returnObjects: true });
+  const steps = Array.isArray(rawSteps) ? rawSteps : [];
 
   return (
     <section id="solutions" className="py-24 relative">

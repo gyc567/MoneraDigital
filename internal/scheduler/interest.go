@@ -30,31 +30,27 @@ func NewInterestScheduler(wealthRepo repository.Wealth, accountRepo repository.A
 }
 
 func (s *InterestScheduler) Start() {
-	loc := GetShanghaiLocation()
+	// 使用 UTC 时区
+	loc := time.UTC
+	timeZoneName := "UTC"
 
 	nextMidnight := time.Now().In(loc)
-	if nextMidnight.Hour() >= 0 {
-		nextMidnight = nextMidnight.AddDate(0, 0, 1)
-	}
-	nextMidnight = time.Date(nextMidnight.Year(), nextMidnight.Month(), nextMidnight.Day(), 0, 0, 0, 0, loc)
-
+	nextMidnight = time.Date(nextMidnight.Year(), nextMidnight.Month(), nextMidnight.Day(), 0, 0, 5, 0, loc)
 	duration := nextMidnight.Sub(time.Now().In(loc))
+
 	logger.Info("[InterestScheduler] First run scheduled",
 		"scheduled_time", nextMidnight.Format("2006-01-02 15:04:05"),
-		"delay_seconds", duration.Seconds())
-
-	ticker := time.NewTicker(24 * time.Hour)
-	defer ticker.Stop()
+		"delay_seconds", duration.Seconds(),
+		"timezone", timeZoneName)
 
 	time.Sleep(duration)
 
-	logger.Info("[InterestScheduler] Started - running daily at 00:00 Asia/Shanghai")
+	logger.Info("[InterestScheduler] Started - running daily at 00:00:05 UTC")
 
-	for range ticker.C {
-		now := NowInShanghai()
-		logger.Info("[InterestScheduler] Execution started", "timestamp", now.Format("2006-01-02 15:04:05"))
-
+	for {
 		ctx := context.Background()
+		now := time.Now().In(loc)
+		logger.Info("[InterestScheduler] Execution started", "timestamp", now.Format("2006-01-02 15:04:05"))
 
 		// Step 1: Calculate daily interest
 		ordersProcessed, interestAccrued, err := s.CalculateDailyInterest(ctx)
@@ -84,6 +80,15 @@ func (s *InterestScheduler) Start() {
 				"interest_accrued", interestAccrued,
 				"orders_settled", settledCount)
 		}
+
+		// Calculate wait time until next 00:00:05 in configured timezone
+		nextMidnight = NowInShanghai()
+		nextMidnight = time.Date(nextMidnight.Year(), nextMidnight.Month(), nextMidnight.Day(), 0, 0, 5, 0, loc)
+		nextMidnight = nextMidnight.AddDate(0, 0, 1)
+		waitDuration := nextMidnight.Sub(NowInShanghai())
+
+		logger.Debug("[InterestScheduler] Waiting until next run", "next_run", nextMidnight.Format("2006-01-02 15:04:05"))
+		time.Sleep(waitDuration)
 	}
 }
 

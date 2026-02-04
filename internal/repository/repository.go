@@ -122,6 +122,7 @@ type WealthOrderModel struct {
 	ProductTitle       string
 	Currency           string
 	Amount             string
+	Duration           int64
 	PrincipalRedeemed  string
 	InterestExpected   string
 	InterestPaid       string

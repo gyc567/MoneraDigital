@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 const Stats = () => {
   const { t } = useTranslation();
 
-  const stats = t("stats.items", { returnObjects: true }) as any[];
+  const rawStats = t("stats.items", { returnObjects: true });
+  const stats = Array.isArray(rawStats) ? rawStats : [];
 
   return (
     <section className="py-20 relative">

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"monera-digital/internal/cache"
 	"monera-digital/internal/config"
 	"monera-digital/internal/container"
 	"monera-digital/internal/db"
@@ -52,9 +53,23 @@ func main() {
 	defer database.Close()
 	logger.Info("Database connected successfully")
 
+	// Initialize Redis cache
+	var redisCache *cache.RedisCache
+	redisAddr := strings.TrimPrefix(cfg.RedisURL, "redis://")
+	if redisAddr != "" {
+		redisCache, err = cache.NewRedisCache(redisAddr, "", 0)
+		if err != nil {
+			logger.Warn("Failed to connect to Redis, idempotency will be disabled",
+				"error", err.Error())
+		} else {
+			logger.Info("Redis connected successfully")
+		}
+	}
+
 	// Initialize container
 	cont := container.NewContainer(database, cfg.JWTSecret,
-		container.WithEncryption(cfg.EncryptionKey))
+		container.WithEncryption(cfg.EncryptionKey),
+		container.WithRedisCache(redisCache))
 
 	// Verify container
 	if err := cont.Verify(); err != nil {

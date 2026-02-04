@@ -93,6 +93,18 @@ const Deposit = () => {
 
   if (isWalletLoading) return <div className="p-8 text-center">Loading...</div>;
 
+  const formatNumber = (num: string | number): string => {
+    if (typeof num === "string") {
+      num = parseFloat(num);
+    }
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 7,
+    }).format(num);
+    
+    return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
+  };
+
   // Check if wallet is created (SUCCESS)
   if (!walletInfo || walletInfo.status !== "SUCCESS") {
       return (
@@ -207,7 +219,7 @@ const Deposit = () => {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-bold text-green-600 dark:text-green-400">+{parseFloat(tx.amount).toFixed(2)}</div>
+                                    <div className="font-bold text-green-600 dark:text-green-400">+{formatNumber(tx.amount)}</div>
                                     <div className={`text-xs mt-1 font-medium ${
                                         tx.status === 'CONFIRMED' ? 'text-green-500' : 
                                         tx.status === 'PENDING' ? 'text-yellow-500' : 'text-red-500'

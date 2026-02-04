@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"monera-digital/internal/config"
 	"monera-digital/internal/logger"
 )
 
@@ -16,14 +17,15 @@ var (
 )
 
 // GetShanghaiLocation returns Asia/Shanghai timezone location.
+// Uses config.GetLocation() for the timezone, defaults to Asia/Shanghai.
 // Falls back to a fixed UTC+8 offset if timezone database is unavailable.
 // This is critical for deployment environments that lack tzdata.
 func GetShanghaiLocation() *time.Location {
 	shanghaiLocationOnce.Do(func() {
-		loc, err := time.LoadLocation("Asia/Shanghai")
-		if err != nil {
-			logger.Warn("[Timezone] Failed to load Asia/Shanghai timezone, using UTC+8 fallback",
-				"error", err.Error())
+		loc := config.GetLocation()
+		if loc == nil {
+			logger.Warn("[Timezone] Config location is nil, using UTC+8 fallback",
+				"error", config.GetLocationError())
 			loc = time.FixedZone("Asia/Shanghai", shanghaiOffsetSeconds)
 		}
 		shanghaiLocation = loc

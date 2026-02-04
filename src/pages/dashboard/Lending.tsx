@@ -89,6 +89,21 @@ function Lending() {
     fetchPositions();
   }, []);
 
+  // Format number with 7 decimal places
+  const formatNumber = (num: string | number): string => {
+    if (typeof num === "string") {
+      const parsed = parseFloat(num);
+      if (isNaN(parsed)) return num;
+      num = parsed;
+    }
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 7,
+    }).format(num);
+    
+    return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
+  };
+
   async function handleApply(e: React.FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
@@ -244,11 +259,11 @@ function Lending() {
                           <span className="font-bold">{pos.asset}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium">{pos.amount}</TableCell>
+                      <TableCell className="font-medium">{formatNumber(pos.amount)}</TableCell>
                       <TableCell className="text-primary font-bold">{pos.apy}%</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{new Date(pos.endDate).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right">
-                        <div className="font-mono font-bold text-green-400">+{pos.accruedYield}</div>
+                        <div className="font-mono font-bold text-green-400">+{formatNumber(pos.accruedYield)}</div>
                       </TableCell>
                     </TableRow>
                   ))}

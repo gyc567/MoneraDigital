@@ -278,8 +278,8 @@ export const account = pgTable("account", {
 	userId: bigint("user_id", { mode: "number" }).notNull(),
 	type: varchar({ length: 16 }).notNull(),
 	currency: varchar({ length: 8 }).notNull(),
-	balance: numeric({ precision: 65, scale:  30 }).default('0').notNull(),
-	frozenBalance: numeric("frozen_balance", { precision: 65, scale:  30 }).default('0').notNull(),
+	balance: numeric({ precision: 65, scale:  7 }).default('0').notNull(),
+	frozenBalance: numeric("frozen_balance", { precision: 65, scale:  7 }).default('0').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	version: bigint({ mode: "number" }).default(1).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -299,8 +299,8 @@ export const accountJournal = pgTable("account_journal", {
 	userId: bigint("user_id", { mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	accountId: bigint("account_id", { mode: "number" }).notNull(),
-	amount: numeric({ precision: 65, scale:  30 }).notNull(),
-	balanceSnapshot: numeric("balance_snapshot", { precision: 65, scale:  30 }).notNull(),
+	amount: numeric({ precision: 65, scale:  7 }).notNull(),
+	balanceSnapshot: numeric("balance_snapshot", { precision: 65, scale:  7 }).notNull(),
 	bizType: varchar("biz_type", { length: 32 }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	refId: bigint("ref_id", { mode: "number" }),
@@ -604,8 +604,8 @@ export const vAccountAvailable = pgView("v_account_available", {	// You can use 
 	userId: bigint("user_id", { mode: "number" }),
 	type: varchar({ length: 16 }),
 	currency: varchar({ length: 8 }),
-	balance: numeric({ precision: 65, scale:  30 }),
-	frozenBalance: numeric("frozen_balance", { precision: 65, scale:  30 }),
+	balance: numeric({ precision: 65, scale:  7 }),
+	frozenBalance: numeric("frozen_balance", { precision: 65, scale:  7 }),
 	availableBalance: numeric("available_balance"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	version: bigint({ mode: "number" }),
