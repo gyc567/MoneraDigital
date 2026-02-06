@@ -29,7 +29,6 @@ func TestInterestScheduler_CalculateDailyInterest_Success(t *testing.T) {
 	}
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	today := time.Now().Format("2006-01-02")
 
 	mockWealthRepo.On("GetActiveOrders", mock.Anything).Return([]*repository.WealthOrderModel{
 		{
@@ -40,7 +39,9 @@ func TestInterestScheduler_CalculateDailyInterest_Success(t *testing.T) {
 			Amount:           "10000",
 			InterestAccrued:  "0",
 			StartDate:        yesterday,
+			EndDate:          "2026-02-15",
 			LastInterestDate: "",
+			Duration:         7,
 			Currency:         "USDT",
 		},
 	}, nil)
@@ -52,7 +53,7 @@ func TestInterestScheduler_CalculateDailyInterest_Success(t *testing.T) {
 		Currency: "USDT",
 	}, nil)
 
-	mockWealthRepo.On("AccrueInterest", mock.Anything, int64(1), mock.AnythingOfType("string"), today).Return(nil)
+	mockWealthRepo.On("UpdateInterestAccrued", mock.Anything, int64(1), mock.AnythingOfType("string")).Return(nil)
 
 	ordersProcessed, totalInterest, err := scheduler.CalculateDailyInterest(context.Background())
 
@@ -106,6 +107,7 @@ func TestInterestScheduler_CalculateDailyInterest_SkipStartDate(t *testing.T) {
 			Amount:           "10000",
 			InterestAccrued:  "0",
 			StartDate:        today,
+			EndDate:          "2026-02-15",
 			LastInterestDate: "",
 			Currency:         "USDT",
 		},
@@ -142,6 +144,7 @@ func TestInterestScheduler_CalculateDailyInterest_SkipAlreadyAccrued(t *testing.
 			Amount:           "10000",
 			InterestAccrued:  "0",
 			StartDate:        yesterday,
+			EndDate:          "2026-02-15",
 			LastInterestDate: today,
 			Currency:         "USDT",
 		},
@@ -200,6 +203,7 @@ func TestInterestScheduler_CalculateDailyInterest_AccrueError(t *testing.T) {
 			Amount:           "10000",
 			InterestAccrued:  "0",
 			StartDate:        yesterday,
+			EndDate:          "2026-02-15",
 			LastInterestDate: "",
 			Currency:         "USDT",
 		},
@@ -360,6 +364,7 @@ func TestInterestScheduler_SettleExpiredOrders_AutoRenew(t *testing.T) {
 		ID:               1,
 		Title:            "USDT 7日增值",
 		APY:              "5.50",
+		Duration:         7,
 		Currency:         "USDT",
 		Status:           1,
 		AutoRenewAllowed: true,
@@ -380,7 +385,7 @@ func TestInterestScheduler_SettleExpiredOrders_AutoRenew(t *testing.T) {
 		StartDate: today,
 		AutoRenew: true,
 	}
-	mockWealthRepo.On("RenewOrder", mock.Anything, expiredOrder, mock.Anything).Return(newOrder, nil)
+	mockWealthRepo.On("RenewOrder", mock.Anything, expiredOrder, mock.Anything, mock.Anything, mock.Anything).Return(newOrder, nil)
 	mockAccountRepo.On("AddBalance", mock.Anything, int64(1), mock.AnythingOfType("string")).Return(nil)
 	mockWealthRepo.On("SettleOrder", mock.Anything, int64(1), mock.AnythingOfType("string")).Return(nil)
 	mockJournalRepo.On("CreateJournalRecord", mock.Anything, mock.AnythingOfType("*repository.JournalModel")).Return(nil)

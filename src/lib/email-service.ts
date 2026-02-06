@@ -1,9 +1,9 @@
 import { Resend } from 'resend';
 import logger from './logger.js';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const APP_URL = process.env.APP_URL || 'https://monera-digital.vercel.app';
-const SENDER_EMAIL = process.env.SENDER_EMAIL || 'noreply@monera-digital.app';
+const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
+const APP_URL = import.meta.env.VITE_APP_URL || 'https://monera-digital.vercel.app';
+const SENDER_EMAIL = import.meta.env.VITE_SENDER_EMAIL || 'noreply@monera-digital.app';
 
 // Initialize Resend client
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;

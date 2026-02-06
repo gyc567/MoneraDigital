@@ -224,7 +224,27 @@ func (h *Handler) Skip2FALogin(c *gin.Context) {
 }
 
 func (h *Handler) RefreshToken(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Token refresh not yet implemented"})
+	var req struct {
+		RefreshToken string `json:"refreshToken" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Refresh token is required", "code": "MISSING_REFRESH_TOKEN"})
+		return
+	}
+
+	tokenPair, err := h.AuthService.RefreshToken(req.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "code": "INVALID_REFRESH_TOKEN"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"accessToken":  tokenPair.AccessToken,
+		"refreshToken": tokenPair.RefreshToken,
+		"tokenType":    tokenPair.TokenType,
+		"expiresIn":    tokenPair.ExpiresIn,
+	})
 }
 
 func (h *Handler) Logout(c *gin.Context) {

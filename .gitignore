@@ -40,3 +40,4 @@ nohup.out
 .worktrees/
 test-artifacts/
 openspec/
+main

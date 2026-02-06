@@ -3,9 +3,10 @@
  *
  * This client provides a unified way to make API requests with proper base URL configuration.
  * It supports both development (Vite proxy) and production (direct backend URL) environments.
+ * It also handles automatic token refresh on 401 responses.
  */
 
-import { useNavigate } from "react-router-dom";
+import { tokenManager, type TokenPair } from './token-manager.js';
 
 // API base URL configuration
 // Development: Use Vite proxy (empty string means relative paths)
@@ -42,17 +43,130 @@ export class ApiError extends Error {
   }
 }
 
+interface PendingRequest {
+  resolve: (token: TokenPair) => void;
+  reject: (error: Error) => void;
+}
+
+let pendingRefreshRequest: Promise<TokenPair> | null = null;
+
 /**
- * Type-safe fetch wrapper for API requests
+ * Get or create a shared refresh token promise
+ * This ensures concurrent 401 requests share the same refresh attempt
+ */
+function getOrCreateRefreshPromise(refreshToken: string): Promise<TokenPair> {
+  if (pendingRefreshRequest) {
+    return pendingRefreshRequest;
+  }
+
+  pendingRefreshRequest = tokenManager.refreshToken().finally(() => {
+    pendingRefreshRequest = null;
+  });
+
+  return pendingRefreshRequest;
+}
+
+/**
+ * Refresh token and retry the original request
+ */
+async function handle401AndRetry<T>(
+  url: string,
+  options: RequestInit,
+  originalToken: string
+): Promise<T> {
+  const refreshToken = tokenManager.getRefreshToken();
+
+  if (!refreshToken) {
+    tokenManager.clearTokens();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/login';
+    }
+    throw new ApiError('Session expired. Please log in again.', 'SESSION_EXPIRED', 401);
+  }
+
+  try {
+    const newTokens = await getOrCreateRefreshPromise(refreshToken);
+
+    const newOptions: RequestInit = {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${newTokens.accessToken}`,
+      },
+    };
+
+    const response = await fetch(url, newOptions);
+
+    if (!response.ok) {
+      const errorData = await parseErrorResponse(response);
+      throw new ApiError(errorData.message, errorData.code, response.status, errorData);
+    }
+
+    return await parseSuccessResponse<T>(response);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      tokenManager.clearTokens();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * Parse error response from API
+ */
+async function parseErrorResponse(response: Response): Promise<{ message: string; code: string }> {
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType?.includes('application/json');
+
+  if (isJson) {
+    try {
+      const data = await response.json();
+      return {
+        message: data.message || response.statusText,
+        code: data.code || `HTTP_${response.status}`,
+      };
+    } catch {
+      return {
+        message: response.statusText,
+        code: `HTTP_${response.status}`,
+      };
+    }
+  }
+
+  return {
+    message: response.statusText,
+    code: `HTTP_${response.status}`,
+  };
+}
+
+/**
+ * Parse success response from API
+ */
+async function parseSuccessResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType?.includes('application/json') || contentType?.includes('text/json');
+
+  if (isJson) {
+    return await response.json() as T;
+  }
+
+  return {} as T;
+}
+
+/**
+ * Type-safe fetch wrapper for API requests with automatic 401 handling
  */
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _retryOn401: boolean = true
 ): Promise<T> {
   const url = getApiUrl(path);
 
-  // Get token from localStorage for authenticated requests
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token = tokenManager.getAccessToken();
 
   const defaultOptions: RequestInit = {
     ...options,
@@ -65,55 +179,30 @@ export async function apiRequest<T>(
 
   const response = await fetch(url, defaultOptions);
 
-  // Parse response body
-  let responseData: unknown;
-  const contentType = response.headers.get('content-type');
-  const isJson = contentType?.includes('application/json') || contentType?.includes('text/json');
-
-  if (isJson) {
-    try {
-      responseData = await response.json();
-    } catch {
-      responseData = null;
-    }
-  }
-
   // Handle error responses
   if (!response.ok) {
     const status = response.status;
-    const statusText = response.statusText;
 
-    // Extract error message from response
-    let errorMessage = statusText;
-    let errorCode = 'UNKNOWN_ERROR';
-
-    if (isJson && responseData && typeof responseData === 'object') {
-      const data = responseData as Record<string, unknown>;
-      errorMessage = (data.message as string) || statusText;
-      errorCode = (data.code as string) || `HTTP_${status}`;
+    // Handle 401 Unauthorized specifically with auto-refresh
+    if (status === 401 && _retryOn401) {
+      return handle401AndRetry<T>(url, defaultOptions, token || '');
     }
 
-    // Handle 401 Unauthorized specifically
+    const errorData = await parseErrorResponse(response);
+
+    // Handle 401 without retry (e.g., no refresh token)
     if (status === 401) {
-      // Clear invalid token
+      tokenManager.clearTokens();
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
-
-      // Create error with specific code for 401
-      errorCode = 'UNAUTHORIZED';
-      errorMessage = 'Authentication required. Please log in again.';
+      throw new ApiError(errorData.message, errorData.code, status, errorData);
     }
 
-    throw new ApiError(errorMessage, errorCode, status, responseData);
+    throw new ApiError(errorData.message, errorData.code, status, errorData);
   }
 
-  // Return parsed JSON or empty object
-  if (isJson && responseData) {
-    return responseData as T;
-  }
-
-  return {} as T;
+  return await parseSuccessResponse<T>(response);
 }
 
 /**
@@ -121,4 +210,18 @@ export async function apiRequest<T>(
  */
 export function getApiBaseUrl(): string {
   return API_BASE_URL || '(Vite Proxy - /api)';
+}
+
+/**
+ * Check if user is authenticated
+ */
+export function isAuthenticated(): boolean {
+  return tokenManager.isAuthenticated();
+}
+
+/**
+ * Get current access token
+ */
+export function getAccessToken(): string | null {
+  return tokenManager.getAccessToken();
 }

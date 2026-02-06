@@ -92,9 +92,10 @@ type Wealth interface {
 	UpdateProductSoldQuota(ctx context.Context, id int64, amount string) error
 	GetActiveOrders(ctx context.Context) ([]*WealthOrderModel, error)
 	GetExpiredOrders(ctx context.Context) ([]*WealthOrderModel, error)
+	UpdateInterestAccrued(ctx context.Context, orderID int64, interestAccrued string) error
 	AccrueInterest(ctx context.Context, orderID int64, amount string, date string) error
 	SettleOrder(ctx context.Context, orderID int64, interestPaid string) error
-	RenewOrder(ctx context.Context, order *WealthOrderModel, product *WealthProductModel) (*WealthOrderModel, error)
+	RenewOrder(ctx context.Context, order *WealthOrderModel, product *WealthProductModel, startDate string, endDate string) (*WealthOrderModel, error)
 }
 
 // WealthProductModel 理财产品模型

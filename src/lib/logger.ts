@@ -1,18 +1,12 @@
 import pino from 'pino';
 
+const LOG_LEVEL = import.meta.env.VITE_LOG_LEVEL || 'info';
+
 const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV === 'development' 
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-        },
-      }
-    : undefined,
+  level: LOG_LEVEL,
   base: {
-    env: process.env.NODE_ENV,
-    service: 'monera-digital-api',
+    env: import.meta.env.DEV ? 'development' : 'production',
+    service: 'monera-digital-frontend',
   },
 });
 

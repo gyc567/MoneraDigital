@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"monera-digital/internal/config"
 	"monera-digital/internal/repository"
 	"strconv"
 	"time"
@@ -376,12 +375,23 @@ func (r *WealthRepository) GetExpiredOrders(ctx context.Context) ([]*repository.
 	return orders, rows.Err()
 }
 
+func (r *WealthRepository) UpdateInterestAccrued(ctx context.Context, orderID int64, interestAccrued string) error {
+	query := `
+		UPDATE wealth_order SET
+			interest_accrued = CAST($1 AS NUMERIC),
+			updated_at = NOW()
+		WHERE id = $2
+	`
+	_, err := r.db.ExecContext(ctx, query, interestAccrued, orderID)
+	return err
+}
+
 func (r *WealthRepository) AccrueInterest(ctx context.Context, orderID int64, amount string, date string) error {
 	query := `
 		UPDATE wealth_order SET
 			interest_accrued = interest_accrued + CAST($1 AS NUMERIC),
 			last_interest_date = $2,
-			updated_at = $3
+			updated_at = NOW()
 		WHERE id = $4
 	`
 	_, err := r.db.ExecContext(ctx, query, amount, date, "now()", orderID)
@@ -391,7 +401,7 @@ func (r *WealthRepository) AccrueInterest(ctx context.Context, orderID int64, am
 func (r *WealthRepository) SettleOrder(ctx context.Context, orderID int64, interestPaid string) error {
 	query := `
 		UPDATE wealth_order SET
-			interest_paid = CAST(CAST(interest_paid AS NUMERIC) + CAST($1 AS NUMERIC) AS TEXT),
+			interest_paid = CAST(interest_paid AS NUMERIC) + CAST($1 AS NUMERIC),
 			interest_accrued = '0',
 			status = 3,
 			redeemed_at = $2,
@@ -402,15 +412,8 @@ func (r *WealthRepository) SettleOrder(ctx context.Context, orderID int64, inter
 	return err
 }
 
-func (r *WealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel) (*repository.WealthOrderModel, error) {
-	loc := config.GetLocation()
-	now := time.Now().In(loc)
-
-	// 计算新加坡时区(UTC+8)的日期
-	today := now.Format("2006-01-02")
-	todayDate, _ := time.Parse("2006-01-02", today)
-	startDate := todayDate.Format("2006-01-02")
-	endDate := todayDate.AddDate(0, 0, product.Duration).Format("2006-01-02")
+func (r *WealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel, startDate string, endDate string) (*repository.WealthOrderModel, error) {
+	now := time.Now()
 
 	apy, _ := strconv.ParseFloat(product.APY, 64)
 	amountFloat, _ := strconv.ParseFloat(order.Amount, 64)
@@ -465,8 +468,8 @@ func (r *WealthRepository) RenewOrder(ctx context.Context, order *repository.Wea
 		return nil, fmt.Errorf("failed to update original order: %v", err)
 	}
 
-	fmt.Printf("[RenewOrder] Order renewed successfully: old_order_id=%d, new_order_id=%d, user_id=%d, amount=%s\n",
-		order.ID, newOrder.ID, order.UserID, order.Amount)
+	fmt.Printf("[RenewOrder] Order renewed successfully: old_order_id=%d, new_order_id=%d, user_id=%d, amount=%s, start_date=%s, end_date=%s\n",
+		order.ID, newOrder.ID, order.UserID, order.Amount, startDate, endDate)
 
 	return newOrder, nil
 }
