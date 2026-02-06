@@ -85,11 +85,11 @@
   "howItWorks": {
     "sectionLabel": "简单流程",
     "title": "工作原理",
-    "description": "从入职到通过数字资产赚取机构级收益的无缝之旅。",
+    "description": "从入驻到通过数字资产赚取机构级收益的无缝之旅。",
     "steps": [
       {
         "number": "01",
-        "title": "入职和KYC",
+        "title": "入驻和KYC",
         "description": "完成我们为高净值个人设计的精简验证流程，符合机构级合规要求。"
       },
       {

@@ -372,6 +372,9 @@
       "enabled": false
     }
   },
+  "permission": {
+    "*": "allow"
+  },
 
   "experimental": {
     "parallel_agents": true,
