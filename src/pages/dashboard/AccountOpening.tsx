@@ -121,6 +121,18 @@ interface AddAddressRequest {
   token: string;
 }
 
+// Chain to backend value mapping (for BEP20, we need to send full format to backend)
+const CHAIN_TO_BACKEND_MAP: Record<string, string> = {
+  "TRC20": "TRC20",
+  "ERC20": "ERC20",
+  "BEP20": "BEP20", // Backend will convert to full format (USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
+};
+
+// Get backend chain value for API call
+const getBackendChain = (chain: string): string => {
+  return CHAIN_TO_BACKEND_MAP[chain] || chain;
+};
+
 // Get wallet address request type
 interface GetWalletAddressRequest {
   userId: string;
@@ -294,7 +306,8 @@ const AccountOpening = () => {
   });
 
   const handleAddAddress = () => {
-    addAddressMutation.mutate({ chain: selectedChain, token: selectedToken });
+    // Use mapped backend chain value for API call
+    addAddressMutation.mutate({ chain: getBackendChain(selectedChain), token: selectedToken });
   };
 
   const handleCreateWallet = () => {

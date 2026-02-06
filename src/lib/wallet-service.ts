@@ -3,14 +3,15 @@ import logger from './logger.js';
 
 /**
  * Supported currencies in token_network format
+ * Note: BEP20 uses full backend format for BNB Smart Chain
  */
 export const SUPPORTED_CURRENCIES = [
   'USDT_ERC20',
   'USDT_TRC20',
-  'USDT_BEP20',
+  'USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET',
   'USDC_ERC20',
   'USDC_TRC20',
-  'USDC_BEP20',
+  'USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET',
 ] as const;
 
 export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];

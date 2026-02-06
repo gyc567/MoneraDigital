@@ -42,7 +42,7 @@ func TestNetworkFromCurrency(t *testing.T) {
 	}{
 		{"USDT_ERC20", USDT_ERC20, "ERC20"},
 		{"USDT_TRC20", USDT_TRC20, "TRC20"},
-		{"USDT_BEP20", USDT_BEP20, "BEP20"},
+		{"USDT_BEP20", USDT_BEP20, "BEP20_BINANCE_SMART_CHAIN_MAINNET"},
 		{"USDC_ERC20", USDC_ERC20, "ERC20"},
 		{"single token", "ETH", ""}, // Single tokens return empty network
 		{"empty", "", ""},
@@ -88,7 +88,7 @@ func TestBuildCurrency(t *testing.T) {
 	}{
 		{"USDT ERC20", "USDT", "ERC20", USDT_ERC20},
 		{"USDT TRC20", "USDT", "TRC20", USDT_TRC20},
-		{"USDC BEP20", "USDC", "BEP20", USDC_BEP20},
+		{"USDC BEP20", "USDC", "BEP20", "USDC_BEP20"}, // BuildCurrency just concatenates, use ToFullFormat for full format
 	}
 
 	for _, tt := range tests {
@@ -147,5 +147,30 @@ func TestAllSupportedCurrenciesContainsAll(t *testing.T) {
 		if !currencySet[c] {
 			t.Errorf("Currency %s not in set", c)
 		}
+	}
+}
+
+func TestToFullFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		currency string
+		want     string
+	}{
+		{"USDT ERC20", "USDT_ERC20", USDT_ERC20},
+		{"USDT TRC20", "USDT_TRC20", USDT_TRC20},
+		{"USDT BEP20", "USDT_BEP20", USDT_BEP20},
+		{"USDC ERC20", "USDC_ERC20", USDC_ERC20},
+		{"USDC TRC20", "USDC_TRC20", USDC_TRC20},
+		{"USDC BEP20", "USDC_BEP20", USDC_BEP20},
+		{"already full format", USDT_BEP20, USDT_BEP20},
+		{"unknown currency", "UNKNOWN_TOKEN", "UNKNOWN_TOKEN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToFullFormat(tt.currency); got != tt.want {
+				t.Errorf("ToFullFormat(%q) = %v, want %v", tt.currency, got, tt.want)
+			}
+		})
 	}
 }

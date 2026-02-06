@@ -106,11 +106,12 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 
 // buildCurrencyKey builds a valid currency key from token and network.
 // Normalizes network aliases (TRON -> TRC20) to standard names.
+// Converts to full backend format for BEP20 networks.
 func buildCurrencyKey(token, network string) string {
 	// Normalize network aliases
 	network = currency.NormalizeNetwork(network)
 
-	// Build the currency key
+	// Build the currency key (short format initially)
 	currencyKey := currency.BuildCurrency(token, network)
 
 	// Validate the currency is supported
@@ -118,7 +119,8 @@ func buildCurrencyKey(token, network string) string {
 		return ""
 	}
 
-	return currencyKey
+	// Convert to full backend format (e.g., USDT_BEP20 -> USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
+	return currency.ToFullFormat(currencyKey)
 }
 
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {

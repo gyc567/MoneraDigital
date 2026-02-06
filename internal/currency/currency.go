@@ -6,11 +6,21 @@ import "strings"
 const (
 	USDT_ERC20 = "USDT_ERC20"
 	USDT_TRC20 = "USDT_TRC20"
-	USDT_BEP20 = "USDT_BEP20"
+	USDT_BEP20 = "USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET"
 	USDC_ERC20 = "USDC_ERC20"
 	USDC_TRC20 = "USDC_TRC20"
-	USDC_BEP20 = "USDC_BEP20"
+	USDC_BEP20 = "USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET"
 )
+
+// ShortFormatToFull maps short currency codes to their full backend format
+var ShortFormatToFull = map[string]string{
+	"USDT_ERC20": USDT_ERC20,
+	"USDT_TRC20": USDT_TRC20,
+	"USDT_BEP20": USDT_BEP20,
+	"USDC_ERC20": USDC_ERC20,
+	"USDC_TRC20": USDC_TRC20,
+	"USDC_BEP20": USDC_BEP20,
+}
 
 // SupportedNetworks contains all valid network identifiers
 var SupportedNetworks = []string{
@@ -50,7 +60,7 @@ var AllSupportedCurrencies = []string{
 	USDC_BEP20,
 }
 
-// CurrencyLabelMap provides display labels for currencies
+// CurrencyLabelMap provides display labels for currencies (uses full format as key)
 var CurrencyLabelMap = map[string]string{
 	USDT_ERC20: "USDT (ERC20)",
 	USDT_TRC20: "USDT (TRC20)",
@@ -58,6 +68,16 @@ var CurrencyLabelMap = map[string]string{
 	USDC_ERC20: "USDC (ERC20)",
 	USDC_TRC20: "USDC (TRC20)",
 	USDC_BEP20: "USDC (BEP20)",
+}
+
+// ShortFormatLabelMap provides display labels for short currency codes
+var ShortFormatLabelMap = map[string]string{
+	"USDT_ERC20": "USDT (ERC20)",
+	"USDT_TRC20": "USDT (TRC20)",
+	"USDT_BEP20": "USDT (BEP20)",
+	"USDC_ERC20": "USDC (ERC20)",
+	"USDC_TRC20": "USDC (TRC20)",
+	"USDC_BEP20": "USDC (BEP20)",
 }
 
 // NetworkFromCurrency extracts the network part from currency (e.g., "ERC20" from "USDT_ERC20")
@@ -85,13 +105,29 @@ func IsValid(currency string) bool {
 		return false
 	}
 
-	// Check if it's in the supported list
+	// Check if it's in the supported list (full format)
 	for _, c := range AllSupportedCurrencies {
 		if c == currency {
 			return true
 		}
 	}
+
+	// Also accept short format (will be converted to full format)
+	for _, c := range ShortFormatToFull {
+		if c == currency {
+			return true
+		}
+	}
 	return false
+}
+
+// ToFullFormat converts short currency format to full backend format
+// e.g., "USDT_BEP20" -> "USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET"
+func ToFullFormat(currency string) string {
+	if full, ok := ShortFormatToFull[currency]; ok {
+		return full
+	}
+	return currency
 }
 
 // BuildCurrency creates a currency string from token and network
@@ -100,8 +136,14 @@ func BuildCurrency(token, network string) string {
 }
 
 // FormatForDisplay returns a human-readable label for the currency
+// Handles both full format (USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET) and short format (USDC_BEP20)
 func FormatForDisplay(currency string) string {
+	// Try full format first
 	if label, ok := CurrencyLabelMap[currency]; ok {
+		return label
+	}
+	// Try short format
+	if label, ok := ShortFormatLabelMap[currency]; ok {
 		return label
 	}
 	return currency
