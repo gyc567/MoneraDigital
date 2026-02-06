@@ -420,107 +420,79 @@ func (s *WealthService) Redeem(ctx context.Context, userID int, orderID int64, r
 	endDate, _ := time.Parse("2006-01-02", order.EndDate)
 	isExpired := now.After(endDate) || now.Equal(endDate)
 
-	if !isExpired {
-		fmt.Printf("[DEBUG] Early redemption for order %d - only unfreezing principal\n", order.ID)
+	if isExpired {
+		fmt.Printf("[DEBUG] Order %d is expired - full redemption with interest\n", order.ID)
+		order.Status = 3
+	} else {
+		fmt.Printf("[DEBUG] Order %d is not expired yet - early redemption, principal only\n", order.ID)
+		order.Status = 4
 	}
 
-	isFull := redemptionType == "full"
-	if isFull {
-		account, err := s.accountRepo.GetAccountByUserIDAndCurrency(ctx, int64(userID), order.Currency)
-		if err != nil {
-			return err
-		}
+	account, err := s.accountRepo.GetAccountByUserIDAndCurrency(ctx, int64(userID), order.Currency)
+	if err != nil {
+		return err
+	}
 
-		err = s.accountRepo.UnfreezeBalance(ctx, account.ID, order.Amount)
-		if err != nil {
-			return err
-		}
+	err = s.accountRepo.UnfreezeBalance(ctx, account.ID, order.Amount)
+	if err != nil {
+		return err
+	}
 
-		order.Status = 3
-		order.RedemptionAmount = order.Amount
-		order.RedeemedAt = now.Format(time.RFC3339)
+	order.RedemptionAmount = order.Amount
+	order.RedeemedAt = now.Format(time.RFC3339)
 
-		if isExpired {
-			interestAccrued, _ := strconv.ParseFloat(order.InterestAccrued, 64)
-			if interestAccrued > 0 {
-				err = s.accountRepo.AddBalance(ctx, account.ID, order.InterestAccrued)
-				if err != nil {
-					return err
-				}
-
-				balance, _ := strconv.ParseFloat(account.Balance, 64)
-				newBalance := balance + interestAccrued
-
-				journalRecord := &repository.JournalModel{
-					SerialNo:        fmt.Sprintf("REDEEM-PRINCIPAL-%s-%d", now.Format("20060102150405"), order.ID),
-					UserID:          int64(userID),
-					AccountID:       account.ID,
-					Amount:          order.Amount,
-					BalanceSnapshot: strconv.FormatFloat(newBalance, 'f', -1, 64),
-					BizType:         "REDEEM_UNFREEZE",
-					RefID:           &order.ID,
-					CreatedAt:       now.Format(time.RFC3339),
-				}
-				err = s.journalRepo.CreateJournalRecord(ctx, journalRecord)
-				if err != nil {
-					fmt.Printf("[ERROR] Failed to create principal journal record: %v\n", err)
-				}
-
-				interestJournalRecord := &repository.JournalModel{
-					SerialNo:        fmt.Sprintf("REDEEM-INTEREST-%s-%d", now.Format("20060102150405"), order.ID),
-					UserID:          int64(userID),
-					AccountID:       account.ID,
-					Amount:          order.InterestAccrued,
-					BalanceSnapshot: strconv.FormatFloat(newBalance+interestAccrued, 'f', -1, 64),
-					BizType:         "INTEREST_PAYOUT",
-					RefID:           &order.ID,
-					CreatedAt:       now.Format(time.RFC3339),
-				}
-				err = s.journalRepo.CreateJournalRecord(ctx, interestJournalRecord)
-				if err != nil {
-					fmt.Printf("[ERROR] Failed to create interest journal record: %v\n", err)
-				}
-
-				order.InterestPaid = order.InterestAccrued
-				order.InterestAccrued = "0"
-				fmt.Printf("[DEBUG] Paid interest %.8f %s for order %d\n", interestAccrued, order.Currency, order.ID)
-			} else {
-				balance, _ := strconv.ParseFloat(account.Balance, 64)
-				newBalance := balance + interestAccrued
-				journalRecord := &repository.JournalModel{
-					SerialNo:        fmt.Sprintf("REDEEM-PRINCIPAL-%s-%d", now.Format("20060102150405"), order.ID),
-					UserID:          int64(userID),
-					AccountID:       account.ID,
-					Amount:          order.Amount,
-					BalanceSnapshot: strconv.FormatFloat(newBalance, 'f', -1, 64),
-					BizType:         "REDEEM_UNFREEZE",
-					RefID:           &order.ID,
-					CreatedAt:       now.Format(time.RFC3339),
-				}
-				err = s.journalRepo.CreateJournalRecord(ctx, journalRecord)
-				if err != nil {
-					fmt.Printf("[ERROR] Failed to create principal journal record: %v\n", err)
-				}
+	if isExpired {
+		interestAccrued, _ := strconv.ParseFloat(order.InterestAccrued, 64)
+		if interestAccrued > 0 {
+			err = s.accountRepo.AddBalance(ctx, account.ID, order.InterestAccrued)
+			if err != nil {
+				return err
 			}
-		} else {
+
 			balance, _ := strconv.ParseFloat(account.Balance, 64)
-			principalAmt, _ := strconv.ParseFloat(order.Amount, 64)
-			newBalance := balance + principalAmt
-			journalRecord := &repository.JournalModel{
-				SerialNo:        fmt.Sprintf("REDEEM-PRINCIPAL-%s-%d", now.Format("20060102150405"), order.ID),
+			newBalance := balance + interestAccrued
+
+			interestJournalRecord := &repository.JournalModel{
+				SerialNo:        fmt.Sprintf("REDEEM-INTEREST-%s-%d", now.Format("20060102150405"), order.ID),
 				UserID:          int64(userID),
 				AccountID:       account.ID,
-				Amount:          order.Amount,
-				BalanceSnapshot: strconv.FormatFloat(newBalance, 'f', -1, 64),
-				BizType:         "REDEEM_UNFREEZE",
+				Amount:          order.InterestAccrued,
+				BalanceSnapshot: strconv.FormatFloat(newBalance+interestAccrued, 'f', -1, 64),
+				BizType:         "INTEREST_PAYOUT",
 				RefID:           &order.ID,
 				CreatedAt:       now.Format(time.RFC3339),
 			}
-			err = s.journalRepo.CreateJournalRecord(ctx, journalRecord)
+			err = s.journalRepo.CreateJournalRecord(ctx, interestJournalRecord)
 			if err != nil {
-				fmt.Printf("[ERROR] Failed to create principal journal record: %v\n", err)
+				fmt.Printf("[ERROR] Failed to create interest journal record: %v\n", err)
 			}
+
+			order.InterestPaid = order.InterestAccrued
+			order.InterestAccrued = "0"
+			fmt.Printf("[DEBUG] Paid interest %.8f %s for order %d\n", interestAccrued, order.Currency, order.ID)
 		}
+	} else {
+		order.InterestAccrued = "0"
+		fmt.Printf("[DEBUG] Early redemption - cleared accrued interest for order %d\n", order.ID)
+	}
+
+	balance, _ := strconv.ParseFloat(account.Balance, 64)
+	principalAmt, _ := strconv.ParseFloat(order.Amount, 64)
+	newBalance := balance + principalAmt
+
+	principalJournal := &repository.JournalModel{
+		SerialNo:        fmt.Sprintf("REDEEM-PRINCIPAL-%s-%d", now.Format("20060102150405"), order.ID),
+		UserID:          int64(userID),
+		AccountID:       account.ID,
+		Amount:          order.Amount,
+		BalanceSnapshot: strconv.FormatFloat(newBalance, 'f', -1, 64),
+		BizType:         "REDEEM_UNFREEZE",
+		RefID:           &order.ID,
+		CreatedAt:       now.Format(time.RFC3339),
+	}
+	err = s.journalRepo.CreateJournalRecord(ctx, principalJournal)
+	if err != nil {
+		fmt.Printf("[ERROR] Failed to create principal journal record: %v\n", err)
 	}
 
 	return s.repo.UpdateOrder(ctx, order)

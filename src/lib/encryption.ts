@@ -1,10 +1,10 @@
 import crypto from 'crypto';
 import logger from './logger.js';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const ENCRYPTION_KEY = import.meta.env.VITE_ENCRYPTION_KEY;
 
 if (!ENCRYPTION_KEY) {
-  throw new Error('ENCRYPTION_KEY environment variable is required. Please set it in your .env file. This is used to encrypt sensitive 2FA data.');
+  throw new Error('VITE_ENCRYPTION_KEY environment variable is required. Please set it in your .env file. This is used to encrypt sensitive 2FA data.');
 }
 
 export function encrypt(text: string): string {

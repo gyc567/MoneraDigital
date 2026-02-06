@@ -9,12 +9,12 @@ interface SafeheronConfig {
 }
 
 const getSafeheronConfig = (): SafeheronConfig => {
-  const apiKey = process.env.SAFEHERON_API_KEY;
-  const apiSecret = process.env.SAFEHERON_API_SECRET;
-  const baseUrl = process.env.SAFEHERON_API_URL || "https://api.safeheron.vip";
+  const apiKey = import.meta.env.VITE_SAFEHERON_API_KEY || '';
+  const apiSecret = import.meta.env.VITE_SAFEHERON_API_SECRET || '';
+  const baseUrl = import.meta.env.VITE_SAFEHERON_API_URL || "https://api.safeheron.vip";
 
   if (!apiKey || !apiSecret) {
-    logger.warn("Safeheron API credentials not configured, using mock mode");
+    logger.warn("Safeheron API credentials not configured (VITE_SAFEHERON_*), using mock mode");
     return {
       apiKey: "",
       apiSecret: "",

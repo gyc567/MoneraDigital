@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import logger from './logger.js';
+import { tokenManager, type TokenPair } from './token-manager.js';
 
 /**
  * Auth Service
- * 
+ *
  * KISS: Simple API client for authentication operations
  * All database operations are handled by Go backend
  */
@@ -41,10 +42,14 @@ export class AuthService {
       throw new Error(data.error || 'Login failed');
     }
 
-    // Store token
-    if (data.accessToken || data.token) {
-      localStorage.setItem('token', data.accessToken || data.token);
-    }
+    const tokenPair: TokenPair = {
+      accessToken: data.accessToken || data.token,
+      refreshToken: data.refreshToken || '',
+      tokenType: data.tokenType || 'Bearer',
+      expiresIn: data.expiresIn || 86400,
+    };
+
+    tokenManager.setTokens(tokenPair);
 
     if (data.user) {
       localStorage.setItem('user', JSON.stringify(data.user));
@@ -84,7 +89,7 @@ export class AuthService {
    * Get current user via API
    */
   static async getCurrentUser() {
-    const token = localStorage.getItem('token');
+    const token = tokenManager.getAccessToken();
     if (!token) {
       return null;
     }
@@ -96,8 +101,7 @@ export class AuthService {
     });
 
     if (!response.ok) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      tokenManager.clearTokens();
       return null;
     }
 
@@ -108,8 +112,7 @@ export class AuthService {
    * Logout
    */
   static logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    tokenManager.clearTokens();
     logger.info('User logged out');
   }
 
@@ -117,6 +120,6 @@ export class AuthService {
    * Check if user is authenticated
    */
   static isAuthenticated(): boolean {
-    return !!localStorage.getItem('token');
+    return tokenManager.isAuthenticated();
   }
 }
