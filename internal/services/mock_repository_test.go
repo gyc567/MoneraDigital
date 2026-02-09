@@ -430,10 +430,15 @@ func (m *MockWealthRepository) SettleOrder(ctx context.Context, orderID int64, i
 	return args.Error(0)
 }
 
-func (m *MockWealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel) (*repository.WealthOrderModel, error) {
-	args := m.Called(ctx, order, product)
+func (m *MockWealthRepository) RenewOrder(ctx context.Context, order *repository.WealthOrderModel, product *repository.WealthProductModel, startDate string, endDate string) (*repository.WealthOrderModel, error) {
+	args := m.Called(ctx, order, product, startDate, endDate)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*repository.WealthOrderModel), args.Error(1)
+}
+
+func (m *MockWealthRepository) UpdateInterestAccrued(ctx context.Context, orderID int64, interestAccrued string) error {
+	args := m.Called(ctx, orderID, interestAccrued)
+	return args.Error(0)
 }

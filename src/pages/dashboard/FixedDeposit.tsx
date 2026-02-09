@@ -13,15 +13,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PiggyBank, TrendingUp, Info, ArrowRight, Clock, Percent, ShieldCheck, RefreshCw, History, AlertTriangle, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import { 
-  calculateInterest, 
-  calculateDepositDates, 
-  formatNumber, 
+import {
+  calculateInterest,
+  calculateDepositDates,
   getDaysRemaining,
   validateAmount,
   generateRequestId,
   InterestCalculationResult
 } from "@/lib/wealth-utils";
+import { getAccessToken } from "@/lib/api-client";
 
 interface Product {
   id: number;
@@ -700,7 +700,7 @@ const FixedDeposit = () => {
 
     setIsRedeeming(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = getAccessToken();
       if (!token) {
         navigate("/login");
         return;
@@ -713,7 +713,7 @@ const FixedDeposit = () => {
         },
         body: JSON.stringify({
           orderId: selectedOrder.id,
-          redemptionType: ""
+          redemptionType: "full"
         })
       });
 
@@ -809,11 +809,11 @@ const FixedDeposit = () => {
     if (!selectedProduct || !amount) {
       return {
         principal: 0,
-        annualRate: 0,
         days: 0,
         interest: 0,
         totalAmount: 0,
-        dailyRate: 0
+        dailyRate: 0,
+        rate: 0
       };
     }
     
@@ -821,11 +821,11 @@ const FixedDeposit = () => {
     if (isNaN(principal) || principal <= 0) {
       return {
         principal: 0,
-        annualRate: 0,
         days: 0,
         interest: 0,
         totalAmount: 0,
-        dailyRate: 0
+        dailyRate: 0,
+        rate: 0
       };
     }
     
@@ -843,9 +843,9 @@ const FixedDeposit = () => {
   const STATUS_MAP: Record<number, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     0: { label: "pending_interest", variant: "secondary" },
     1: { label: "accruing_interest", variant: "default" },
-    2: { label: "matured", variant: "outline" },
-    3: { label: "redeemed", variant: "outline" },
-    4: { label: "renewing", variant: "secondary" },
+    2: { label: "renewed", variant: "outline" },
+    3: { label: "settled", variant: "outline" },
+    4: { label: "redeemed", variant: "destructive" },
   };
 
   const validateAmountInput = (): { valid: boolean; error?: string } => {
