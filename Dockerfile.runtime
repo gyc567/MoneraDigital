@@ -1,0 +1,14 @@
+# Minimal runtime test Dockerfile
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates curl
+
+RUN addgroup -S app && adduser -S -G app app
+
+COPY --from=golang:1.25-alpine /usr/local/go/bin/go /usr/local/go/bin/
+
+USER app
+
+EXPOSE 5000
+
+CMD ["sh"]
