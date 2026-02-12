@@ -263,7 +263,7 @@ func TestGetAddress_HTTPError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Internal Server Error"))
 	}))
-	server.Close()
+	defer server.Close()
 
 	client := NewClient("http://invalid-server:9999")
 
@@ -275,5 +275,60 @@ func TestGetAddress_HTTPError(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for HTTP failure, got nil")
+	}
+}
+
+// TestGetAddress_NumericCode 测试 Core API 返回 numeric code
+// This test verifies the fix for: "json: cannot unmarshal number into Go struct field CoreAPIResponse.code of type string"
+func TestGetAddress_NumericCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Core API 返回 numeric code (这是实际 Core API 的行为)
+		// 使用 raw JSON 来确保 code 是 number 类型而不是 string
+		w.Write([]byte(`{"success":true,"data":{"address":"TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV","addressType":"TRC20"},"message":"成功","code":200}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+
+	result, err := client.GetAddress(context.Background(), GetAddressRequest{
+		UserID:      73,
+		ProductCode: "X_FINANCE",
+		Currency:    "USDT_TRON",
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if result.Address != "TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV" {
+		t.Errorf("Expected address 'TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV', got '%s'", result.Address)
+	}
+}
+
+// TestGetIncomeHistory_NumericCode 测试 Core API 返回 numeric code
+// This test verifies the fix for: "json: cannot unmarshal number into Go struct field CoreAPIResponse.code of type string"
+func TestGetIncomeHistory_NumericCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Core API 返回 numeric code (这是实际 Core API 的行为)
+		w.Write([]byte(`{"success":true,"data":[{"txKey":"txsjujr2a631c3d5a4p71adcfee4802001","txHash":"d8ff30f1f66aff580a34ae1ac6d58190861129fd1750fd26c5c22fae40f857c2","coinKey":"TRX(SHASTA)_TRON_TESTNET","txAmount":"2000.00000000","address":"TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV","transactionStatus":"COMPLETED","blockHeight":61844572,"createTime":"2026-01-28 10:04:07","completedTime":"2026-01-28 10:05:51"}],"message":"成功","code":200}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+
+	result, err := client.GetIncomeHistory(context.Background(), GetIncomeHistoryRequest{
+		Address: "TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV",
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if len(result) != 1 {
+		t.Errorf("Expected 1 record, got %d", len(result))
+	}
+
+	if result[0].TxKey != "txsjujr2a631c3d5a4p71adcfee4802001" {
+		t.Errorf("Expected txKey 'txsjujr2a631c3d5a4p71adcfee4802001', got '%s'", result[0].TxKey)
 	}
 }

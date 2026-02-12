@@ -21,7 +21,7 @@ type CoreAPIResponse struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data"`
 	Message string      `json:"message"`
-	Code    string      `json:"code"`
+	Code    interface{} `json:"code"`
 }
 
 // NewClient creates a new Core API client.

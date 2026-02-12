@@ -10,13 +10,16 @@ import QRCode from "qrcode";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 
-interface DepositTransaction {
-  id: string | number;
-  asset: string;
-  chain: string;
-  created_at: string;
-  amount: string;
-  status: 'CONFIRMED' | 'PENDING' | 'FAILED';
+interface DepositRecord {
+  txKey: string;
+  txHash: string;
+  coinKey: string;
+  txAmount: string;
+  address: string;
+  transactionStatus: string;
+  blockHeight: number;
+  createTime: string;
+  completedTime: string;
 }
 
 const Deposit = () => {
@@ -48,18 +51,6 @@ const Deposit = () => {
     },
   });
 
-  const { data: depositsData } = useQuery({
-    queryKey: ["deposits"],
-    queryFn: async () => {
-      const res = await fetch("/api/deposits?limit=10", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch deposits");
-      return res.json();
-    },
-    refetchInterval: 15000, // Poll every 15s
-  });
-
   // Parse addresses from JSON string if available
   // Handle sql.NullString format { String: "...", Valid: true }
   let address = "";
@@ -71,6 +62,30 @@ const Deposit = () => {
   } catch (e) {
       console.error("Failed to parse wallet addresses", e);
   }
+
+  // Fetch deposit records from Core API based on address
+  const { data: depositsData, isLoading: isDepositsLoading } = useQuery({
+    queryKey: ["deposits", address],
+    queryFn: async () => {
+      if (!address) return [];
+      const res = await fetch("/api/wallet/address/incomeHistory", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ address }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch deposit records");
+      }
+      const response = await res.json();
+      return response.data || [];
+    },
+    enabled: !!address,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
 
   useEffect(() => {
     if (address) {
@@ -103,6 +118,26 @@ const Deposit = () => {
     }).format(num);
     
     return formatted.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.$/, '');
+  };
+
+  // Get status display info
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case "COMPLETED":
+        return { color: "text-green-500", label: t("deposit.status.CONFIRMED") || "Success" };
+      case "PENDING":
+        return { color: "text-yellow-500", label: t("deposit.status.PENDING") || "Pending" };
+      case "FAILED":
+        return { color: "text-red-500", label: t("deposit.status.FAILED") || "Failed" };
+      default:
+        return { color: "text-muted-foreground", label: status };
+    }
+  };
+
+  // Extract coin name from coinKey (e.g., "TRX(SHASTA)_TRON_TESTNET" -> "TRX")
+  const getCoinName = (coinKey: string): string => {
+    const match = coinKey.match(/^([A-Z]+)/);
+    return match ? match[1] : coinKey;
   };
 
   // Check if wallet is created (SUCCESS)
@@ -201,34 +236,42 @@ const Deposit = () => {
                 <CardTitle>{t("deposit.history")}</CardTitle>
             </CardHeader>
             <CardContent>
-                {!depositsData?.deposits || depositsData.deposits.length === 0 ? (
+                {!depositsData || depositsData.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
-                        {t("deposit.noHistory")}
+                        {isDepositsLoading ? t("common.loading") : t("deposit.noHistory")}
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {depositsData.deposits.map((tx: DepositTransaction) => (
-                            <div key={tx.id} className="flex items-center justify-between p-4 border border-border/50 bg-card rounded-lg hover:bg-secondary/20 transition-colors">
+                        {depositsData.slice(0, 5).map((tx: DepositRecord) => {
+                          const statusInfo = getStatusInfo(tx.transactionStatus);
+                          return (
+                            <div key={tx.txKey} className="flex items-center justify-between p-4 border border-border/50 bg-card rounded-lg hover:bg-secondary/20 transition-colors">
                                 <div>
                                     <div className="font-medium flex items-center gap-2">
-                                        {tx.asset} 
-                                        <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-normal">{tx.chain}</span>
+                                        {getCoinName(tx.coinKey)} 
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-normal">{network}</span>
                                     </div>
                                     <div className="text-xs text-muted-foreground mt-1">
-                                        {format(new Date(tx.created_at), "yyyy-MM-dd HH:mm")}
+                                        {tx.createTime ? format(new Date(tx.createTime.replace(" ", "T")), "yyyy-MM-dd HH:mm") : "-"}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1 truncate max-w-[200px]" title={tx.txHash}>
+                                        {tx.txHash.substring(0, 12)}...{tx.txHash.substring(tx.txHash.length - 8)}
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-bold text-green-600 dark:text-green-400">+{formatNumber(tx.amount)}</div>
-                                    <div className={`text-xs mt-1 font-medium ${
-                                        tx.status === 'CONFIRMED' ? 'text-green-500' : 
-                                        tx.status === 'PENDING' ? 'text-yellow-500' : 'text-red-500'
-                                    }`}>
-                                        {t(`deposit.status.${tx.status}`)}
+                                    <div className="font-bold text-green-600 dark:text-green-400">+{formatNumber(tx.txAmount)}</div>
+                                    <div className={`text-xs mt-1 font-medium ${statusInfo.color}`}>
+                                        {statusInfo.label}
                                     </div>
+                                    {tx.blockHeight && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                            Block #{tx.blockHeight.toLocaleString()}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        ))}
+                          );
+                        })}
                     </div>
                 )}
             </CardContent>
