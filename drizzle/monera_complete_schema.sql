@@ -275,6 +275,7 @@ CREATE TABLE IF NOT EXISTS withdrawal_address_whitelist (
   verified_at TIMESTAMP WITH TIME ZONE,
   verification_method TEXT,
   is_deleted BOOLEAN DEFAULT FALSE NOT NULL,
+  is_primary BOOLEAN DEFAULT FALSE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );

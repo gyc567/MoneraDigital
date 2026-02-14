@@ -18,6 +18,7 @@ interface WithdrawalAddress {
   addressAlias: string;
   verified: boolean;
   isDeleted: boolean;
+  isPrimary: boolean;
   createdAt: string;
   verifiedAt: string | null;
 }

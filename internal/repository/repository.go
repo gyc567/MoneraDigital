@@ -42,6 +42,7 @@ type Address interface {
 	UpdateAddress(ctx context.Context, address *models.WithdrawalAddress) error
 	DeleteAddress(ctx context.Context, id int) error
 	GetByAddressAndChain(ctx context.Context, address, chain string) (*models.WithdrawalAddress, error)
+	SetPrimary(ctx context.Context, userID int, addressID int) error
 }
 
 // Withdrawal 提现仓储接口

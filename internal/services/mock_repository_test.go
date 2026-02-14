@@ -344,6 +344,11 @@ func (m *MockAddressRepository) GetByAddressAndChain(ctx context.Context, addres
 	return args.Get(0).(*models.WithdrawalAddress), args.Error(1)
 }
 
+func (m *MockAddressRepository) SetPrimary(ctx context.Context, userID int, addressID int) error {
+	args := m.Called(ctx, userID, addressID)
+	return args.Error(0)
+}
+
 // MockWealthRepository
 type MockWealthRepository struct {
 	mock.Mock

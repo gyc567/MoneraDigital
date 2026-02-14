@@ -28,6 +28,7 @@ func main() {
 
 	migrator := migration.NewMigrator(db)
 	migrator.Register(&migrations.UpdateWalletRequestsTable{})
+	migrator.Register(&migrations.AddIsPrimaryToWhitelist{})
 
 	if err := migrator.Migrate(); err != nil {
 		log.Fatal("Migration failed:", err)

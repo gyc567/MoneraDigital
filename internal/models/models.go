@@ -153,6 +153,7 @@ type WithdrawalAddress struct {
 	VerifiedAt         sql.NullTime   `json:"verified_at" db:"verified_at"`
 	VerificationMethod sql.NullString `json:"verification_method" db:"verification_method"`
 	IsDeleted          bool           `json:"is_deleted" db:"is_deleted"`
+	IsPrimary          bool           `json:"is_primary" db:"is_primary"`
 	CreatedAt          time.Time      `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at" db:"updated_at"`
 }

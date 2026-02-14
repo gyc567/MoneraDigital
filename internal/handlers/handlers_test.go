@@ -300,8 +300,9 @@ func TestNewHandler(t *testing.T) {
 	deposit := &services.DepositService{}
 	wallet := &services.WalletService{}
 	wealth := &services.WealthService{}
+	idempotency := &services.IdempotencyService{}
 
-	h := NewHandler(auth, lending, address, withdrawal, deposit, wallet, wealth)
+	h := NewHandler(auth, lending, address, withdrawal, deposit, wallet, wealth, idempotency)
 
 	if h.AuthService != auth {
 		t.Error("AuthService not set correctly")

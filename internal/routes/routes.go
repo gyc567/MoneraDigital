@@ -131,7 +131,7 @@ func SetupRoutes(router *gin.Engine, cont *container.Container) {
 			addresses.GET("", h.GetAddresses)
 			addresses.POST("", h.AddAddress)
 			addresses.POST("/:id/verify", h.VerifyAddress)
-			addresses.POST("/:id/set-primary", h.SetPrimaryAddress)
+			addresses.POST("/:id/primary", h.SetPrimaryAddress)
 			addresses.POST("/:id/deactivate", h.DeactivateAddress)
 		}
 

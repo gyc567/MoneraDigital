@@ -79,3 +79,7 @@ func (s *AddressService) DeleteAddress(ctx context.Context, userID int, addressI
 
 	return s.repo.DeleteAddress(ctx, addressID)
 }
+
+func (s *AddressService) SetPrimary(ctx context.Context, userID int, addressID int) error {
+	return s.repo.SetPrimary(ctx, userID, addressID)
+}

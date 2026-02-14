@@ -446,7 +446,28 @@ func (h *Handler) VerifyAddress(c *gin.Context) {
 }
 
 func (h *Handler) SetPrimaryAddress(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Not implemented"})
+	userID, err := h.getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	if err := h.AddressService.SetPrimary(c.Request.Context(), userID, id); err != nil {
+		if err.Error() == "address not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Address not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Primary address set successfully"})
 }
 
 func (h *Handler) DeactivateAddress(c *gin.Context) {

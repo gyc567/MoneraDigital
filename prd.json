@@ -1,0 +1,36 @@
+{
+  "project": "MoneraDigital",
+  "branchName": "ralph/core-api-response-fix",
+  "description": "Fix Core API response parsing bug - change Code field type from string to interface{} to handle number values",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fix CoreAPIResponse.Code field type",
+      "description": "As a developer, I need to fix the CoreAPIResponse struct to handle numeric code values from Core API.",
+      "acceptanceCriteria": [
+        "Change CoreAPIResponse.Code type from string to interface{}",
+        "Update GetAddress function to handle the new type",
+        "Update GetIncomeHistory function to handle the new type",
+        "Typecheck passes",
+        "go vet passes",
+        "All existing tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Add unit tests for Core API client",
+      "description": "As a developer, I need to verify the Core API client handles numeric code responses correctly.",
+      "acceptanceCriteria": [
+        "Add test for GetAddress with numeric code response",
+        "Add test for GetIncomeHistory with numeric code response",
+        "Tests pass with 100% coverage for changed code"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

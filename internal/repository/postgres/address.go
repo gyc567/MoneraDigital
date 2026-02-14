@@ -46,7 +46,7 @@ func (r *AddressRepository) CreateAddress(ctx context.Context, address *models.W
 func (r *AddressRepository) GetAddressesByUserID(ctx context.Context, userID int) ([]*models.WithdrawalAddress, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, user_id, address_alias, chain_type, wallet_address, verified,
-			verified_at, verification_method, is_deleted, created_at, updated_at
+			verified_at, verification_method, is_deleted, is_primary, created_at, updated_at
 		FROM withdrawal_address_whitelist
 		WHERE user_id = $1 AND is_deleted = FALSE`,
 		userID)
@@ -60,7 +60,7 @@ func (r *AddressRepository) GetAddressesByUserID(ctx context.Context, userID int
 		var addr models.WithdrawalAddress
 		if err := rows.Scan(
 			&addr.ID, &addr.UserID, &addr.AddressAlias, &addr.ChainType, &addr.WalletAddress,
-			&addr.Verified, &addr.VerifiedAt, &addr.VerificationMethod, &addr.IsDeleted,
+			&addr.Verified, &addr.VerifiedAt, &addr.VerificationMethod, &addr.IsDeleted, &addr.IsPrimary,
 			&addr.CreatedAt, &addr.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -74,11 +74,11 @@ func (r *AddressRepository) GetAddressByID(ctx context.Context, id int) (*models
 	var addr models.WithdrawalAddress
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, user_id, address_alias, chain_type, wallet_address, verified,
-			verified_at, verification_method, is_deleted, created_at, updated_at
+			verified_at, verification_method, is_deleted, is_primary, created_at, updated_at
 		FROM withdrawal_address_whitelist WHERE id = $1 AND is_deleted = FALSE`,
 		id).Scan(
 		&addr.ID, &addr.UserID, &addr.AddressAlias, &addr.ChainType, &addr.WalletAddress,
-		&addr.Verified, &addr.VerifiedAt, &addr.VerificationMethod, &addr.IsDeleted,
+		&addr.Verified, &addr.VerifiedAt, &addr.VerificationMethod, &addr.IsDeleted, &addr.IsPrimary,
 		&addr.CreatedAt, &addr.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -109,29 +109,15 @@ func (r *AddressRepository) DeleteAddress(ctx context.Context, id int) error {
 }
 
 func (r *AddressRepository) GetByAddressAndChain(ctx context.Context, address, chain string) (*models.WithdrawalAddress, error) {
-	// This might be used to check duplicates globally? Or per user?
-	// The interface doesn't specify UserID. Assuming per user if called from service, but repository is generic.
-	// Actually, the unique constraint is (user_id, wallet_address).
-	// If checking if an address is blacklisted or something?
-	// PRD says: "Check if address is in whitelist".
-	// Maybe GetByUserIDAndAddress?
-	// The interface signature I defined earlier was `GetByAddressAndChain(ctx, address, chain)`.
-	// This seems insufficient without UserID.
-	// I'll leave it as finding ANY record for now, or assume it's used for something else.
-	// But wait, the PRD says "Check if address is in whitelist" usually implies checking if the USER has it.
-	// I'll implement it as finding the first match (maybe not useful) or update interface.
-	// Better: Update interface to include UserID.
-
-	// For now, simple implementation:
 	var addr models.WithdrawalAddress
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, user_id, address_alias, chain_type, wallet_address, verified,
-			verified_at, verification_method, is_deleted, created_at, updated_at
+			verified_at, verification_method, is_deleted, created_at, updated_at, is_primary
 		FROM withdrawal_address_whitelist WHERE wallet_address = $1 AND chain_type = $2 AND is_deleted = FALSE LIMIT 1`,
 		address, chain).Scan(
 		&addr.ID, &addr.UserID, &addr.AddressAlias, &addr.ChainType, &addr.WalletAddress,
 		&addr.Verified, &addr.VerifiedAt, &addr.VerificationMethod, &addr.IsDeleted,
-		&addr.CreatedAt, &addr.UpdatedAt,
+		&addr.CreatedAt, &addr.UpdatedAt, &addr.IsPrimary,
 	)
 	if err == sql.ErrNoRows {
 		return nil, repository.ErrNotFound
@@ -140,4 +126,47 @@ func (r *AddressRepository) GetByAddressAndChain(ctx context.Context, address, c
 		return nil, err
 	}
 	return &addr, nil
+}
+
+func (r *AddressRepository) SetPrimary(ctx context.Context, userID int, addressID int) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// First, verify the address belongs to the user
+	var count int
+	err = tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM withdrawal_address_whitelist 
+		WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE`,
+		addressID, userID).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return repository.ErrNotFound
+	}
+
+	// Reset all primary addresses for this user to false
+	_, err = tx.ExecContext(ctx,
+		`UPDATE withdrawal_address_whitelist 
+		SET is_primary = FALSE, updated_at = $1 
+		WHERE user_id = $2 AND is_deleted = FALSE`,
+		time.Now(), userID)
+	if err != nil {
+		return err
+	}
+
+	// Set the specified address as primary
+	_, err = tx.ExecContext(ctx,
+		`UPDATE withdrawal_address_whitelist 
+		SET is_primary = TRUE, updated_at = $1 
+		WHERE id = $2 AND user_id = $3`,
+		time.Now(), addressID, userID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
