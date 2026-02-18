@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Check, Clock, AlertCircle, Shield } from "lucide-react";
+import { Plus, Trash2, Check, Clock, AlertCircle, Shield, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 interface WithdrawalAddress {
@@ -388,6 +389,23 @@ const Addresses = () => {
             </div>
           </div>
 
+          {!userTwoFactorEnabled && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+              <div className="flex items-start gap-2">
+                <Lock className="h-4 w-4 text-yellow-600 mt-0.5" />
+                <div className="text-sm text-yellow-800">
+                  <p className="font-medium">{t("dashboard.addresses.2faRequired") || "2FA Required"}</p>
+                  <p className="text-xs mt-1">
+                    {t("dashboard.addresses.2faRequiredDesc") || "Please enable 2FA to add addresses. "}
+                    <Link to="/dashboard/security" className="underline font-medium hover:text-yellow-900">
+                      {t("dashboard.addresses.setup2FA") || "Setup 2FA"}
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -398,7 +416,7 @@ const Addresses = () => {
             </Button>
             <Button
               onClick={handleAddAddress}
-              disabled={isSubmitting || !newAddress || !label}
+              disabled={isSubmitting || !newAddress || !label || !userTwoFactorEnabled}
             >
               {isSubmitting ? t("dashboard.addresses.adding") : t("dashboard.addresses.addAddress")}
             </Button>

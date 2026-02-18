@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowRight, CheckCircle2, Clock, AlertCircle, Shield, Wallet, Plus } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, AlertCircle, Shield, Wallet, Plus, Lock } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 interface WithdrawalAddress {
@@ -791,6 +792,23 @@ function Withdraw() {
             </div>
           </div>
 
+          {!twoFactorEnabled && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+              <div className="flex items-start gap-2">
+                <Lock className="h-4 w-4 text-yellow-600 mt-0.5" />
+                <div className="text-sm text-yellow-800">
+                  <p className="font-medium">{t("dashboard.addresses.2faRequired") || "2FA Required"}</p>
+                  <p className="text-xs mt-1">
+                    {t("dashboard.addresses.2faRequiredDesc") || "Please enable 2FA to add addresses. "}
+                    <Link to="/dashboard/security" className="underline font-medium hover:text-yellow-900">
+                      {t("dashboard.addresses.setup2FA") || "Setup 2FA"}
+                    </Link>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -801,7 +819,7 @@ function Withdraw() {
             </Button>
             <Button
               onClick={handleCreateAddress}
-              disabled={isCreatingAddress || !newAddressAlias || !newAddress}
+              disabled={isCreatingAddress || !newAddressAlias || !newAddress || !twoFactorEnabled}
             >
               {isCreatingAddress ? t("addresses.adding") : t("addresses.addButton")}
             </Button>
