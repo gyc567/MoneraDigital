@@ -109,12 +109,27 @@ const Addresses = () => {
 
       const data = await res.json();
       if (res.ok) {
-        toast.success(data.message || t("addresses.addSuccessMessage"));
-        setNewAddress("");
-        setLabel("");
-        setAddressType("ETH");
-        setIsDialogOpen(false);
-        await fetchAddresses();
+        const newAddressId = data.id;
+        
+        // If user has 2FA enabled, guide them to verify with 2FA
+        if (userTwoFactorEnabled) {
+          toast.success(t("addresses.addSuccessMessage"));
+          setNewAddress("");
+          setLabel("");
+          setAddressType("ETH");
+          // Keep dialog open and guide user to verify with 2FA
+          setSelectedAddressId(newAddressId);
+          setIsVerifyDialogOpen(true);
+          await fetchAddresses();
+        } else {
+          // No 2FA - address added successfully (may still need email verification)
+          toast.success(data.message || t("addresses.addSuccessMessage"));
+          setNewAddress("");
+          setLabel("");
+          setAddressType("ETH");
+          setIsDialogOpen(false);
+          await fetchAddresses();
+        }
       } else {
         if (res.status === 409) {
           toast.error(t("addresses.duplicateError"));
