@@ -376,7 +376,7 @@
       "setPrimary": "Set Primary",
       "deactivate": "Deactivate",
       "addDialog": "Add Withdrawal Address",
-      "addDescription": "Add a new cryptocurrency address for withdrawals. You'll receive a verification email.",
+    "addDescription": "Add a new cryptocurrency address for withdrawals. You'll receive a 2FA verification code. If not set up, please set it up in the 2FA verification page first.",
       "verifyDialog": "Verify Address",
       "verifyDescription": "Enter the verification code from your email to confirm this address.",
       "verificationCode": "Verification Code",
