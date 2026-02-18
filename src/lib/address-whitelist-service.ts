@@ -43,7 +43,11 @@ export class AddressWhitelistService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify(validated),
+      body: JSON.stringify({
+        wallet_address: validated.walletAddress,
+        chain_type: validated.chainType,
+        address_alias: validated.addressAlias,
+      }),
     });
 
     if (!response.ok) {

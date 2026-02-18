@@ -1,11 +1,9 @@
 import pino from 'pino';
 
-const LOG_LEVEL = import.meta.env.VITE_LOG_LEVEL || 'info';
-
 const logger = pino({
-  level: LOG_LEVEL,
+  level: 'info',
   base: {
-    env: import.meta.env.DEV ? 'development' : 'production',
+    env: 'production',
     service: 'monera-digital-frontend',
   },
 });

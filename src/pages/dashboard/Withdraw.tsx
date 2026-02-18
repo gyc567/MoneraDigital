@@ -15,9 +15,9 @@ import { toast } from "sonner";
 
 interface WithdrawalAddress {
   id: number;
-  wallet_address: string;
-  chain_type: string;
-  address_alias: string;
+  walletAddress: string;
+  chainType: string;
+  addressAlias: string;
   verified: boolean;
 }
 
@@ -148,26 +148,17 @@ function Withdraw() {
 
       if (res.ok) {
         const data = await res.json();
-        // Backend returns snake_case
+        // Backend returns camelCase: walletAddress, chainType, addressAlias
         const allAddresses: WithdrawalAddress[] = data.addresses || [];
         // Only show verified addresses for withdrawal
-        setAddresses(allAddresses.filter(a => a.verified));
+        const verifiedAddresses = allAddresses.filter(a => a.verified);
+        setAddresses(verifiedAddresses);
 
-        // Logic for auto-select
-        // NOTE: Backend Address doesn't strictly have 'addressType' that matches asset EXACTLY like 'ETH' vs 'Ethereum'.
-        // chain_type in backend is stored from req.ChainType.
-        // We assume User selects Asset, then we filter addresses by ChainType?
-        // But Asset != ChainType (USDT can be on TRC20).
-        // UI logic: Select Asset -> Select Chain -> Select Address.
-        // Current UI: Select Address -> it implies Chain & Asset.
-        // OR Select Asset -> UI sets Chain Options -> User selects Chain.
-        
-        // Let's assume for now we just show all addresses.
-        if (data.addresses && data.addresses.length > 0) {
-             // Basic auto-select first
-             const first = data.addresses[0];
-             setSelectedAddressId(String(first.id));
-             setSelectedAddress(first);
+        // Auto-select first verified address
+        if (verifiedAddresses.length > 0) {
+          const first = verifiedAddresses[0];
+          setSelectedAddressId(String(first.id));
+          setSelectedAddress(first);
         }
       }
     } catch (error) {
@@ -471,8 +462,8 @@ function Withdraw() {
                         {addresses.map((addr) => (
                           <SelectItem key={addr.id} value={String(addr.id)}>
                             <div className="flex items-center gap-2">
-                              <span>{addr.address_alias}</span>
-                              <Badge variant="outline">{addr.chain_type}</Badge>
+                              <span>{addr.addressAlias}</span>
+                              <Badge variant="outline">{addr.chainType}</Badge>
                             </div>
                           </SelectItem>
                         ))}
@@ -505,7 +496,7 @@ function Withdraw() {
                   {selectedAddress && (
                     <div className="p-4 bg-secondary/30 rounded-lg border border-border/50">
                       <p className="text-xs text-muted-foreground mb-2">{t("dashboard.withdraw.address.details")}</p>
-                      <p className="text-sm font-mono break-all">{selectedAddress.wallet_address}</p>
+                      <p className="text-sm font-mono break-all">{selectedAddress.walletAddress}</p>
                     </div>
                   )}
                 </CardContent>
@@ -664,7 +655,7 @@ function Withdraw() {
 
             <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <p className="text-xs text-blue-200/80">
-                {t("dashboard.withdraw.confirm.to")}: <span className="font-mono break-all">{selectedAddress?.wallet_address}</span>
+                {t("dashboard.withdraw.confirm.to")}: <span className="font-mono break-all">{selectedAddress?.walletAddress}</span>
               </p>
               <p className="text-xs text-blue-200/80 mt-1">
                 Chain: <strong>{chain}</strong>

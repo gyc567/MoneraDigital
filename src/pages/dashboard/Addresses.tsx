@@ -101,9 +101,9 @@ const Addresses = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          walletAddress: newAddress,
-          chainType: addressType,
-          addressAlias: label,
+          wallet_address: newAddress,
+          chain_type: addressType,
+          address_alias: label,
         }),
       });
 
