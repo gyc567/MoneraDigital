@@ -396,8 +396,8 @@
       "2faRequiredDesc": "添加地址需要启用2FA。",
       "setup2FA": "去设置2FA",
       "verifyDialogTitle": "验证地址",
-      "verifyDialogDescription": "请输入您邮箱中的验证码以确认此地址。",
-      "verificationCodePlaceholder": "粘贴您邮箱中的验证码",
+      "verifyDialogDescription": "请输入您2FA的验证码以确认此地址。",
+      "verificationCodePlaceholder": "输入6位2FA验证码",
       "verifying": "验证中...",
       "deactivateDialogTitle": "停用地址",
       "deactivateDialogDescription": "这将永久停用该地址，您将无法使用它进行提现。此操作无法撤销。"
