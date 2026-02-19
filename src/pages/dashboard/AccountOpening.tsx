@@ -176,24 +176,38 @@ const AccountOpening = () => {
     enabled: !!token,
     queryFn: async () => {
       if (!token) {
+        console.log("[DEBUG] AccountOpening: No token, returning NONE");
         return { status: "NONE" };
       }
-      return apiRequest("/api/wallet/info", {
+      console.log("[DEBUG] AccountOpening: Fetching wallet info...");
+      const response = await apiRequest("/api/wallet/info", {
         headers: { Authorization: `Bearer ${token}` },
-      });
+      }) as WalletInfoResponse;
+      console.log("[DEBUG] AccountOpening: Wallet info response:", JSON.stringify(response, null, 2));
+      return response;
     },
     retry: (failureCount, err) => {
-      // Don't retry 401 errors
+      console.log(`[DEBUG] AccountOpening: Retry attempt ${failureCount}, error:`, err);
       if (err instanceof ApiError && err.status === 401) {
         return false;
       }
       return failureCount < 3;
     },
     refetchInterval: (query) => {
-      const data = query.state.data;
+      const data = query.state.data as WalletInfoResponse | undefined;
+      console.log(`[DEBUG] AccountOpening: RefetchInterval check - status: ${data?.status}, shouldPoll: ${data?.status === "CREATING"}`);
       return data?.status === "CREATING" ? 2000 : false;
     },
   });
+
+  useEffect(() => {
+    console.log("[DEBUG] AccountOpening: walletInfo updated:", {
+      status: walletInfo?.status,
+      isLoading,
+      hasError: !!error,
+      errorMessage: error?.message,
+    });
+  }, [walletInfo, isLoading, error]);
 
   // Handle query errors
   useEffect(() => {

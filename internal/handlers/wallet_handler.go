@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"monera-digital/internal/dto"
+	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
 	"monera-digital/internal/services"
 
@@ -154,8 +155,11 @@ func (h *Handler) GetWalletInfo(c *gin.Context) {
 		return
 	}
 
+	logger.Info("[DEBUG] GetWalletInfo called", "userId", userID)
+
 	info, err := h.WalletService.GetWalletInfo(c.Request.Context(), userID.(int))
 	if err != nil {
+		logger.Error("[DEBUG] GetWalletInfo error", "userId", userID, "error", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Internal Server Error",
 			"message": err.Error(),
@@ -165,10 +169,12 @@ func (h *Handler) GetWalletInfo(c *gin.Context) {
 	}
 
 	if info == nil {
+		logger.Info("[DEBUG] GetWalletInfo returning NONE", "userId", userID)
 		c.JSON(http.StatusOK, gin.H{"status": "NONE"})
 		return
 	}
 
+	logger.Info("[DEBUG] GetWalletInfo returning status", "userId", userID, "status", info.Status, "requestId", info.RequestID)
 	c.JSON(http.StatusOK, info)
 }
 
