@@ -47,7 +47,7 @@ type CreateWalletResponse struct {
 	Address   string            `json:"address"`
 	Addresses map[string]string `json:"addresses"`
 	Status    string            `json:"status"`
-	CreatedAt time.Time         `json:"createdAt"`
+	CreatedAt string            `json:"createdAt"`
 }
 
 // CreateWallet calls the Core API to create a wallet.

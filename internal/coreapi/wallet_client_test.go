@@ -332,3 +332,47 @@ func TestGetIncomeHistory_NumericCode(t *testing.T) {
 		t.Errorf("Expected txKey 'txsjujr2a631c3d5a4p71adcfee4802001', got '%s'", result[0].TxKey)
 	}
 }
+
+// TestCreateWallet_DateFormat 测试 Core API 返回的日期格式
+// This test reproduces the bug: parsing time "2026-02-19 00:36:40" as "2006-01-02T15:04:05Z07:00"
+func TestCreateWallet_DateFormat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 验证请求
+		if r.Method != "POST" {
+			t.Errorf("Expected POST method, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/wallet/create" {
+			t.Errorf("Expected path /api/v1/wallet/create, got %s", r.URL.Path)
+		}
+
+		// Core API 返回的日期格式是 "2026-02-19 00:36:40" (无 T 和时区)
+		// 这是实际 Core API 的行为
+		w.Write([]byte(`{"success":true,"data":{"walletId":"W123456","address":"TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV","addresses":{"USDT_TRC20":"TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV"},"status":"SUCCESS","createdAt":"2026-02-19 00:36:40"},"message":"成功","code":200}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+
+	result, err := client.CreateWallet(context.Background(), CreateWalletRequest{
+		UserID:      123,
+		ProductCode: "X_FINANCE",
+		Currency:    "TRON",
+	})
+
+	// 验证结果
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if result.WalletID != "W123456" {
+		t.Errorf("Expected walletId 'W123456', got '%s'", result.WalletID)
+	}
+
+	if result.Address != "TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV" {
+		t.Errorf("Expected address 'TEJG77HBANUVgL2rJ34NPR27vb56TkuUVV', got '%s'", result.Address)
+	}
+
+	if result.Status != "SUCCESS" {
+		t.Errorf("Expected status 'SUCCESS', got '%s'", result.Status)
+	}
+}
