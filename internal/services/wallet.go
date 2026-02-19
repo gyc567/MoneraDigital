@@ -65,7 +65,7 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	})
 	if err != nil {
 		logger.Error("Core API wallet creation failed", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
-		s.repo.UpdateRequest(ctx, &models.WalletCreationRequest{RequestID: reqID, Status: models.WalletCreationStatusFailed})
+		s.repo.UpdateRequest(ctx, &models.WalletCreationRequest{ID: newReq.ID, RequestID: reqID, Status: models.WalletCreationStatusFailed})
 		return nil, fmt.Errorf("wallet creation failed: %w", err)
 	}
 

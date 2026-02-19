@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"monera-digital/internal/coreapi"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
@@ -63,8 +64,25 @@ func (m *MockWalletRepositoryUnique) GetRequestByID(ctx context.Context, id int)
 
 func (m *MockWalletRepositoryUnique) UpdateRequest(ctx context.Context, req *models.WalletCreationRequest) error {
 	req.UpdatedAt = time.Now()
-	m.wallets[req.ID] = req
-	m.userWallets[req.UserID] = req
+
+	existing := m.wallets[req.ID]
+	if existing != nil {
+		m.wallets[req.ID] = req
+		m.userWallets[existing.UserID] = req
+
+		if req.ProductCode == "" {
+			req.ProductCode = existing.ProductCode
+		}
+		if req.Currency == "" {
+			req.Currency = existing.Currency
+		}
+		if req.UserID == 0 {
+			req.UserID = existing.UserID
+		}
+	} else {
+		m.wallets[req.ID] = req
+		m.userWallets[req.UserID] = req
+	}
 
 	if req.ProductCode != "" && req.Currency != "" {
 		key := getKey(req.UserID, req.ProductCode, req.Currency)
@@ -164,5 +182,39 @@ func TestCreateWallet_UniqueCheck(t *testing.T) {
 
 	if wallet3.ID == w1.ID {
 		t.Errorf("Expected new wallet ID, got %d", w1.ID)
+	}
+}
+
+// TestCreateWallet_CoreAPIFailure_UpdatesStatusToFailed tests that when Core API fails,
+// the wallet status is properly updated to FAILED in the database.
+// This test reproduces the bug where status stays CREATING forever.
+func TestCreateWallet_CoreAPIFailure_UpdatesStatusToFailed(t *testing.T) {
+	repo := NewMockWalletRepositoryUnique()
+
+	// Create mock Core API client that fails
+	mockCoreAPI := new(MockCoreAPIClient)
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Return(nil, fmt.Errorf("core api error"))
+
+	service := NewWalletService(repo, mockCoreAPI)
+
+	// Attempt to create wallet - should fail
+	ctx := context.Background()
+	_, err := service.CreateWallet(ctx, 1, "X_FINANCE", "TRON")
+
+	// Should return error
+	if err == nil {
+		t.Fatal("Expected error from Core API failure, got nil")
+	}
+
+	// Check that the wallet request in repo has status FAILED
+	// This is the key assertion - without the fix, status would be CREATING
+	req := repo.userWallets[1]
+	if req == nil {
+		t.Fatal("Wallet request should exist in repository")
+	}
+
+	if req.Status != models.WalletCreationStatusFailed {
+		t.Errorf("Expected status FAILED after Core API error, got %s. "+
+			"This indicates the UpdateRequest was not called with correct ID.", req.Status)
 	}
 }
