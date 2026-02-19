@@ -165,6 +165,14 @@ export async function apiRequest<T>(
   _retryOn401: boolean = true
 ): Promise<T> {
   const url = getApiUrl(path);
+  const method = options.method || 'GET';
+
+  // Debug logging for account opening flow
+  console.log(`[DEBUG-ACCOUNT-OPENING] API Request: ${method} ${path}`, {
+    timestamp: new Date().toISOString(),
+    hasBody: !!options.body,
+    headers: options.headers ? 'present' : 'absent',
+  });
 
   const token = tokenManager.getAccessToken();
 
@@ -179,16 +187,29 @@ export async function apiRequest<T>(
 
   const response = await fetch(url, defaultOptions);
 
+  // Debug logging for response
+  console.log(`[DEBUG-ACCOUNT-OPENING] API Response: ${method} ${path}`, {
+    status: response.status,
+    statusText: response.statusText,
+    timestamp: new Date().toISOString(),
+  });
+
   // Handle error responses
   if (!response.ok) {
     const status = response.status;
 
     // Handle 401 Unauthorized specifically with auto-refresh
     if (status === 401 && _retryOn401) {
+      console.log(`[DEBUG-ACCOUNT-OPENING] API 401 detected: ${method} ${path}, attempting retry`);
       return handle401AndRetry<T>(url, defaultOptions, token || '');
     }
 
     const errorData = await parseErrorResponse(response);
+    console.log(`[DEBUG-ACCOUNT-OPENING] API Error: ${method} ${path}`, {
+      status,
+      code: errorData.code,
+      message: errorData.message,
+    });
 
     // Handle 401 without retry (e.g., no refresh token)
     if (status === 401) {

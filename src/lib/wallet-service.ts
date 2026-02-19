@@ -32,62 +32,102 @@ const createWalletSchema = z.object({
 });
 
 export class WalletService {
-  /**
-   * Create wallet via API
-   */
-  static async createWallet(userId: number, productCode: string, currency: string) {
-    const validated = createWalletSchema.parse({
-      userId,
-      productCode,
-      currency,
-    });
+/**
+ * Create wallet via API
+ */
+static async createWallet(userId: number, productCode: string, currency: string) {
+  // Debug logging for account opening flow
+  console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.createWallet called`, {
+    timestamp: new Date().toISOString(),
+    userId,
+    productCode,
+    currency,
+  });
 
-    logger.info({ userId, productCode, currency }, 'Creating wallet');
+  const validated = createWalletSchema.parse({
+    userId,
+    productCode,
+    currency,
+  });
 
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Not authenticated');
-    }
+  logger.info({ userId, productCode, currency }, 'Creating wallet');
 
-    const response = await fetch('/api/wallet/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(validated),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to create wallet');
-    }
-
-    const data = await response.json();
-    logger.info({ walletId: data.wallet?.id }, 'Wallet created successfully');
-
-    return data;
+  const token = localStorage.getItem('token');
+  if (!token) {
+    const error = new Error('Not authenticated');
+    console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.createWallet: No token found`);
+    throw error;
   }
 
-  /**
-   * Get wallet info via API
-   */
-  static async getWalletInfo(walletId: string) {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('Not authenticated');
-    }
+  const response = await fetch('/api/wallet/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(validated),
+  });
 
-    const response = await fetch(`/api/wallet/${walletId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+  if (!response.ok) {
+    const error = await response.json();
+    console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.createWallet: API error`, {
+      status: response.status,
+      error: error,
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch wallet info');
-    }
-
-    return response.json();
+    throw new Error(error.error || 'Failed to create wallet');
   }
+
+  const data = await response.json();
+  console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.createWallet completed`, {
+    timestamp: new Date().toISOString(),
+    walletId: data.wallet?.id,
+    status: data.status,
+  });
+
+  logger.info({ walletId: data.wallet?.id }, 'Wallet created successfully');
+
+  return data;
+}
+
+/**
+ * Get wallet info via API
+ */
+static async getWalletInfo(walletId: string) {
+  // Debug logging for account opening flow
+  console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.getWalletInfo called`, {
+    timestamp: new Date().toISOString(),
+    walletId,
+  });
+
+  const token = localStorage.getItem('token');
+  if (!token) {
+    const error = new Error('Not authenticated');
+    console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.getWalletInfo: No token found`);
+    throw error;
+  }
+
+  const response = await fetch(`/api/wallet/${walletId}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.getWalletInfo: API error`, {
+      status: response.status,
+      error: error,
+    });
+    throw new Error('Failed to fetch wallet info');
+  }
+
+  const data = await response.json();
+  console.log(`[DEBUG-ACCOUNT-OPENING] WalletService.getWalletInfo completed`, {
+    timestamp: new Date().toISOString(),
+    walletId,
+    status: data.status,
+  });
+
+  return data;
+}
 }

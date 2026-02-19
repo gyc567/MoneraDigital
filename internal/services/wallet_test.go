@@ -568,3 +568,147 @@ func TestWalletService_AddAddress_UserWalletNil(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", result.Address)
 }
+
+func TestWalletService_CreateWallet_FetchesAddress(t *testing.T) {
+	mockRepo := new(MockWalletRepository)
+	mockCoreAPI := new(MockCoreAPIClient)
+	service := NewWalletService(mockRepo, mockCoreAPI)
+
+	// No existing wallet
+	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "X_FINANCE", "TRON").Return(nil, nil)
+
+	// Capture the CreateWallet request
+	var capturedCreateReq coreapi.CreateWalletRequest
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		capturedCreateReq = args.Get(1).(coreapi.CreateWalletRequest)
+	}).Return(&coreapi.CreateWalletResponse{
+		WalletID: "wallet-123",
+		Address:  "", // CreateWallet doesn't return address
+		Status:   "SUCCESS",
+	}, nil)
+
+	// Capture the GetAddress request
+	var capturedGetAddrReq coreapi.GetAddressRequest
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		capturedGetAddrReq = args.Get(1).(coreapi.GetAddressRequest)
+	}).Return(&coreapi.AddressInfo{
+		Address: "TJ123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+	}, nil)
+
+	// Create request in DB
+	mockRepo.On("CreateRequest", mock.Anything, mock.Anything).Return(nil)
+
+	// Update request with address
+	mockRepo.On("UpdateRequest", mock.Anything, mock.Anything).Return(nil)
+
+	// Create user wallet
+	mockRepo.On("CreateUserWallet", mock.Anything, mock.Anything).Return(nil)
+
+	// Execute
+	result, err := service.CreateWallet(context.Background(), 1, "X_FINANCE", "TRON")
+
+	// Verify
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, "wallet-123", result.WalletID.String)
+	assert.Equal(t, "TJ123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", result.Address.String)
+	assert.True(t, result.Address.Valid)
+
+	// Verify CreateWallet was called with correct parameters
+	mockCoreAPI.AssertCalled(t, "CreateWallet", mock.Anything, mock.Anything)
+	assert.Equal(t, 1, capturedCreateReq.UserID)
+	assert.Equal(t, "X_FINANCE", capturedCreateReq.ProductCode)
+	assert.Equal(t, "TRON", capturedCreateReq.Currency)
+
+	// Verify GetAddress was called
+	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, mock.Anything)
+	assert.Equal(t, 1, capturedGetAddrReq.UserID)
+	assert.Equal(t, "X_FINANCE", capturedGetAddrReq.ProductCode)
+	assert.Equal(t, "TRON", capturedGetAddrReq.Currency)
+}
+
+func TestWalletService_CreateWallet_GetAddressFails_UsesCreateWalletAddress(t *testing.T) {
+	mockRepo := new(MockWalletRepository)
+	mockCoreAPI := new(MockCoreAPIClient)
+	service := NewWalletService(mockRepo, mockCoreAPI)
+
+	// No existing wallet
+	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "X_FINANCE", "TRON").Return(nil, nil)
+
+	// CreateWallet returns address
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Return(&coreapi.CreateWalletResponse{
+		WalletID: "wallet-456",
+		Address:  "TCreateWallet123456789",
+		Status:   "SUCCESS",
+	}, nil)
+
+	// GetAddress fails
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(nil, fmt.Errorf("Core API unavailable"))
+
+	// Create request in DB
+	mockRepo.On("CreateRequest", mock.Anything, mock.Anything).Return(nil)
+
+	// Update request - should use CreateWallet's address since GetAddress failed
+	mockRepo.On("UpdateRequest", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		req := args.Get(1).(*models.WalletCreationRequest)
+		// Should have address from CreateWallet
+		assert.Equal(t, "TCreateWallet123456789", req.Address.String)
+		assert.True(t, req.Address.Valid)
+	}).Return(nil)
+
+	// Create user wallet
+	mockRepo.On("CreateUserWallet", mock.Anything, mock.Anything).Return(nil)
+
+	// Execute
+	result, err := service.CreateWallet(context.Background(), 1, "X_FINANCE", "TRON")
+
+	// Verify
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	// Should have address from CreateWallet response
+	assert.Equal(t, "TCreateWallet123456789", result.Address.String)
+}
+
+func TestWalletService_CreateWallet_GetAddressReturnsEmpty_UsesCreateWalletAddress(t *testing.T) {
+	mockRepo := new(MockWalletRepository)
+	mockCoreAPI := new(MockCoreAPIClient)
+	service := NewWalletService(mockRepo, mockCoreAPI)
+
+	// No existing wallet
+	mockRepo.On("GetWalletByUserProductCurrency", mock.Anything, 1, "X_FINANCE", "TRON").Return(nil, nil)
+
+	// CreateWallet returns address
+	mockCoreAPI.On("CreateWallet", mock.Anything, mock.Anything).Return(&coreapi.CreateWalletResponse{
+		WalletID: "wallet-789",
+		Address:  "TCreate123456789",
+		Status:   "SUCCESS",
+	}, nil)
+
+	// GetAddress returns empty address
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
+		Address: "",
+	}, nil)
+
+	// Create request in DB
+	mockRepo.On("CreateRequest", mock.Anything, mock.Anything).Return(nil)
+
+	// Update request - should use CreateWallet's address since GetAddress returned empty
+	mockRepo.On("UpdateRequest", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		req := args.Get(1).(*models.WalletCreationRequest)
+		// Should have address from CreateWallet since GetAddress returned empty
+		assert.Equal(t, "TCreate123456789", req.Address.String)
+		assert.True(t, req.Address.Valid)
+	}).Return(nil)
+
+	// Create user wallet
+	mockRepo.On("CreateUserWallet", mock.Anything, mock.Anything).Return(nil)
+
+	// Execute
+	result, err := service.CreateWallet(context.Background(), 1, "X_FINANCE", "TRON")
+
+	// Verify
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	// Should have address from CreateWallet response
+	assert.Equal(t, "TCreate123456789", result.Address.String)
+}

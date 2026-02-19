@@ -126,6 +126,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const routeConfig = routeMatch.config!;
     const backendPath = routeMatch.backendPath || routeConfig.backendPath;
 
+    // Debug logging for account opening flow
+    if (path === '/wallet/create') {
+      console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Route matched: ${method} ${path} -> ${backendPath}`);
+      console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Request body:`, req.body);
+    }
+
     // Check authentication if required
     if (routeConfig.requiresAuth) {
       const user = verifyToken(req);

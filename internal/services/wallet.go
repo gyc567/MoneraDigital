@@ -28,16 +28,16 @@ func NewWalletService(repo repository.Wallet, coreAPIClient coreapi.CoreAPIClien
 
 // CreateWallet creates a new wallet for the user with productCode and currency.
 func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
-	logger.Info("[DEBUG] CreateWallet started", "userId", userID, "productCode", productCode, "currency", currency)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] WalletService.CreateWallet started", "userId", userID, "productCode", productCode, "currency", currency)
 
 	// Check for existing wallet with same product and currency
 	existing, err := s.repo.GetWalletByUserProductCurrency(ctx, userID, productCode, currency)
 	if err != nil {
-		logger.Error("[DEBUG] GetWalletByUserProductCurrency failed", "userId", userID, "error", err.Error())
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletByUserProductCurrency failed", "userId", userID, "error", err.Error())
 		return nil, err
 	}
 	if existing != nil && existing.Status == models.WalletCreationStatusSuccess {
-		logger.Info("[DEBUG] CreateWallet returning existing wallet", "userId", userID, "requestId", existing.RequestID, "status", existing.Status)
+		logger.Info("[DEBUG-ACCOUNT-OPENING] CreateWallet returning existing wallet", "userId", userID, "requestId", existing.RequestID, "status", existing.Status)
 		return existing, nil
 	}
 
@@ -51,58 +51,76 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	}
 	err = s.repo.CreateRequest(ctx, newReq)
 	if err != nil {
-		logger.Error("[DEBUG] Failed to create wallet request", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to create wallet request", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
 		return nil, err
 	}
-	logger.Info("[DEBUG] Wallet request created", "requestId", reqID, "userId", userID, "dbId", newReq.ID, "status", newReq.Status)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Wallet request created", "requestId", reqID, "userId", userID, "dbId", newReq.ID, "status", newReq.Status)
 
 	if s.coreAPIClient == nil {
 		errMsg := "Core API client not initialized"
-		logger.Error("[DEBUG] "+errMsg, "userId", userID)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Core API client not initialized", "userId", userID)
 		return nil, errors.New(errMsg)
 	}
 
-	logger.Info("[DEBUG] Calling Core API CreateWallet", "userId", userID, "productCode", productCode, "currency", currency)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Calling Core API CreateWallet", "userId", userID, "productCode", productCode, "currency", currency)
 	coreResp, err := s.coreAPIClient.CreateWallet(ctx, coreapi.CreateWalletRequest{
 		UserID:      userID,
 		ProductCode: productCode,
 		Currency:    currency,
 	})
 	if err != nil {
-		logger.Error("[DEBUG] Core API wallet creation failed", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Core API wallet creation failed", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
 		updateErr := s.repo.UpdateRequest(ctx, &models.WalletCreationRequest{ID: newReq.ID, RequestID: reqID, Status: models.WalletCreationStatusFailed})
 		if updateErr != nil {
-			logger.Error("[DEBUG] Failed to update wallet status to FAILED", "error", updateErr.Error(), "requestId", reqID, "dbId", newReq.ID)
+			logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to update wallet status to FAILED", "error", updateErr.Error(), "requestId", reqID, "dbId", newReq.ID)
 		} else {
-			logger.Info("[DEBUG] Updated wallet status to FAILED", "requestId", reqID, "dbId", newReq.ID)
+			logger.Info("[DEBUG-ACCOUNT-OPENING] Updated wallet status to FAILED", "requestId", reqID, "dbId", newReq.ID)
 		}
 		return nil, fmt.Errorf("wallet creation failed: %w", err)
 	}
 
-	logger.Info("[DEBUG] Core API wallet created successfully", "walletId", coreResp.WalletID, "userId", userID, "address", coreResp.Address)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Core API wallet created successfully", "walletId", coreResp.WalletID, "userId", userID, "address", coreResp.Address)
+
+	// Fetch address from Core API - CreateWallet may not return address immediately
+	address := coreResp.Address
+	walletID := coreResp.WalletID
+
+	// Try to fetch address from GetAddress API
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Fetching address from GetAddress API", "userId", userID, "currency", currency)
+	addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+		UserID:      userID,
+		ProductCode: productCode,
+		Currency:    currency,
+	})
+	if addrErr == nil && addressInfo.Address != "" {
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetAddress API returned address", "address", addressInfo.Address)
+		address = addressInfo.Address
+	} else {
+		logger.Warn("[DEBUG-ACCOUNT-OPENING] GetAddress API failed or returned empty", "error", addrErr)
+	}
 
 	newReq.Status = models.WalletCreationStatusSuccess
-	newReq.WalletID = sql.NullString{String: coreResp.WalletID, Valid: true}
-	newReq.Address = sql.NullString{String: coreResp.Address, Valid: true}
+	newReq.WalletID = sql.NullString{String: walletID, Valid: walletID != ""}
+	newReq.Address = sql.NullString{String: address, Valid: address != ""}
 	if coreResp.Addresses != nil {
 		addressesJSON, _ := json.Marshal(coreResp.Addresses)
 		newReq.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
 	}
 	newReq.UpdatedAt = time.Now()
 
-	logger.Info("[DEBUG] Updating wallet status to SUCCESS", "requestId", reqID, "dbId", newReq.ID, "status", newReq.Status)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Updating wallet status to SUCCESS", "requestId", reqID, "dbId", newReq.ID, "status", newReq.Status)
 	if err := s.repo.UpdateRequest(ctx, newReq); err != nil {
-		logger.Error("[DEBUG] Failed to update wallet request", "error", err.Error(), "requestId", reqID, "dbId", newReq.ID)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to update wallet request", "error", err.Error(), "requestId", reqID, "dbId", newReq.ID)
 	} else {
-		logger.Info("[DEBUG] Successfully updated wallet to SUCCESS", "requestId", reqID, "dbId", newReq.ID)
+		logger.Info("[DEBUG-ACCOUNT-OPENING] Successfully updated wallet to SUCCESS", "requestId", reqID, "dbId", newReq.ID)
 	}
 
 	// Sync to user_wallets table - store individual wallet addresses
 	userWallet := &models.UserWallet{
 		UserID:    userID,
-		WalletID:  coreResp.WalletID,
+		WalletID:  walletID,
 		Currency:  currency,
-		Address:   coreResp.Address,
+		Address:   address,
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: true,
 	}
@@ -137,33 +155,79 @@ func buildCurrencyKey(token, network string) string {
 }
 
 func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.WalletCreationRequest, error) {
-	logger.Info("[DEBUG] GetWalletInfo started", "userId", userID)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo started", "userId", userID)
 
 	// First try to find active/success wallet
 	w, err := s.repo.GetActiveWalletByUserID(ctx, userID)
 	if err != nil {
-		logger.Error("[DEBUG] GetActiveWalletByUserID failed", "userId", userID, "error", err.Error())
+		logger.Error("[DEBUG-ACCOUNT-OPENING] GetActiveWalletByUserID failed", "userId", userID, "error", err.Error())
 		return nil, err
 	}
 
 	if w != nil {
-		logger.Info("[DEBUG] GetWalletInfo found active wallet", "userId", userID, "status", w.Status, "requestId", w.RequestID)
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo found active wallet", "userId", userID, "status", w.Status, "requestId", w.RequestID)
 	}
 
 	// If not found, check if there is any request (e.g. creating)
 	if w == nil {
-		logger.Info("[DEBUG] GetWalletInfo no active wallet, checking for any request", "userId", userID)
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo no active wallet, checking for any request", "userId", userID)
 		req, err := s.repo.GetRequestByUserID(ctx, userID)
 		if err != nil {
-			logger.Error("[DEBUG] GetRequestByUserID failed", "userId", userID, "error", err.Error())
+			logger.Error("[DEBUG-ACCOUNT-OPENING] GetRequestByUserID failed", "userId", userID, "error", err.Error())
 			return nil, err
 		}
 		if req != nil {
-			logger.Info("[DEBUG] GetWalletInfo found request", "userId", userID, "status", req.Status, "requestId", req.RequestID)
+			logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo found request", "userId", userID, "status", req.Status, "requestId", req.RequestID)
 			return req, nil
 		}
-		logger.Info("[DEBUG] GetWalletInfo no request found, returning nil", "userId", userID)
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo no request found, returning nil", "userId", userID)
 		return nil, nil
+	}
+
+	// If wallet is SUCCESS but address is empty, try to fetch address from Core API
+	if w.Status == models.WalletCreationStatusSuccess && (w.Address.String == "" || w.Addresses.String == "" || w.Addresses.String == "{}") {
+		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo: Wallet is SUCCESS but address is empty, fetching from GetAddress API", "userId", userID)
+
+		// Get product code and currency from wallet
+		productCode := "X_FINANCE"
+		currency := w.Currency
+
+		// Try to fetch address from GetAddress API
+		addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+			UserID:      userID,
+			ProductCode: productCode,
+			Currency:    currency,
+		})
+
+		if addrErr == nil && addressInfo.Address != "" {
+			logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo: GetAddress API returned address", "address", addressInfo.Address)
+
+			// Update wallet with the fetched address
+			w.Address = sql.NullString{String: addressInfo.Address, Valid: true}
+
+			// Update addresses JSON
+			addresses := make(map[string]string)
+			if w.Addresses.Valid && w.Addresses.String != "" && w.Addresses.String != "{}" {
+				if err := json.Unmarshal([]byte(w.Addresses.String), &addresses); err != nil {
+					logger.Warn("Failed to parse existing addresses", "error", err.Error())
+				}
+			}
+			addresses[currency] = addressInfo.Address
+			addressesJSON, _ := json.Marshal(addresses)
+			w.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
+
+			// Update database
+			updateReq := &models.WalletCreationRequest{
+				ID:        w.ID,
+				Address:   w.Address,
+				Addresses: w.Addresses,
+			}
+			if err := s.repo.UpdateRequest(ctx, updateReq); err != nil {
+				logger.Warn("[DEBUG-ACCOUNT-OPENING] Failed to update wallet with fetched address", "error", err.Error())
+			}
+		} else {
+			logger.Warn("[DEBUG-ACCOUNT-OPENING] GetWalletInfo: GetAddress API failed or returned empty", "error", addrErr)
+		}
 	}
 
 	// Merge addresses from user_wallets into wallet_creation_requests

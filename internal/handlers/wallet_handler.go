@@ -43,8 +43,12 @@ func parseTokenFromHeader(authHeader string) (int, error) {
 }
 
 func (h *Handler) CreateWallet(c *gin.Context) {
+	// Debug logging for account opening flow
+	logger.Info("[DEBUG-ACCOUNT-OPENING] CreateWallet handler started")
+
 	bodyBytes, err := c.GetRawData()
 	if err != nil {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to read request body", "error", err.Error())
 		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
 			Code:      "400",
 			Message:   "Failed to read request body",
@@ -56,6 +60,7 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 
 	var req dto.CreateWalletRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to parse request body", "error", err.Error())
 		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
 			Code:      "400",
 			Message:   "Invalid JSON format",
@@ -64,6 +69,8 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 		})
 		return
 	}
+
+	logger.Info("[DEBUG-ACCOUNT-OPENING] CreateWallet request parsed", "userId", req.UserID, "productCode", req.ProductCode, "currency", req.Currency)
 
 	// If userId not provided in request body, try to extract from JWT token in Authorization header
 	if req.UserID == "" {
@@ -113,6 +120,7 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 
 	wallet, err := h.WalletService.CreateWallet(c.Request.Context(), userID, req.ProductCode, req.Currency)
 	if err != nil {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] CreateWallet failed", "error", err.Error(), "userId", userID)
 		c.JSON(http.StatusBadRequest, dto.CreateWalletResponse{
 			Code:      "WALLET_CREATE_FAILED",
 			Message:   err.Error(),
@@ -121,6 +129,8 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 		})
 		return
 	}
+
+	logger.Info("[DEBUG-ACCOUNT-OPENING] CreateWallet completed", "walletId", wallet.ID, "status", wallet.Status)
 
 	status := "NORMAL"
 	if wallet.Status != "SUCCESS" {

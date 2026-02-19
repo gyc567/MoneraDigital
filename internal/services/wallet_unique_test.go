@@ -153,6 +153,9 @@ func TestCreateWallet_UniqueCheck(t *testing.T) {
 		Addresses: map[string]string{"USD": "0xTestAddress"},
 		Status:    "SUCCESS",
 	}, nil)
+	mockCoreAPI.On("GetAddress", mock.Anything, mock.Anything).Return(&coreapi.AddressInfo{
+		Address: "0xTestAddressFromGetAddress",
+	}, nil)
 
 	service := NewWalletService(repo, mockCoreAPI)
 
