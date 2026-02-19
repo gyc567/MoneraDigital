@@ -88,7 +88,7 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	// Try to fetch address from GetAddress API
 	logger.Info("[DEBUG-ACCOUNT-OPENING] Fetching address from GetAddress API", "userId", userID, "currency", currency)
 	addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-		UserID:      userID,
+		UserID:      fmt.Sprintf("%d", userID),
 		ProductCode: productCode,
 		Currency:    currency,
 	})
@@ -194,7 +194,7 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
 
 		// Try to fetch address from GetAddress API
 		addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-			UserID:      userID,
+			UserID:      fmt.Sprintf("%d", userID),
 			ProductCode: productCode,
 			Currency:    currency,
 		})
@@ -317,7 +317,7 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 	}
 
 	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-		UserID:      userID,
+		UserID:      fmt.Sprintf("%d", userID),
 		ProductCode: productCode,
 		Currency:    addressKey,
 	})
@@ -374,7 +374,7 @@ func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dt
 	// 优先从 Core API 获取
 	if s.coreAPIClient != nil {
 		addressInfo, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-			UserID:      userID,
+			UserID:      fmt.Sprintf("%d", userID),
 			ProductCode: req.ProductCode,
 			Currency:    req.Currency,
 		})

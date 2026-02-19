@@ -94,7 +94,7 @@ type GetIncomeHistoryRequest struct {
 
 // GetAddressRequest 请求结构
 type GetAddressRequest struct {
-	UserID      int    `json:"userId"`
+	UserID      string `json:"userId"`
 	ProductCode string `json:"productCode"`
 	Currency    string `json:"currency"`
 }
