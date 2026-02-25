@@ -56,16 +56,16 @@ describe('WalletService', () => {
       }
     });
 
-    it('should accept all valid currency formats', async () => {
+    it('should accept all valid currency formats including USDC_BEP20 long format', async () => {
       const { WalletService } = await import('./wallet-service');
       const validProductCode = 'X_FINANCE';
       const validCurrencies = [
         'USDT_ERC20',
         'USDT_TRC20',
-        'USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET',
+        'USDT_BEP20',
         'USDC_ERC20',
         'USDC_TRC20',
-        'USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET'
+        'USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET' // 特例：长格式
       ];
 
       for (const currency of validCurrencies) {

@@ -27,11 +27,11 @@ func NewWalletService(repo repository.Wallet, coreAPIClient coreapi.CoreAPIClien
 }
 
 // CreateWallet creates a new wallet for the user with productCode and currency.
-func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCode, currency string) (*models.WalletCreationRequest, error) {
-	logger.Info("[DEBUG-ACCOUNT-OPENING] WalletService.CreateWallet started", "userId", userID, "productCode", productCode, "currency", currency)
+func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCode, currencyCode string) (*models.WalletCreationRequest, error) {
+	logger.Info("[DEBUG-ACCOUNT-OPENING] WalletService.CreateWallet started", "userId", userID, "productCode", productCode, "currency", currencyCode)
 
 	// Check for existing wallet with same product and currency
-	existing, err := s.repo.GetWalletByUserProductCurrency(ctx, userID, productCode, currency)
+	existing, err := s.repo.GetWalletByUserProductCurrency(ctx, userID, productCode, currencyCode)
 	if err != nil {
 		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletByUserProductCurrency failed", "userId", userID, "error", err.Error())
 		return nil, err
@@ -46,12 +46,12 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 		RequestID:   reqID,
 		UserID:      userID,
 		ProductCode: productCode,
-		Currency:    currency,
+		Currency:    currencyCode,
 		Status:      models.WalletCreationStatusCreating,
 	}
 	err = s.repo.CreateRequest(ctx, newReq)
 	if err != nil {
-		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to create wallet request", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to create wallet request", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currencyCode)
 		return nil, err
 	}
 	logger.Info("[DEBUG-ACCOUNT-OPENING] Wallet request created", "requestId", reqID, "userId", userID, "dbId", newReq.ID, "status", newReq.Status)
@@ -62,14 +62,16 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 		return nil, errors.New(errMsg)
 	}
 
-	logger.Info("[DEBUG-ACCOUNT-OPENING] Calling Core API CreateWallet", "userId", userID, "productCode", productCode, "currency", currency)
+	// Ensure currency is in full format for Core API (USDC_BEP20 uses long format)
+	coreCurrency := currency.ToFullFormat(currencyCode)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Calling Core API CreateWallet", "userId", userID, "productCode", productCode, "currency", currencyCode, "coreCurrency", coreCurrency)
 	coreResp, err := s.coreAPIClient.CreateWallet(ctx, coreapi.CreateWalletRequest{
 		UserID:      userID,
 		ProductCode: productCode,
-		Currency:    currency,
+		Currency:    coreCurrency,
 	})
 	if err != nil {
-		logger.Error("[DEBUG-ACCOUNT-OPENING] Core API wallet creation failed", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currency)
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Core API wallet creation failed", "error", err.Error(), "userId", userID, "productCode", productCode, "currency", currencyCode)
 		updateErr := s.repo.UpdateRequest(ctx, &models.WalletCreationRequest{ID: newReq.ID, RequestID: reqID, Status: models.WalletCreationStatusFailed})
 		if updateErr != nil {
 			logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to update wallet status to FAILED", "error", updateErr.Error(), "requestId", reqID, "dbId", newReq.ID)
@@ -85,12 +87,13 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	address := coreResp.Address
 	walletID := coreResp.WalletID
 
-	// Try to fetch address from GetAddress API
-	logger.Info("[DEBUG-ACCOUNT-OPENING] Fetching address from GetAddress API", "userId", userID, "currency", currency)
+	// Try to fetch address from GetAddress API (use full format for Core API)
+	fetchCurrency := currency.ToFullFormat(currencyCode)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] Fetching address from GetAddress API", "userId", userID, "currency", currencyCode, "coreCurrency", fetchCurrency)
 	addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 		UserID:      fmt.Sprintf("%d", userID),
 		ProductCode: productCode,
-		Currency:    currency,
+		Currency:    fetchCurrency,
 	})
 	if addrErr == nil && addressInfo.Address != "" {
 		logger.Info("[DEBUG-ACCOUNT-OPENING] GetAddress API returned address", "address", addressInfo.Address)
@@ -130,7 +133,7 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 	userWallet := &models.UserWallet{
 		UserID:    userID,
 		WalletID:  walletID,
-		Currency:  currency,
+		Currency:  currencyCode,
 		Address:   address,
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: true,
@@ -139,7 +142,7 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 		userWallet.RequestID = sql.NullString{String: reqID, Valid: true}
 	}
 	if err := s.repo.CreateUserWallet(ctx, userWallet); err != nil {
-		logger.Error("Failed to sync user wallet", "error", err.Error(), "userId", userID, "currency", currency)
+		logger.Error("Failed to sync user wallet", "error", err.Error(), "userId", userID, "currency", currencyCode)
 		// Don't fail the operation if user_wallet sync fails
 	}
 
@@ -148,7 +151,7 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 
 // buildCurrencyKey builds a valid currency key from token and network.
 // Normalizes network aliases (TRON -> TRC20) to standard names.
-// Converts to full backend format for BEP20 networks.
+// Returns DB storage format: short format for most, long format for USDC_BEP20.
 func buildCurrencyKey(token, network string) string {
 	// Normalize network aliases
 	network = currency.NormalizeNetwork(network)
@@ -161,7 +164,7 @@ func buildCurrencyKey(token, network string) string {
 		return ""
 	}
 
-	// Convert to full backend format (e.g., USDT_BEP20 -> USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
+	// Convert to full format for USDC_BEP20 (特例：使用长格式)
 	return currency.ToFullFormat(currencyKey)
 }
 
@@ -199,15 +202,15 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
 	if w.Status == models.WalletCreationStatusSuccess && (w.Address.String == "" || w.Addresses.String == "" || w.Addresses.String == "{}") {
 		logger.Info("[DEBUG-ACCOUNT-OPENING] GetWalletInfo: Wallet is SUCCESS but address is empty, fetching from GetAddress API", "userId", userID)
 
-		// Get product code and currency from wallet
+		// Get product code and currency from wallet (use full format for Core API)
 		productCode := "X_FINANCE"
-		currency := w.Currency
+		coreCurrency := currency.ToFullFormat(w.Currency)
 
 		// Try to fetch address from GetAddress API
 		addressInfo, addrErr := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 			UserID:      fmt.Sprintf("%d", userID),
 			ProductCode: productCode,
-			Currency:    currency,
+			Currency:    coreCurrency,
 		})
 
 		if addrErr == nil && addressInfo.Address != "" {
@@ -223,7 +226,7 @@ func (s *WalletService) GetWalletInfo(ctx context.Context, userID int) (*models.
 					logger.Warn("Failed to parse existing addresses", "error", err.Error())
 				}
 			}
-			addresses[currency] = addressInfo.Address
+			addresses[w.Currency] = addressInfo.Address
 			addressesJSON, _ := json.Marshal(addresses)
 			w.Addresses = sql.NullString{String: string(addressesJSON), Valid: true}
 
@@ -329,8 +332,8 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		productCode = "X_FINANCE"
 	}
 
-	// Use short format for Core API (e.g., USDT_BEP20 instead of USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
-	coreCurrency := currency.ToShortFormat(addressKey)
+	// Use DB format for Core API (USDC_BEP20 uses full format)
+	coreCurrency := addressKey
 	logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
 
 	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
@@ -390,13 +393,14 @@ func (s *WalletService) GetAddressIncomeHistory(ctx context.Context, userID int,
 func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dto.GetWalletAddressRequest) (*dto.WalletAddress, error) {
 	logger.Info("[DEBUG-DEPOSIT] GetWalletAddress called", "userId", userID, "productCode", req.ProductCode, "currency", req.Currency)
 	
-	// 优先从 Core API 获取
+	// 优先从 Core API 获取 (use full format for Core API)
 	if s.coreAPIClient != nil {
-		logger.Info("[DEBUG-DEPOSIT] Calling Core API GetAddress", "currency", req.Currency)
+		coreCurrency := currency.ToFullFormat(req.Currency)
+		logger.Info("[DEBUG-DEPOSIT] Calling Core API GetAddress", "currency", req.Currency, "coreCurrency", coreCurrency)
 		addressInfo, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 			UserID:      fmt.Sprintf("%d", userID),
 			ProductCode: req.ProductCode,
-			Currency:    req.Currency,
+			Currency:    coreCurrency,
 		})
 		logger.Info("[DEBUG-DEPOSIT] Core API response", "address", addressInfo.Address, "addressType", addressInfo.AddressType, "error", err)
 		if err == nil {

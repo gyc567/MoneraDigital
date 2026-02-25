@@ -16,7 +16,9 @@ func TestIsValid(t *testing.T) {
 		{"valid USDT_TRON_TESTNET", USDT_TRON_TESTNET, true},
 		{"valid USDC_ERC20", USDC_ERC20, true},
 		{"valid USDC_TRC20", USDC_TRC20, true},
-		{"valid USDC_BEP20", USDC_BEP20, true},
+		{"valid USDC_BEP20 (full format)", USDC_BEP20, true}, // 长格式
+		{"valid USDC_BEP20 (short format)", "USDC_BEP20", true}, // 短格式也接受
+		{"valid USDC_TRON_TESTNET", USDC_TRON_TESTNET, true},
 		{"empty string", "", false},
 		{"old format ETH", "ETH", false},
 		{"old format TRON", "TRON", false},
@@ -43,9 +45,11 @@ func TestNetworkFromCurrency(t *testing.T) {
 	}{
 		{"USDT_ERC20", USDT_ERC20, "ERC20"},
 		{"USDT_TRC20", USDT_TRC20, "TRC20"},
-		{"USDT_BEP20", USDT_BEP20, "BEP20_BINANCE_SMART_CHAIN_MAINNET"},
+		{"USDT_BEP20", USDT_BEP20, "BEP20"},
 		{"USDC_ERC20", USDC_ERC20, "ERC20"},
-		{"single token", "ETH", ""}, // Single tokens return empty network
+		{"USDC_TRC20", USDC_TRC20, "TRC20"},
+		{"USDC_BEP20 (full format)", USDC_BEP20, "BEP20"}, // 长格式也返回BEP20
+		{"single token", "ETH", ""},
 		{"empty", "", ""},
 	}
 
@@ -66,7 +70,10 @@ func TestTokenFromCurrency(t *testing.T) {
 	}{
 		{"USDT_ERC20", USDT_ERC20, "USDT"},
 		{"USDT_TRC20", USDT_TRC20, "USDT"},
-		{"USDC_BEP20", USDC_BEP20, "USDC"},
+		{"USDT_BEP20", USDT_BEP20, "USDT"},
+		{"USDC_ERC20", USDC_ERC20, "USDC"},
+		{"USDC_TRC20", USDC_TRC20, "USDC"},
+		{"USDC_BEP20 (full format)", USDC_BEP20, "USDC"}, // 长格式返回USDC
 		{"single token", "ETH", "ETH"},
 		{"empty", "", ""},
 	}
@@ -87,9 +94,12 @@ func TestBuildCurrency(t *testing.T) {
 		network string
 		want    string
 	}{
-		{"USDT ERC20", "USDT", "ERC20", USDT_ERC20},
-		{"USDT TRC20", "USDT", "TRC20", USDT_TRC20},
-		{"USDC BEP20", "USDC", "BEP20", "USDC_BEP20"}, // BuildCurrency just concatenates, use ToFullFormat for full format
+		{"USDT ERC20", "USDT", "ERC20", "USDT_ERC20"},
+		{"USDT TRC20", "USDT", "TRC20", "USDT_TRC20"},
+		{"USDT BEP20", "USDT", "BEP20", "USDT_BEP20"},
+		{"USDC ERC20", "USDC", "ERC20", "USDC_ERC20"},
+		{"USDC TRC20", "USDC", "TRC20", "USDC_TRC20"},
+		{"USDC BEP20", "USDC", "BEP20", "USDC_BEP20"}, // 返回短格式
 	}
 
 	for _, tt := range tests {
@@ -109,6 +119,8 @@ func TestFormatForDisplay(t *testing.T) {
 	}{
 		{"USDT_ERC20", USDT_ERC20, "USDT (ERC20)"},
 		{"USDT_TRC20", USDT_TRC20, "USDT (TRC20)"},
+		{"USDT_BEP20", USDT_BEP20, "USDT (BEP20)"},
+		{"USDC_BEP20 (full format)", USDC_BEP20, "USDC (BEP20)"},
 		{"unknown", "UNKNOWN", "UNKNOWN"},
 	}
 
@@ -157,13 +169,13 @@ func TestToFullFormat(t *testing.T) {
 		currency string
 		want     string
 	}{
-		{"USDT ERC20", "USDT_ERC20", USDT_ERC20},
-		{"USDT TRC20", "USDT_TRC20", USDT_TRC20},
-		{"USDT BEP20", "USDT_BEP20", USDT_BEP20},
-		{"USDC ERC20", "USDC_ERC20", USDC_ERC20},
-		{"USDC TRC20", "USDC_TRC20", USDC_TRC20},
-		{"USDC BEP20", "USDC_BEP20", USDC_BEP20},
-		{"already full format", USDT_BEP20, USDT_BEP20},
+		{"USDT ERC20 (short)", "USDT_ERC20", "USDT_ERC20"}, // 不需要转换
+		{"USDT TRC20 (short)", "USDT_TRC20", "USDT_TRC20"}, // 不需要转换
+		{"USDT BEP20 (short)", "USDT_BEP20", "USDT_BEP20"}, // 不需要转换
+		{"USDC ERC20 (short)", "USDC_ERC20", "USDC_ERC20"}, // 不需要转换
+		{"USDC TRC20 (short)", "USDC_TRC20", "USDC_TRC20"}, // 不需要转换
+		{"USDC BEP20 (short to full)", "USDC_BEP20", USDC_BEP20}, // 特例：需要转换
+		{"USDC BEP20 (already full)", USDC_BEP20, USDC_BEP20}, // 已经是长格式
 		{"unknown currency", "UNKNOWN_TOKEN", "UNKNOWN_TOKEN"},
 	}
 
@@ -171,6 +183,28 @@ func TestToFullFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ToFullFormat(tt.currency); got != tt.want {
 				t.Errorf("ToFullFormat(%q) = %v, want %v", tt.currency, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToShortFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		currency string
+		want     string
+	}{
+		{"USDT ERC20", "USDT_ERC20", "USDT_ERC20"}, // 不需要转换
+		{"USDT BEP20", "USDT_BEP20", "USDT_BEP20"}, // 不需要转换
+		{"USDC BEP20 (full to short)", USDC_BEP20, "USDC_BEP20"}, // 特例：需要转换
+		{"USDC BEP20 (already short)", "USDC_BEP20", "USDC_BEP20"}, // 已经是短格式
+		{"unknown currency", "UNKNOWN_TOKEN", "UNKNOWN_TOKEN"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToShortFormat(tt.currency); got != tt.want {
+				t.Errorf("ToShortFormat(%q) = %v, want %v", tt.currency, got, tt.want)
 			}
 		})
 	}

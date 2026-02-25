@@ -92,14 +92,14 @@ const getChainDisplayName = (chain: string): string => {
   return chainMap[chain] || chain;
 };
 
-// Currency options (token_network format as per specification)
+// Currency options (DB存储格式: USDC_BEP20使用长格式)
 const CURRENCY_OPTIONS = [
   { value: "USDT_ERC20", label: "USDT (ERC20)" },
   { value: "USDT_TRC20", label: "USDT (TRC20)" },
   { value: "USDT_BEP20", label: "USDT (BEP20)" },
   { value: "USDC_ERC20", label: "USDC (ERC20)" },
   { value: "USDC_TRC20", label: "USDC (TRC20)" },
-  { value: "USDC_BEP20", label: "USDC (BEP20)" },
+  { value: "USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET", label: "USDC (BEP20)" }, // 特例：长格式
 ];
 
 // Token options for adding new address
@@ -122,18 +122,23 @@ interface AddAddressRequest {
   token: string;
 }
 
-// Chain to backend value mapping (for BEP20, we need to send full format to backend)
+// Chain to backend value mapping (统一短格式)
 const CHAIN_TO_BACKEND_MAP: Record<string, string> = {
   "TRC20": "TRC20",
   "TRON_TESTNET": "TRON_TESTNET",
   "ERC20": "ERC20",
-  "BEP20": "BEP20", // Backend will convert to full format (USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
+  "BEP20": "BEP20",
 };
 
 // Get backend chain value for API call
 const getBackendChain = (chain: string): string => {
-  return CHAIN_TO_BACKEND_MAP[chain] || chain;
-};
+  const mappedValue = CHAIN_TO_BACKEND_MAP[chain];
+  const result = mappedValue || chain;
+  console.log(`[DEBUG-ADDRESS] getBackendChain called with: "${chain}"`);
+  console.log(`[DEBUG-ADDRESS] CHAIN_TO_BACKEND_MAP lookup: "${mappedValue}"`);
+  console.log(`[DEBUG-ADDRESS] Final result: "${result}"`);
+  return result;
+
 
 // Get wallet address request type
 interface GetWalletAddressRequest {
@@ -322,6 +327,17 @@ const AccountOpening = () => {
   });
 
   const handleAddAddress = () => {
+    // Debug log the full request
+    const backendChain = getBackendChain(selectedChain);
+    const requestData = { chain: backendChain, token: selectedToken };
+    console.log(`[DEBUG-ADDRESS] handleAddAddress called`);
+    console.log(`[DEBUG-ADDRESS] selectedToken: "${selectedToken}"`);
+    console.log(`[DEBUG-ADDRESS] selectedChain: "${selectedChain}"`);
+    console.log(`[DEBUG-ADDRESS] Final request data:`, JSON.stringify(requestData, null, 2));
+    
+    // Use mapped backend chain value for API call
+    addAddressMutation.mutate(requestData);
+  };
     // Use mapped backend chain value for API call
     addAddressMutation.mutate({ chain: getBackendChain(selectedChain), token: selectedToken });
   };

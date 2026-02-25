@@ -131,6 +131,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Route matched: ${method} ${path} -> ${backendPath}`);
       console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Request body:`, req.body);
     }
+    
+    // Debug logging for add address flow
+    if (path === '/wallet/addresses' && method === 'POST') {
+      console.log(`[DEBUG-ADDRESS] Vercel Route matched: ${method} ${path} -> ${backendPath}`);
+      console.log(`[DEBUG-ADDRESS] Vercel Request body:`, JSON.stringify(req.body, null, 2));
+    }
+    if (path === '/wallet/create') {
+      console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Route matched: ${method} ${path} -> ${backendPath}`);
+      console.log(`[DEBUG-ACCOUNT-OPENING] Vercel Request body:`, req.body);
+    }
 
     // Check authentication if required
     if (routeConfig.requiresAuth) {

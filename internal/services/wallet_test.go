@@ -247,7 +247,7 @@ func TestBuildCurrencyKey(t *testing.T) {
 			name:     "USDC on BEP20",
 			token:    "USDC",
 			network:  "BEP20",
-			expected: "USDC_BEP20",
+			expected: "USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET", // 特例：返回长格式
 		},
 		{
 			name:     "Invalid token",
