@@ -13,6 +13,7 @@ func TestIsValid(t *testing.T) {
 		{"valid USDT_ERC20", USDT_ERC20, true},
 		{"valid USDT_TRC20", USDT_TRC20, true},
 		{"valid USDT_BEP20", USDT_BEP20, true},
+		{"valid USDT_TRON_TESTNET", USDT_TRON_TESTNET, true},
 		{"valid USDC_ERC20", USDC_ERC20, true},
 		{"valid USDC_TRC20", USDC_TRC20, true},
 		{"valid USDC_BEP20", USDC_BEP20, true},

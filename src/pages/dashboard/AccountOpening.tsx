@@ -111,6 +111,7 @@ const TOKEN_OPTIONS = [
 // Network options for adding new address
 const NETWORK_OPTIONS = [
   { value: "TRC20", label: "TRON (TRC20)", name: "TRON" },
+  { value: "TRON_TESTNET", label: "TRX (SHASTA) - TRON Testnet", name: "TRON Testnet" },
   { value: "ERC20", label: "Ethereum (ERC20)", name: "Ethereum" },
   { value: "BEP20", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
 ];
@@ -124,6 +125,7 @@ interface AddAddressRequest {
 // Chain to backend value mapping (for BEP20, we need to send full format to backend)
 const CHAIN_TO_BACKEND_MAP: Record<string, string> = {
   "TRC20": "TRC20",
+  "TRON_TESTNET": "TRON_TESTNET",
   "ERC20": "ERC20",
   "BEP20": "BEP20", // Backend will convert to full format (USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
 };
@@ -288,26 +290,11 @@ const AccountOpening = () => {
     }
   });
 
-  SM|  const addAddressMutation = useMutation({
-RB|    mutationFn: async (data: AddAddressRequest) => {
-QJ|      if (!token) {
-MX|        throw new Error("Not authenticated");
-QX|      }
-YW|      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress request:", data);
-      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress: calling API", data);
-      return apiRequest("/api/wallet/addresses", {
-MR|        method: "POST",
-MT|        headers: {
-PP|          Authorization: `Bearer ${token}`,
-SB|        },
-PQ|        body: JSON.stringify(data),
-QW|      });
-WX|    },
+  const addAddressMutation = useMutation({
     mutationFn: async (data: AddAddressRequest) => {
       if (!token) {
         throw new Error("Not authenticated");
       }
-      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress: calling API", data);
       return apiRequest("/api/wallet/addresses", {
         method: "POST",
         headers: {

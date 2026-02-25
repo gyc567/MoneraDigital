@@ -4,22 +4,26 @@ import "strings"
 
 // Supported currencies following token_network format
 const (
-	USDT_ERC20 = "USDT_ERC20"
-	USDT_TRC20 = "USDT_TRC20"
-	USDT_BEP20 = "USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET"
-	USDC_ERC20 = "USDC_ERC20"
-	USDC_TRC20 = "USDC_TRC20"
-	USDC_BEP20 = "USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET"
+	USDT_ERC20      = "USDT_ERC20"
+	USDT_TRC20      = "USDT_TRC20"
+	USDT_BEP20      = "USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET"
+	USDT_TRON_TESTNET = "USDT_TRON_TESTNET_SHASTA"
+	USDC_ERC20      = "USDC_ERC20"
+	USDC_TRC20      = "USDC_TRC20"
+	USDC_BEP20      = "USDC_BEP20_BINANCE_SMART_CHAIN_MAINNET"
+	USDC_TRON_TESTNET = "USDC_TRON_TESTNET_SHASTA"
 )
 
 // ShortFormatToFull maps short currency codes to their full backend format
 var ShortFormatToFull = map[string]string{
-	"USDT_ERC20": USDT_ERC20,
-	"USDT_TRC20": USDT_TRC20,
-	"USDT_BEP20": USDT_BEP20,
-	"USDC_ERC20": USDC_ERC20,
-	"USDC_TRC20": USDC_TRC20,
-	"USDC_BEP20": USDC_BEP20,
+	"USDT_ERC20":      USDT_ERC20,
+	"USDT_TRC20":      USDT_TRC20,
+	"USDT_BEP20":      USDT_BEP20,
+	"USDT_TRON_TESTNET": USDT_TRON_TESTNET,
+	"USDC_ERC20":      USDC_ERC20,
+	"USDC_TRC20":      USDC_TRC20,
+	"USDC_BEP20":      USDC_BEP20,
+	"USDC_TRON_TESTNET": USDC_TRON_TESTNET,
 }
 
 // SupportedNetworks contains all valid network identifiers
@@ -27,13 +31,15 @@ var SupportedNetworks = []string{
 	"ERC20",
 	"TRC20",
 	"BEP20",
+	"TRON_TESTNET",
 }
 
 // NetworkAliasMap maps common aliases to standard network names
 var NetworkAliasMap = map[string]string{
-	"TRON": "TRC20",
-	"BSC":  "BEP20",
-	"ETH":  "ERC20",
+	"TRON":        "TRC20",
+	"BSC":         "BEP20",
+	"ETH":         "ERC20",
+	"TRON_TESTNET": "TRON_TESTNET",
 }
 
 // NormalizeNetwork converts network aliases to standard names
@@ -55,29 +61,35 @@ var AllSupportedCurrencies = []string{
 	USDT_ERC20,
 	USDT_TRC20,
 	USDT_BEP20,
+	USDT_TRON_TESTNET,
 	USDC_ERC20,
 	USDC_TRC20,
 	USDC_BEP20,
+	USDC_TRON_TESTNET,
 }
 
 // CurrencyLabelMap provides display labels for currencies (uses full format as key)
 var CurrencyLabelMap = map[string]string{
-	USDT_ERC20: "USDT (ERC20)",
-	USDT_TRC20: "USDT (TRC20)",
-	USDT_BEP20: "USDT (BEP20)",
-	USDC_ERC20: "USDC (ERC20)",
-	USDC_TRC20: "USDC (TRC20)",
-	USDC_BEP20: "USDC (BEP20)",
+	USDT_ERC20:      "USDT (ERC20)",
+	USDT_TRC20:      "USDT (TRC20)",
+	USDT_BEP20:      "USDT (BEP20)",
+	USDT_TRON_TESTNET: "USDT (TRON Testnet)",
+	USDC_ERC20:      "USDC (ERC20)",
+	USDC_TRC20:      "USDC (TRC20)",
+	USDC_BEP20:      "USDC (BEP20)",
+	USDC_TRON_TESTNET: "USDC (TRON Testnet)",
 }
 
 // ShortFormatLabelMap provides display labels for short currency codes
 var ShortFormatLabelMap = map[string]string{
-	"USDT_ERC20": "USDT (ERC20)",
-	"USDT_TRC20": "USDT (TRC20)",
-	"USDT_BEP20": "USDT (BEP20)",
-	"USDC_ERC20": "USDC (ERC20)",
-	"USDC_TRC20": "USDC (TRC20)",
-	"USDC_BEP20": "USDC (BEP20)",
+	"USDT_ERC20":      "USDT (ERC20)",
+	"USDT_TRC20":      "USDT (TRC20)",
+	"USDT_BEP20":      "USDT (BEP20)",
+	"USDT_TRON_TESTNET": "USDT (TRON Testnet)",
+	"USDC_ERC20":      "USDC (ERC20)",
+	"USDC_TRC20":      "USDC (TRC20)",
+	"USDC_BEP20":      "USDC (BEP20)",
+	"USDC_TRON_TESTNET": "USDC (TRON Testnet)",
 }
 
 // NetworkFromCurrency extracts the network part from currency (e.g., "ERC20" from "USDT_ERC20")
