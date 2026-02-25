@@ -40,28 +40,39 @@ const Deposit = () => {
   const networkLabel = selectedNetwork?.label ?? network;
   const networkName = selectedNetwork?.name ?? network;
 
-  const { data: walletInfo, isLoading: isWalletLoading } = useQuery({
-    queryKey: ["walletInfo"],
+  // Build currency key for API call (e.g., USDT_TRC20)
+  const currencyKey = `${asset}_${network === "TRON" ? "TRC20" : network === "ETH" ? "ERC20" : "BEP20"}`;
+  
+  console.log("[DEBUG-DEPOSIT] Fetching address for currency:", currencyKey);
+  
+  // Fetch address directly from Core API
+  const { data: walletAddress, isLoading: isWalletLoading } = useQuery({
+    queryKey: ["walletAddress", currencyKey],
     queryFn: async () => {
-      const res = await fetch("/api/wallet/info", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      const res = await fetch("/api/wallet/address/get", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}` 
+        },
+        body: JSON.stringify({
+          productCode: "X_FINANCE",
+          currency: currencyKey
+        }),
       });
-      if (!res.ok) throw new Error("Failed to fetch wallet info");
-      return res.json();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to fetch wallet address");
+      }
+      const data = await res.json();
+      console.log("[DEBUG-DEPOSIT] Wallet address response:", data);
+      return data.data || null;
     },
+    enabled: !!asset && !!network,
   });
 
-  // Parse addresses from JSON string if available
-  // Handle sql.NullString format { String: "...", Valid: true }
-  let address = "";
-  try {
-      if (walletInfo?.addresses && walletInfo.addresses.Valid) {
-          const addrMap = JSON.parse(walletInfo.addresses.String);
-          address = addrMap[network] || "";
-      }
-  } catch (e) {
-      console.error("Failed to parse wallet addresses", e);
-  }
+  // Address from Core API response
+  const address = walletAddress?.address || "";
 
   // Fetch deposit records from Core API based on address
   const { data: depositsData, isLoading: isDepositsLoading } = useQuery({
