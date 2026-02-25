@@ -327,10 +327,13 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		productCode = "X_FINANCE"
 	}
 
+	// Use short format for Core API (e.g., USDT_BEP20 instead of USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
+	coreCurrency := currency.ToShortFormat(addressKey)
+
 	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 		UserID:      fmt.Sprintf("%d", userID),
 		ProductCode: productCode,
-		Currency:    addressKey,
+		Currency:    coreCurrency,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get address from Core API: %w", err)

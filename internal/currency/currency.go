@@ -129,6 +129,18 @@ func ToFullFormat(currency string) string {
 	}
 	return currency
 }
+// ToShortFormat converts full backend format to short format
+// e.g., "USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET" -> "USDT_BEP20"
+func ToShortFormat(currency string) string {
+	// Check if it's a full format and convert back to short
+	for short, full := range ShortFormatToFull {
+		if full == currency {
+			return short
+		}
+	}
+	return currency
+}
+
 
 // BuildCurrency creates a currency string from token and network
 func BuildCurrency(token, network string) string {
