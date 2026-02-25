@@ -22,6 +22,8 @@ type WalletResponseData struct {
 	ProductCode string `json:"productCode"`
 	Currency    string `json:"currency"`
 	Status      string `json:"status"`
+	WalletID    string `json:"walletId,omitempty"`
+	Address     string `json:"address,omitempty"`
 	CreatedAt   string `json:"createdAt"`
 }
 

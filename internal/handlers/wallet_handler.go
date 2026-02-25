@@ -139,6 +139,17 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 
 	createdAt := wallet.CreatedAt.Format("2006-01-02 15:04:05")
 
+	// Extract walletId and address from wallet object
+	var walletIDStr, addressStr string
+	if wallet.WalletID.Valid {
+		walletIDStr = wallet.WalletID.String
+	}
+	if wallet.Address.Valid {
+		addressStr = wallet.Address.String
+	}
+
+	logger.Info("[DEBUG-ACCOUNT-OPENING] CreateWallet response prepared", "walletId", walletIDStr, "address", addressStr)
+
 	c.JSON(http.StatusOK, dto.CreateWalletResponse{
 		Code:    "200",
 		Message: "Success",
@@ -147,6 +158,8 @@ func (h *Handler) CreateWallet(c *gin.Context) {
 			ProductCode: req.ProductCode,
 			Currency:    req.Currency,
 			Status:      status,
+			WalletID:    walletIDStr,
+			Address:     addressStr,
 			CreatedAt:   createdAt,
 		},
 		Success:   true,

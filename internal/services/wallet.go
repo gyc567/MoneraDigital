@@ -99,6 +99,17 @@ func (s *WalletService) CreateWallet(ctx context.Context, userID int, productCod
 		logger.Warn("[DEBUG-ACCOUNT-OPENING] GetAddress API failed or returned empty", "error", addrErr)
 	}
 
+	// Validate that we have a valid address before marking as SUCCESS
+	if address == "" && walletID == "" {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] Core API returned empty walletId and address, marking as FAILED", "userId", userID)
+		newReq.Status = models.WalletCreationStatusFailed
+		newReq.ErrorMessage = sql.NullString{String: "Core API returned empty walletId and address", Valid: true}
+		if err := s.repo.UpdateRequest(ctx, newReq); err != nil {
+			logger.Error("[DEBUG-ACCOUNT-OPENING] Failed to update wallet status to FAILED", "error", err.Error())
+		}
+		return nil, fmt.Errorf("wallet creation failed: Core API returned empty walletId and address")
+	}
+
 	newReq.Status = models.WalletCreationStatusSuccess
 	newReq.WalletID = sql.NullString{String: walletID, Valid: walletID != ""}
 	newReq.Address = sql.NullString{String: address, Valid: address != ""}
