@@ -337,13 +337,24 @@ const AccountOpening = () => {
   const status = walletInfo?.status || "NONE";
   const isCreating = status === "CREATING" || createMutation.isPending;
 
+  // Debug: log address parsing
+  console.log("[DEBUG-ACCOUNT-OPENING] addressesJson:", addressesJson);
+  console.log("[DEBUG-ACCOUNT-OPENING] selectedNetwork:", selectedNetwork);
+  console.log("[DEBUG-ACCOUNT-OPENING] availableNetworks:", availableNetworks);
+  
   const displayAddress = useMemo(
     () => getDisplayAddress(addressesJson, selectedNetwork),
     [addressesJson, selectedNetwork]
   );
 
   // Address comes from walletInfo.addresses after cache refresh
-  const displayAddressValue = displayAddress;
+  // Fallback to direct address field if displayAddress is empty
+  const directAddress = walletInfo?.address?.String || "";
+  const displayAddressValue = displayAddress || directAddress;
+  
+  console.log("[DEBUG-ACCOUNT-OPENING] displayAddress:", displayAddress);
+  console.log("[DEBUG-ACCOUNT-OPENING] directAddress:", directAddress);
+  console.log("[DEBUG-ACCOUNT-OPENING] displayAddressValue:", displayAddressValue);
 
   const walletId = walletInfo?.walletId?.String || walletInfo?.address?.String || "";
 
