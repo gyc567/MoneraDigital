@@ -382,13 +382,17 @@ func (s *WalletService) GetAddressIncomeHistory(ctx context.Context, userID int,
 // GetWalletAddress 获取钱包地址
 // 优先从 Core API 获取，如果失败则从本地数据库获取
 func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dto.GetWalletAddressRequest) (*dto.WalletAddress, error) {
+	logger.Info("[DEBUG-DEPOSIT] GetWalletAddress called", "userId", userID, "productCode", req.ProductCode, "currency", req.Currency)
+	
 	// 优先从 Core API 获取
 	if s.coreAPIClient != nil {
+		logger.Info("[DEBUG-DEPOSIT] Calling Core API GetAddress", "currency", req.Currency)
 		addressInfo, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 			UserID:      fmt.Sprintf("%d", userID),
 			ProductCode: req.ProductCode,
 			Currency:    req.Currency,
 		})
+		logger.Info("[DEBUG-DEPOSIT] Core API response", "address", addressInfo.Address, "addressType", addressInfo.AddressType, "error", err)
 		if err == nil {
 			return &dto.WalletAddress{
 				Address:     addressInfo.Address,
