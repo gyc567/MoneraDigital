@@ -151,8 +151,11 @@ const Deposit = () => {
     return match ? match[1] : coinKey;
   };
 
-  // Check if wallet is created (SUCCESS)
-  if (!walletInfo || walletInfo.status !== "SUCCESS") {
+  // Check if wallet address is available from Core API
+  const hasWalletAddress = !!walletAddress?.address;
+  
+  // Show activate prompt if no address
+  if (!hasWalletAddress && !isWalletLoading) {
       return (
         <div className="flex flex-col items-center justify-center h-[60vh] space-y-4 animate-fade-in">
             <div className="p-4 bg-secondary rounded-full">
