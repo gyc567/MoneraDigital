@@ -156,6 +156,10 @@ func ToShortFormat(currency string) string {
 
 // BuildCurrency creates a currency string from token and network
 func BuildCurrency(token, network string) string {
+	// Special case: TRX(SHASTA)_TRON_TESTNET doesn't need token prefix
+	if network == "TRX(SHASTA)_TRON_TESTNET" {
+		return network
+	}
 	return token + "_" + network
 }
 
