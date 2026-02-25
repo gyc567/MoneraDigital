@@ -394,11 +394,15 @@ func (s *WalletService) GetWalletAddress(ctx context.Context, userID int, req dt
 		})
 		logger.Info("[DEBUG-DEPOSIT] Core API response", "address", addressInfo.Address, "addressType", addressInfo.AddressType, "error", err)
 		if err == nil {
-			return &dto.WalletAddress{
-				Address:     addressInfo.Address,
-				AddressType: addressInfo.AddressType,
-				DerivePath:  addressInfo.DerivePath,
-			}, nil
+			// Validate that returned address matches requested network
+			if isAddressValidForCurrency(addressInfo.Address, req.Currency) {
+				return &dto.WalletAddress{
+					Address:     addressInfo.Address,
+					AddressType: addressInfo.AddressType,
+					DerivePath:  addressInfo.DerivePath,
+				}, nil
+			}
+			logger.Warn("[DEBUG-DEPOSIT] Address does not match requested currency, falling back to database", "address", addressInfo.Address, "currency", req.Currency)
 		}
 		// 如果 Core API 返回错误，继续尝试从本地数据库获取
 		logger.Info("Core API GetAddress failed, falling back to local database", "error", err.Error())
@@ -465,4 +469,26 @@ func convertUserWalletToRequest(uw *models.UserWallet) *models.WalletCreationReq
 		Address:     sql.NullString{String: uw.Address, Valid: uw.Address != ""},
 		Addresses:   sql.NullString{String: string(addressesJSON), Valid: true},
 	}
+}
+
+
+// isAddressValidForCurrency checks if an address matches the expected network
+func isAddressValidForCurrency(address, currency string) bool {
+	if address == "" {
+		return false
+	}
+
+	// TRC20 addresses start with T
+	if currency == "USDT_TRC20" || currency == "TRC20" {
+		return len(address) == 34 && address[0] == 'T'
+	}
+
+	// ERC20 and BEP20 addresses start with 0x
+	if currency == "USDT_ERC20" || currency == "ERC20" ||
+		currency == "USDT_BEP20" || currency == "BEP20" {
+		return len(address) == 42 && address[:2] == "0x"
+	}
+
+	// For unknown currency, just check it's not empty
+	return address != ""
 }
