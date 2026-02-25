@@ -213,7 +213,9 @@ func (h *Handler) AddWalletAddress(c *gin.Context) {
 	}
 
 	var req dto.AddWalletAddressRequest
+	logger.Info("[DEBUG-ACCOUNT-OPENING] AddWalletAddress: received request", "token", req.Token, "chain", req.Chain)
 	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] AddWalletAddress: bind error", "error", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Bad Request",
 			"message": err.Error(),
@@ -231,10 +233,12 @@ func (h *Handler) AddWalletAddress(c *gin.Context) {
 		return
 	}
 
+	logger.Info("[DEBUG-ACCOUNT-OPENING] AddWalletAddress: calling service", "token", req.Token, "chain", req.Chain)
 	wallet, err := h.WalletService.AddAddress(c.Request.Context(), userID.(int), services.AddAddressRequest{
 		Chain: req.Chain,
 		Token: req.Token,
 	})
+	logger.Info("[DEBUG-ACCOUNT-OPENING] AddWalletAddress: service result", "wallet", wallet, "error", err)
 	if err != nil {
 		// Return 400 for business logic errors (wallet not found, etc.)
 		errMsg := err.Error()

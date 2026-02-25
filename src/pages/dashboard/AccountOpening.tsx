@@ -288,11 +288,26 @@ const AccountOpening = () => {
     }
   });
 
-  const addAddressMutation = useMutation({
+  SM|  const addAddressMutation = useMutation({
+RB|    mutationFn: async (data: AddAddressRequest) => {
+QJ|      if (!token) {
+MX|        throw new Error("Not authenticated");
+QX|      }
+YW|      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress request:", data);
+      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress: calling API", data);
+      return apiRequest("/api/wallet/addresses", {
+MR|        method: "POST",
+MT|        headers: {
+PP|          Authorization: `Bearer ${token}`,
+SB|        },
+PQ|        body: JSON.stringify(data),
+QW|      });
+WX|    },
     mutationFn: async (data: AddAddressRequest) => {
       if (!token) {
         throw new Error("Not authenticated");
       }
+      console.log("[DEBUG-ACCOUNT-OPENING] AddAddress: calling API", data);
       return apiRequest("/api/wallet/addresses", {
         method: "POST",
         headers: {

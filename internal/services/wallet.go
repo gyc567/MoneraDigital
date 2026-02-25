@@ -302,7 +302,9 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 
 	// Calculate currency key for the address
 	addressKey := buildCurrencyKey(req.Token, req.Chain)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: buildCurrencyKey result", "token", req.Token, "chain", req.Chain, "addressKey", addressKey)
 	if addressKey == "" {
+		logger.Error("[DEBUG-ACCOUNT-OPENING] AddAddress: invalid currency", "token", req.Token, "chain", req.Chain)
 		return nil, fmt.Errorf("invalid currency: %s_%s", req.Token, req.Chain)
 	}
 
@@ -329,6 +331,7 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 
 	// Use short format for Core API (e.g., USDT_BEP20 instead of USDT_BEP20_BINANCE_SMART_CHAIN_MAINNET)
 	coreCurrency := currency.ToShortFormat(addressKey)
+	logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
 
 	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
 		UserID:      fmt.Sprintf("%d", userID),
