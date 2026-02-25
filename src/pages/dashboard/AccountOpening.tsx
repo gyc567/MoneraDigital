@@ -111,7 +111,7 @@ const TOKEN_OPTIONS = [
 // Network options for adding new address
 const NETWORK_OPTIONS = [
   { value: "TRC20", label: "TRON (TRC20)", name: "TRON" },
-  { value: "TRON_TESTNET", label: "TRX (SHASTA) - TRON Testnet", name: "TRON Testnet" },
+  { value: "TRX(SHASTA)_TRON_TESTNET", label: "TRX (SHASTA) - TRON Testnet", name: "TRON Testnet" },
   { value: "ERC20", label: "Ethereum (ERC20)", name: "Ethereum" },
   { value: "BEP20", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
 ];

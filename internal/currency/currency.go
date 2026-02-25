@@ -31,7 +31,7 @@ var SupportedNetworks = []string{
 	"ERC20",
 	"TRC20",
 	"BEP20",
-	"TRON_TESTNET",
+	"TRX(SHASTA)_TRON_TESTNET",
 }
 
 // NetworkAliasMap maps common aliases to standard network names
@@ -39,7 +39,7 @@ var NetworkAliasMap = map[string]string{
 	"TRON":        "TRC20",
 	"BSC":         "BEP20",
 	"ETH":         "ERC20",
-	"TRON_TESTNET": "TRON_TESTNET",
+	"TRX(SHASTA)_TRON_TESTNET": "TRX(SHASTA)_TRON_TESTNET",
 }
 
 // NormalizeNetwork converts network aliases to standard names
