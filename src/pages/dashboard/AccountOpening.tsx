@@ -138,7 +138,7 @@ const getBackendChain = (chain: string): string => {
   console.log(`[DEBUG-ADDRESS] CHAIN_TO_BACKEND_MAP lookup: "${mappedValue}"`);
   console.log(`[DEBUG-ADDRESS] Final result: "${result}"`);
   return result;
-
+};
 
 // Get wallet address request type
 interface GetWalletAddressRequest {
@@ -337,9 +337,6 @@ const AccountOpening = () => {
     
     // Use mapped backend chain value for API call
     addAddressMutation.mutate(requestData);
-  };
-    // Use mapped backend chain value for API call
-    addAddressMutation.mutate({ chain: getBackendChain(selectedChain), token: selectedToken });
   };
 
   const handleCreateWallet = () => {

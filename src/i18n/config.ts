@@ -7,9 +7,31 @@ console.log('[i18n] Translation files loaded successfully');
 console.log('[i18n] en.json keys:', Object.keys(en).length);
 console.log('[i18n] zh.json keys:', Object.keys(zh).length);
 
+// Safe localStorage access with fallback
+const safeGetItem = (key: string): string | null => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage.getItem(key);
+    }
+  } catch (e) {
+    console.warn('[i18n] localStorage access failed:', e);
+  }
+  return null;
+};
+
+const safeSetItem = (key: string, value: string): void => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, value);
+    }
+  } catch (e) {
+    console.warn('[i18n] localStorage write failed:', e);
+  }
+};
+
 // 获取保存在localStorage中的语言偏好，默认为英文
 const getSavedLanguage = (): string => {
-  const saved = localStorage.getItem('i18n-language');
+  const saved = safeGetItem('i18n-language');
   return saved && ['en', 'zh'].includes(saved) ? saved : 'en';
 };
 
@@ -28,7 +50,7 @@ i18n
     interpolation: {
       escapeValue: false, // React已经防止XSS
     },
-    debug: true, // Enable debug mode
+    debug: import.meta.env.DEV, // Only enable debug in development
   })
   .then(() => {
     console.log('[i18n] Initialization complete');
@@ -41,7 +63,7 @@ i18n
 // 监听语言变化，保存到localStorage
 i18n.on('languageChanged', (lng: string) => {
   console.log('[i18n] Language changed to:', lng);
-  localStorage.setItem('i18n-language', lng);
+  safeSetItem('i18n-language', lng);
 });
 
 export default i18n;
