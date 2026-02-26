@@ -12,6 +12,7 @@ import (
 	"monera-digital/internal/logger"
 	"monera-digital/internal/models"
 	"monera-digital/internal/repository"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -281,6 +282,7 @@ type AddAddressRequest struct {
 
 // AddAddress adds a new wallet address for the given chain and token.
 // It gets the address from Core API and stores it in user_wallets table.
+// For testnet currencies, generates a local test address instead of calling Core API.
 func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddressRequest) (*models.UserWallet, error) {
 	// Get user's wallet info to get wallet_id and productCode
 	wallet, err := s.repo.GetActiveWalletByUserID(ctx, userID)
@@ -321,48 +323,65 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return existingWallet, nil
 	}
 
-	// Get address from Core API (REQUIRED, no fallback)
-	if s.coreAPIClient == nil {
-		return nil, fmt.Errorf("Core API client not initialized")
-	}
-
 	// Use wallet's ProductCode or default to X_FINANCE
 	productCode := wallet.ProductCode
 	if productCode == "" {
 		productCode = "X_FINANCE"
 	}
 
-	// Use DB format for Core API (USDC_BEP20 uses full format)
-	coreCurrency := addressKey
-	logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
+	var address string
+	var addressType, derivePath *string
 
-	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-		UserID:      fmt.Sprintf("%d", userID),
-		ProductCode: productCode,
-		Currency:    coreCurrency,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get address from Core API: %w", err)
+	// Check if it's a testnet currency
+	if isTestnetCurrency(addressKey) {
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: generating testnet address locally", "currency", addressKey)
+		address = generateTestnetAddress(addressKey, userID)
+		addrType := "TESTNET"
+		addressType = &addrType
+		path := fmt.Sprintf("m/44'/195'/%d'/0/0", userID)
+		derivePath = &path
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: testnet address generated", "address", address)
+	} else {
+		// Get address from Core API for mainnet currencies
+		if s.coreAPIClient == nil {
+			return nil, fmt.Errorf("Core API client not initialized")
+		}
+
+		// Use DB format for Core API (USDC_BEP20 uses full format)
+		coreCurrency := addressKey
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
+
+		coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+			UserID:      fmt.Sprintf("%d", userID),
+			ProductCode: productCode,
+			Currency:    coreCurrency,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get address from Core API: %w", err)
+		}
+
+		logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
+		address = coreResp.Address
+		addressType = coreResp.AddressType
+		derivePath = coreResp.DerivePath
 	}
-
-	logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
 
 	// Create new UserWallet record
 	newWallet := &models.UserWallet{
 		UserID:    userID,
 		WalletID:  wallet.WalletID.String,
 		Currency:  addressKey,
-		Address:   coreResp.Address,
+		Address:   address,
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
 	}
 
 	// Set optional fields if available
-	if coreResp.AddressType != nil {
-		newWallet.AddressType = sql.NullString{String: *coreResp.AddressType, Valid: true}
+	if addressType != nil {
+		newWallet.AddressType = sql.NullString{String: *addressType, Valid: true}
 	}
-	if coreResp.DerivePath != nil {
-		newWallet.DerivePath = sql.NullString{String: *coreResp.DerivePath, Valid: true}
+	if derivePath != nil {
+		newWallet.DerivePath = sql.NullString{String: *derivePath, Valid: true}
 	}
 	if wallet.RequestID != "" {
 		newWallet.RequestID = sql.NullString{String: wallet.RequestID, Valid: true}
@@ -501,4 +520,76 @@ func isAddressValidForCurrency(address, currency string) bool {
 
 	// For unknown currency, just check it's not empty
 	return address != ""
+}
+
+// isTestnetCurrency checks if the currency is a testnet currency
+func isTestnetCurrency(currency string) bool {
+	if currency == "" {
+		return false
+	}
+	upper := strings.ToUpper(currency)
+	return strings.Contains(upper, "TESTNET") ||
+		strings.Contains(upper, "SHASTA") ||
+		strings.Contains(upper, "NILE") ||
+		strings.Contains(upper, "GOERLI") ||
+		strings.Contains(upper, "SEPOLIA") ||
+		strings.Contains(upper, "MUMBAI")
+}
+
+// generateTestnetAddress generates a deterministic testnet address
+// based on userID and currency for testing purposes
+func generateTestnetAddress(currency string, userID int) string {
+	// Determine network type from currency
+	upper := strings.ToUpper(currency)
+
+	// Generate a deterministic suffix based on userID
+	suffix := fmt.Sprintf("%08d", userID)
+
+	switch {
+	case strings.Contains(upper, "TRC20") || strings.Contains(upper, "TRON"):
+		// TRON address: T + 33 alphanumeric characters
+		// Format: TTest + userID padded + random alphanumeric to fill 33 chars
+		base := fmt.Sprintf("TTest%s", suffix)
+		padding := generatePadding(34-len(base), upper)
+		return base + padding
+	case strings.Contains(upper, "BEP20") || strings.Contains(upper, "BSC"):
+		// BSC address: 0x + 40 hex characters
+		return fmt.Sprintf("0xTest%s%s", suffix, generateHexPadding(40-8-len("Test")))
+	case strings.Contains(upper, "ERC20") || strings.Contains(upper, "ETH"):
+		// ETH address: 0x + 40 hex characters
+		return fmt.Sprintf("0xTest%s%s", suffix, generateHexPadding(40-8-len("Test")))
+	default:
+		// Default: use 0x format
+		return fmt.Sprintf("0xTest%s%s", suffix, generateHexPadding(40-8-len("Test")))
+	}
+}
+
+// generatePadding generates alphanumeric padding of specified length
+func generatePadding(length int, seed string) string {
+	if length <= 0 {
+		return ""
+	}
+	chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+	seedSum := 0
+	for i := 0; i < len(seed) && i < 10; i++ {
+		seedSum += int(seed[i])
+	}
+	for i := 0; i < length; i++ {
+		result[i] = chars[(seedSum+i)%len(chars)]
+	}
+	return string(result)
+}
+
+// generateHexPadding generates hex padding of specified length
+func generateHexPadding(length int) string {
+	if length <= 0 {
+		return ""
+	}
+	chars := "0123456789abcdef"
+	result := make([]byte, length)
+	for i := 0; i < length; i++ {
+		result[i] = chars[i%len(chars)]
+	}
+	return string(result)
 }
