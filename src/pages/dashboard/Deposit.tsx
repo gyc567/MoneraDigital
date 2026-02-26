@@ -32,16 +32,34 @@ const Deposit = () => {
 
   const networkOptions = [
     { value: "TRON", label: "TRON (TRC20)", name: "TRON" },
+    { value: "TRON_TESTNET", label: "TRX (SHASTA) - TRON Testnet", name: "TRON Testnet", isTestnet: true },
     { value: "ETH", label: "Ethereum (ERC20)", name: "Ethereum" },
     { value: "BSC", label: "BNB Smart Chain (BEP20)", name: "BNB Smart Chain" },
   ];
 
+  // Map network value to currency suffix
+  const getNetworkCode = (net: string): string => {
+    switch (net) {
+      case "TRON":
+        return "TRC20";
+      case "TRON_TESTNET":
+        return "TRX(SHASTA)_TRON_TESTNET";
+      case "ETH":
+        return "ERC20";
+      case "BSC":
+        return "BEP20";
+      default:
+        return net;
+    }
+  };
+
   const selectedNetwork = networkOptions.find(option => option.value === network);
   const networkLabel = selectedNetwork?.label ?? network;
   const networkName = selectedNetwork?.name ?? network;
+  const isTestnet = selectedNetwork?.isTestnet ?? false;
 
-  // Build currency key for API call (e.g., USDT_TRC20)
-  const currencyKey = `${asset}_${network === "TRON" ? "TRC20" : network === "ETH" ? "ERC20" : "BEP20"}`;
+  // Build currency key for API call (e.g., USDT_TRC20 or USDT_TRX(SHASTA)_TRON_TESTNET)
+  const currencyKey = `${asset}_${getNetworkCode(network)}`;
   
   console.log("[DEBUG-DEPOSIT] Fetching address for currency:", currencyKey);
   
@@ -233,6 +251,13 @@ const Deposit = () => {
                         <AlertTriangle className="w-5 h-5 shrink-0" />
                         <p>{t("deposit.warning", { network: networkName })}</p>
                     </div>
+
+                    {isTestnet && (
+                        <div className="flex items-start gap-2 text-sm text-orange-600 dark:text-orange-400 bg-orange-500/10 p-3 rounded-md w-full border border-orange-500/30">
+                            <AlertTriangle className="w-5 h-5 shrink-0" />
+                            <p>{t("deposit.testnetWarning")}</p>
+                        </div>
+                    )}
                     
                     <p className="text-xs text-muted-foreground">{t("deposit.minDeposit")}</p>
                 </div>

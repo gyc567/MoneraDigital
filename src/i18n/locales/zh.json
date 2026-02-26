@@ -717,6 +717,7 @@
     "copied": "已复制！",
     "minDeposit": "最小充值金额：10 USDT",
     "warning": "请务必确认您选择的是 {{network}} 网络。充值到错误的网络将无法找回。",
+    "testnetWarning": "这是测试网络地址。请勿充值真实资产 - 仅用于测试。充值到测试网络地址的真实资产将无法找回。",
     "history": "充值记录",
     "status": {
       "PENDING": "确认中",

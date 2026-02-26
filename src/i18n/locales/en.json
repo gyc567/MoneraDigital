@@ -641,6 +641,7 @@
     "copied": "Copied!",
     "minDeposit": "Minimum deposit: 10 USDT",
     "warning": "Ensure you are sending via {{network}} network. Sending to the wrong network may result in loss of funds.",
+    "testnetWarning": "This is a TESTNET address. DO NOT send real funds - this is for testing only. Real funds sent to testnet addresses will be lost.",
     "history": "Deposit History",
     "status": {
       "PENDING": "Pending",
