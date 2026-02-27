@@ -193,8 +193,9 @@ func (r *WalletRepository) GetActiveUserWallet(ctx context.Context, userID int) 
 	return &w, nil
 }
 
-// AddUserWalletAddress adds a new address for the user, checking if it already exists.
-// Returns the existing wallet if found, or creates a new one.
+// AddUserWalletAddress adds a new address for the user.
+// If address already exists, updates it with the new address from Core API.
+// Returns the updated/created wallet.
 func (r *WalletRepository) AddUserWalletAddress(ctx context.Context, wallet *models.UserWallet) (*models.UserWallet, error) {
 	// Check if wallet already exists for this user and currency
 	existing, err := r.GetUserWalletByCurrency(ctx, wallet.UserID, wallet.Currency)
@@ -202,6 +203,28 @@ func (r *WalletRepository) AddUserWalletAddress(ctx context.Context, wallet *mod
 		return nil, err
 	}
 	if existing != nil {
+		// Update existing wallet with new address from Core API
+		existing.Address = wallet.Address
+		if wallet.AddressType.Valid {
+			existing.AddressType = wallet.AddressType
+		}
+		if wallet.DerivePath.Valid {
+			existing.DerivePath = wallet.DerivePath
+		}
+		existing.UpdatedAt = time.Now()
+
+		// Update in database
+		query := `UPDATE user_wallets SET address = $1, address_type = $2, derive_path = $3, updated_at = $4 WHERE id = $5`
+		_, err = r.db.ExecContext(ctx, query,
+			existing.Address,
+			existing.AddressType,
+			existing.DerivePath,
+			existing.UpdatedAt,
+			existing.ID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update user wallet: %w", err)
+		}
 		return existing, nil
 	}
 

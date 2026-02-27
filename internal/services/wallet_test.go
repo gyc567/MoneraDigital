@@ -68,14 +68,17 @@ func TestWalletService_AddAddress_Success(t *testing.T) {
 
 func TestWalletService_AddAddress_AlreadyExists(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
-	service := NewWalletService(mockRepo, nil)
+	mockCoreAPI := new(MockCoreAPIClient)
+	service := NewWalletService(mockRepo, mockCoreAPI)
 
 	now := time.Now()
 	existingWallet := &models.WalletCreationRequest{
 		ID:          1,
+		RequestID:   "req-1",
 		UserID:      1,
 		ProductCode: "X_FINANCE",
 		Status:      models.WalletCreationStatusSuccess,
+		WalletID:    sql.NullString{String: "wallet-123", Valid: true},
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -94,7 +97,35 @@ func TestWalletService_AddAddress_AlreadyExists(t *testing.T) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+
+	// Updated address that will be returned after repository update
+	updatedUserWallet := &models.UserWallet{
+		ID:        5,
+		UserID:    1,
+		WalletID:  "wallet-123",
+		Currency:  "USDT_TRC20",
+		Address:   "TJNewAddress123456789ABCDEFGHIJKL", // New address from Core API
+		Status:    models.UserWalletStatusNormal,
+		IsPrimary: true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 1, "USDT_TRC20").Return(existingUserWallet, nil)
+
+	// Mock Core API to return new address
+	mockCoreAPI.On("GetAddress", mock.Anything, coreapi.GetAddressRequest{
+		UserID:      "1",
+		ProductCode: "X_FINANCE",
+		Currency:    "USDT_TRC20",
+	}).Return(&coreapi.AddressInfo{
+		Address:     "TJNewAddress123456789ABCDEFGHIJKL",
+		AddressType: func() *string { s := "TRC20"; return &s }(),
+	}, nil)
+
+	// AddUserWalletAddress should be called to update existing address
+	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.MatchedBy(func(w *models.UserWallet) bool {
+		return w.UserID == 1 && w.Currency == "USDT_TRC20"
+	})).Return(updatedUserWallet, nil)
 
 	result, err := service.AddAddress(context.Background(), 1, AddAddressRequest{
 		Chain: "TRON",
@@ -103,8 +134,15 @@ func TestWalletService_AddAddress_AlreadyExists(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, "TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", result.Address)
+	// Should return the new address from Core API
+	assert.Equal(t, "TJNewAddress123456789ABCDEFGHIJKL", result.Address)
 	assert.Equal(t, "USDT_TRC20", result.Currency)
+	// Verify Core API was called
+	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, coreapi.GetAddressRequest{
+		UserID:      "1",
+		ProductCode: "X_FINANCE",
+		Currency:    "USDT_TRC20",
+	})
 }
 
 func TestWalletService_AddAddress_WalletNotFound(t *testing.T) {

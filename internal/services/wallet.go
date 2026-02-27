@@ -313,14 +313,13 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 		return nil, fmt.Errorf("invalid currency: %s_%s", req.Token, req.Chain)
 	}
 
-	// Check if address already exists in user_wallets
+	// Check if address already exists in user_wallets (for logging purposes)
 	existingWallet, err := s.repo.GetUserWalletByUserAndCurrency(ctx, userID, addressKey)
 	if err != nil {
 		return nil, err
 	}
 	if existingWallet != nil {
-		logger.Info("Address already exists", "userId", userID, "currency", addressKey)
-		return existingWallet, nil
+		logger.Info("Address already exists, will fetch fresh address from Core API", "userId", userID, "currency", addressKey)
 	}
 
 	// Use wallet's ProductCode or default to X_FINANCE
