@@ -331,28 +331,38 @@ func (s *WalletService) AddAddress(ctx context.Context, userID int, req AddAddre
 	var address string
 	var addressType, derivePath *string
 
-	// Get address from Core API (all currencies, including testnets)
-	if s.coreAPIClient == nil {
-		return nil, fmt.Errorf("Core API client not initialized")
+	// Check if this is a testnet currency - use local generation instead of Core API
+	if isTestnetCurrency(addressKey) {
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: generating testnet address locally", "addressKey", addressKey, "userId", userID)
+		address = generateTestnetAddress(addressKey, userID)
+		if address == "" {
+			return nil, fmt.Errorf("failed to generate testnet address for %s", addressKey)
+		}
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: testnet address generated", "address", address, "userId", userID)
+	} else {
+		// Get address from Core API for mainnet currencies
+		if s.coreAPIClient == nil {
+			return nil, fmt.Errorf("Core API client not initialized")
+		}
+
+		// Use DB format for Core API
+		coreCurrency := addressKey
+		logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
+
+		coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
+			UserID:      fmt.Sprintf("%d", userID),
+			ProductCode: productCode,
+			Currency:    coreCurrency,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get address from Core API: %w", err)
+		}
+
+		logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
+		address = coreResp.Address
+		addressType = coreResp.AddressType
+		derivePath = coreResp.DerivePath
 	}
-
-	// Use DB format for Core API (USDC_BEP20 uses full format)
-	coreCurrency := addressKey
-	logger.Info("[DEBUG-ACCOUNT-OPENING] AddAddress: calling Core API", "addressKey", addressKey, "coreCurrency", coreCurrency)
-
-	coreResp, err := s.coreAPIClient.GetAddress(ctx, coreapi.GetAddressRequest{
-		UserID:      fmt.Sprintf("%d", userID),
-		ProductCode: productCode,
-		Currency:    coreCurrency,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get address from Core API: %w", err)
-	}
-
-	logger.Info("Core API address fetched successfully", "userId", userID, "currency", addressKey)
-	address = coreResp.Address
-	addressType = coreResp.AddressType
-	derivePath = coreResp.DerivePath
 
 	// Create new UserWallet record
 	newWallet := &models.UserWallet{

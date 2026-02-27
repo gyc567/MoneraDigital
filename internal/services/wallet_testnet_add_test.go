@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// TestWalletService_AddAddress_Testnet_Success tests adding a testnet address via Core API
+// TestWalletService_AddAddress_Testnet_Success tests adding a testnet address via local generation
 func TestWalletService_AddAddress_Testnet_Success(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
 	mockCoreAPI := new(MockCoreAPIClient)
@@ -31,29 +32,20 @@ func TestWalletService_AddAddress_Testnet_Success(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	// Mock Core API to return testnet address
-	mockCoreAPI.On("GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "123",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON_TESTNET",
-	}).Return(&coreapi.AddressInfo{
-		Address:     "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW2",
-		AddressType: func() *string { s := "TRC20"; return &s }(),
-	}, nil)
-
+	// For testnet, Core API should NOT be called - address is generated locally
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 123).Return(existingWallet, nil)
 	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 123, "USDT_TRON_TESTNET").Return(nil, nil)
 	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.MatchedBy(func(w *models.UserWallet) bool {
 		return w.UserID == 123 &&
 			w.Currency == "USDT_TRON_TESTNET" &&
-			w.Address == "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW2" &&
+			strings.HasPrefix(w.Address, "TTest") &&
 			w.Status == models.UserWalletStatusNormal
 	})).Return(&models.UserWallet{
 		ID:        1,
 		UserID:    123,
 		WalletID:  "wallet-123",
 		Currency:  "USDT_TRON_TESTNET",
-		Address:   "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW2",
+		Address:   "TTest00000123FGHIJKLMNOPQRSTUVWXYZ",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
 		CreatedAt: now,
@@ -68,16 +60,12 @@ func TestWalletService_AddAddress_Testnet_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, "USDT_TRON_TESTNET", result.Currency)
-	assert.Equal(t, "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW2", result.Address)
-	// Core API SHOULD be called for testnet now
-	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "123",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON_TESTNET",
-	})
+	assert.Contains(t, result.Address, "TTest")
+	// Core API should NOT be called for testnet
+	mockCoreAPI.AssertNotCalled(t, "GetAddress", mock.Anything, mock.Anything)
 }
 
-// TestWalletService_AddAddress_Testnet_USDC_Success tests adding a USDC testnet address via Core API
+// TestWalletService_AddAddress_Testnet_USDC_Success tests adding a USDC testnet address via local generation
 func TestWalletService_AddAddress_Testnet_USDC_Success(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
 	mockCoreAPI := new(MockCoreAPIClient)
@@ -95,29 +83,20 @@ func TestWalletService_AddAddress_Testnet_USDC_Success(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	// Mock Core API to return testnet address
-	mockCoreAPI.On("GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "456",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDC_TRON_TESTNET",
-	}).Return(&coreapi.AddressInfo{
-		Address:     "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW3",
-		AddressType: func() *string { s := "TRC20"; return &s }(),
-	}, nil)
-
+	// For testnet, Core API should NOT be called - address is generated locally
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 456).Return(existingWallet, nil)
 	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 456, "USDC_TRON_TESTNET").Return(nil, nil)
 	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.MatchedBy(func(w *models.UserWallet) bool {
 		return w.UserID == 456 &&
 			w.Currency == "USDC_TRON_TESTNET" &&
-			w.Address == "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW3" &&
+			strings.HasPrefix(w.Address, "TTest") &&
 			w.Status == models.UserWalletStatusNormal
 	})).Return(&models.UserWallet{
 		ID:        2,
 		UserID:    456,
 		WalletID:  "wallet-456",
 		Currency:  "USDC_TRON_TESTNET",
-		Address:   "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW3",
+		Address:   "TTest00000456FGHIJKLMNOPQRSTUVWXYZ",
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
 		CreatedAt: now,
@@ -132,12 +111,9 @@ func TestWalletService_AddAddress_Testnet_USDC_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, "USDC_TRON_TESTNET", result.Currency)
-	assert.Equal(t, "TJR3N8mYuPWKu7Lvdv71kYpTFSBhqHmYW3", result.Address)
-	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "456",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDC_TRON_TESTNET",
-	})
+	assert.Contains(t, result.Address, "TTest")
+	// Core API should NOT be called for testnet
+	mockCoreAPI.AssertNotCalled(t, "GetAddress", mock.Anything, mock.Anything)
 }
 
 // TestWalletService_AddAddress_Mainnet_UsesCoreAPI tests that mainnet still uses Core API
@@ -202,7 +178,7 @@ func TestWalletService_AddAddress_Mainnet_UsesCoreAPI(t *testing.T) {
 	})
 }
 
-// TestWalletService_AddAddress_Testnet_AlreadyExists tests that existing testnet addresses are updated via Core API
+// TestWalletService_AddAddress_Testnet_AlreadyExists tests that existing testnet addresses are regenerated locally
 func TestWalletService_AddAddress_Testnet_AlreadyExists(t *testing.T) {
 	mockRepo := new(MockWalletRepository)
 	mockCoreAPI := new(MockCoreAPIClient)
@@ -232,36 +208,27 @@ func TestWalletService_AddAddress_Testnet_AlreadyExists(t *testing.T) {
 		UpdatedAt: now,
 	}
 
-	// Updated address that will be returned after repository update
+	// Updated address that will be returned after repository update - generated locally
 	updatedAddress := &models.UserWallet{
 		ID:        5,
 		UserID:    999,
 		WalletID:  "wallet-999",
 		Currency:  "USDT_TRON_TESTNET",
-		Address:   "TNewCoreAPIAddress123456789012", // New address from Core API
+		Address:   "TTest00000999FGHIJKLMNOPQRSTUVWXYZ", // New address generated locally
 		Status:    models.UserWalletStatusNormal,
 		IsPrimary: false,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
-	// Mock Core API to return new address
-	mockCoreAPI.On("GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "999",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON_TESTNET",
-	}).Return(&coreapi.AddressInfo{
-		Address:     "TNewCoreAPIAddress123456789012", // New address from Core API
-		AddressType: func() *string { s := "TRC20"; return &s }(),
-	}, nil)
-
+	// For testnet, Core API should NOT be called - address is generated locally
 	mockRepo.On("GetActiveWalletByUserID", mock.Anything, 999).Return(existingWallet, nil)
 	mockRepo.On("GetUserWalletByUserAndCurrency", mock.Anything, 999, "USDT_TRON_TESTNET").Return(existingAddress, nil)
-	// AddUserWalletAddress should be called to update existing address
+	// AddUserWalletAddress should be called with locally generated address
 	mockRepo.On("AddUserWalletAddress", mock.Anything, mock.MatchedBy(func(w *models.UserWallet) bool {
 		return w.UserID == 999 &&
 			w.Currency == "USDT_TRON_TESTNET" &&
-			w.Address == "TNewCoreAPIAddress123456789012"
+			strings.HasPrefix(w.Address, "TTest")
 	})).Return(updatedAddress, nil)
 
 	result, err := service.AddAddress(context.Background(), 999, AddAddressRequest{
@@ -271,12 +238,8 @@ func TestWalletService_AddAddress_Testnet_AlreadyExists(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	// Should return the new address from Core API
-	assert.Equal(t, "TNewCoreAPIAddress123456789012", result.Address)
-	// Core API SHOULD be called to get fresh address
-	mockCoreAPI.AssertCalled(t, "GetAddress", mock.Anything, coreapi.GetAddressRequest{
-		UserID:      "999",
-		ProductCode: "X_FINANCE",
-		Currency:    "USDT_TRON_TESTNET",
-	})
+	// Should return locally generated address
+	assert.Contains(t, result.Address, "TTest")
+	// Core API should NOT be called for testnet
+	mockCoreAPI.AssertNotCalled(t, "GetAddress", mock.Anything, mock.Anything)
 }

@@ -43,6 +43,8 @@ var NetworkAliasMap = map[string]string{
 	"BSC":         "BEP20",
 	"ETH":         "ERC20",
 	"TRX(SHASTA)_TRON_TESTNET": "TRX(SHASTA)_TRON_TESTNET",
+	// Aliases with spaces and hyphens
+	"TRX (SHASTA) - TRON Testnet": "TRX(SHASTA)_TRON_TESTNET",
 }
 
 // NormalizeNetwork converts network aliases to standard names
