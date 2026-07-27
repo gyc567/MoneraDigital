@@ -26,7 +26,13 @@ jobs:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # Pin 1.25 rather than go-version-file: go.mod (1.24.0). The
+          # releasecontrol checkpoint + cmd/company-fund-release tests rebuild
+          # the controlled-migration archive whose go.mod requires >= 1.25,
+          # and the subprocess inherits GOTOOLCHAIN=local from setup-go, so CI
+          # must ship a matching local toolchain. Deploy workflows build the
+          # live tree with the auto toolchain and are unaffected.
+          go-version: '1.25'
           cache: true
       - run: go build ./...
       - run: go vet ./...
