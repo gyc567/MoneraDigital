@@ -171,8 +171,11 @@ func (r *AirwallexFinancialTransactionsReconciler) validateInput(input Airwallex
 	input.APIVersion = apiVersion
 	input.SchemaVersion = schemaVersion
 	input.EventVersion = eventVersion
-	input.WindowStart = input.WindowStart.UTC()
-	input.WindowEnd = input.WindowEnd.UTC()
+	input.WindowStart = input.WindowStart.UTC().Truncate(time.Microsecond)
+	input.WindowEnd = input.WindowEnd.UTC().Truncate(time.Microsecond)
+	if !input.WindowStart.Before(input.WindowEnd) {
+		return AirwallexFinancialTransactionsReconcileInput{}, fmt.Errorf("Airwallex reconciliation requires a non-empty UTC window")
+	}
 	return input, nil
 }
 

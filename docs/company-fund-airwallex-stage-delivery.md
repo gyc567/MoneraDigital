@@ -55,7 +55,7 @@ go test ./internal/handlers/ -count=1 -run 'CompanyFundAirwallexWebhook'
 
 ## 3. Stage 环境变量（与 `.env.example` 对齐）
 
-在 stage 服务器 `/home/ec2-user/monera/.env`（或等价 systemd EnvironmentFile）写入：
+在 stage 服务器 `/opt/monera-digital/.env`（systemd EnvironmentFile；历史路径 `/home/ec2-user/monera` 已废弃）写入：
 
 ```bash
 COMPANY_FUND_ENABLED=true
@@ -114,6 +114,14 @@ WHERE channel = 'AIRWALLEX';
    - 任一为 false：按第 3 节对照缺项，不要靠重启碰运气
 
 ## 5. Stage 验收标准
+
+> **已知修复（2026-07-27）**：webhook lookback 用 `time.Now()` 生成亚秒窗口时，
+> PostgreSQL `timestamptz` 只存微秒，而 `MatchesWindow` 用 `time.Equal` 比较。
+> Create 后 Claim 前窗口对不上会留下 `PENDING attempts=0` orphan，REST 入账静默失败。
+> 修复：`CompanyFundSyncRunInput.canonical()` 与 Airwallex reconciler `validateInput`
+> 统一 `UTC().Truncate(time.Microsecond)`。部署含此修复的 binary 后，新 lookback
+> 应能 SUCCEEDED；旧 orphan 的 window_key 含纳秒 hash，可忽略或手工标 SKIPPED。
+
 
 - [ ] 进程 log：`airwallex_reconciliation=true` 且 `airwallex_webhook=true`
 - [ ] `POST /api/webhooks/airwallex` 健康：Console 重放或签名探测返回 200（错误只回状态码）
