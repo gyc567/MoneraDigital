@@ -158,6 +158,7 @@ func validateExactMigrationOptions(exactVersion, expectedCeiling string, rollbac
 		"058": "057",
 		"059": "058",
 		"060": "059",
+		"061": "060",
 	}
 	predecessor, ok := predecessors[exactVersion]
 	if !ok {
