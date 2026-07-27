@@ -33,7 +33,7 @@ import (
 )
 
 var version = "dev"
-var artifactMigrationCeiling = "060"
+var artifactMigrationCeiling = "061"
 
 const controlledCommitOutcomeIndeterminateExitCode = 75
 
@@ -196,7 +196,7 @@ func registerMigrations(m *migration.Migrator) {
 }
 
 func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error {
-	if ceiling != "052" && ceiling != "053" && ceiling != "054" && ceiling != "055" && ceiling != "056" && ceiling != "057" && ceiling != "058" && ceiling != "059" && ceiling != "060" {
+	if ceiling != "052" && ceiling != "053" && ceiling != "054" && ceiling != "055" && ceiling != "056" && ceiling != "057" && ceiling != "058" && ceiling != "059" && ceiling != "060" && ceiling != "061" {
 		return fmt.Errorf("unsupported compiled migration ceiling %q", ceiling)
 	}
 	m.Register(&migrations.CreateUsersTable{})
@@ -242,8 +242,11 @@ func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error 
 	if ceiling == "059" || ceiling == "060" {
 		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
 	}
-	if ceiling == "060" {
+	if ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.AddManualTransactionVoidColumns{})
+	}
+	if ceiling == "061" {
+		m.Register(&migrations.CreateWithdrawalsTable{})
 	}
 	return nil
 }
@@ -276,6 +279,8 @@ func registerSelectedMigrations(m *migration.Migrator, exactVersion string) erro
 		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
 	case "060":
 		m.Register(&migrations.AddManualTransactionVoidColumns{})
+	case "061":
+		m.Register(&migrations.CreateWithdrawalsTable{})
 	default:
 		return fmt.Errorf("unsupported exact migration version %q", exactVersion)
 	}
