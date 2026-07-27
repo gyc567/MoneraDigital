@@ -222,25 +222,25 @@ func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error 
 	m.Register(&migrations.CreateCompanyFundLedger{})
 	m.Register(&migrations.WidenAmountPrecision{})
 	m.Register(&migrations.ExpandCompanyFundOccurrenceAndManualValuation{})
-	if ceiling == "053" || ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "053" || ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.EnforceSafeheronOccurrence{})
 	}
-	if ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.AllowManualCompanyFundTransactions{})
 	}
-	if ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.AddCounterpartyNameOverride{})
 	}
-	if ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.UnifySafeheronAddressOwnership{})
 	}
-	if ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.CreateSafeheronRoutingCases{})
 	}
-	if ceiling == "058" || ceiling == "059" || ceiling == "060" {
+	if ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.ScopeSafeheronProviderEventsByOccurrence{})
 	}
-	if ceiling == "059" || ceiling == "060" {
+	if ceiling == "059" || ceiling == "060" || ceiling == "061" {
 		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
 	}
 	if ceiling == "060" || ceiling == "061" {
