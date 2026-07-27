@@ -782,7 +782,9 @@ func parseOptionalAirwallexJSONDecimal(label string, raw json.RawMessage) (*deci
 
 func parseAirwallexJSONDecimal(label string, raw json.RawMessage) (*decimal.Decimal, bool, error) {
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
+	// Absent and JSON null are both "no value". Sandbox Financial Transactions
+	// emits explicit null for optional fee/net/client_rate fields.
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, false, nil
 	}
 	if len(trimmed) > maxAirwallexNormalizationNumericBytes {
@@ -796,6 +798,9 @@ func parseAirwallexJSONDecimal(label string, raw json.RawMessage) (*decimal.Deci
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return nil, false, fmt.Errorf("Airwallex %s must contain one JSON value", label)
+	}
+	if decoded == nil {
+		return nil, false, nil
 	}
 	number, ok := decoded.(json.Number)
 	if !ok {
@@ -1080,13 +1085,15 @@ func buildAirwallexFinancialTransactionFactExtras(
 	numericValues := map[string]json.RawMessage{
 		"amount": append(json.RawMessage(nil), source.Amount...),
 	}
-	if len(bytes.TrimSpace(source.Fee)) > 0 {
+	// Explicit JSON null is treated as absent by the numeric parser; keep fact
+	// extras aligned so raw_numeric_values never records a non-number.
+	if raw := bytes.TrimSpace(source.Fee); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["fee"] = append(json.RawMessage(nil), source.Fee...)
 	}
-	if len(bytes.TrimSpace(source.Net)) > 0 {
+	if raw := bytes.TrimSpace(source.Net); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["net"] = append(json.RawMessage(nil), source.Net...)
 	}
-	if len(bytes.TrimSpace(source.ClientRate)) > 0 {
+	if raw := bytes.TrimSpace(source.ClientRate); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["client_rate"] = append(json.RawMessage(nil), source.ClientRate...)
 	}
 	value := struct {
