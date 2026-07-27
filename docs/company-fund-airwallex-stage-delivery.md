@@ -1,7 +1,9 @@
 # Airwallex company-fund — stage 交付清单
 
-> 状态：本地 sandbox REST + webhook 门禁已具备；stage 环境变量与 Console webhook
-> 仍需运维落地后才能宣称 stage live。
+> 状态：**stage sandbox 验收已通过**（2026-07-27，binary `6ec3fe2` / fix `951472b`）。
+> 装配 `airwallex_reconciliation=true airwallex_webhook=true`；webhook lookback
+> REST 入账 `seen=5 created=5 facts=5 txns=5`。Console 真实 webhook URL/secret
+> 对齐仍为可选运维项（当前用 stage `.env` secret 自签探测）。
 >
 > 目标环境：测试环境（stage 分支 → `18.179.50.82` / `mdtestapi.cryptoagg.xyz`）。
 > 本清单不覆盖 production（#35 仍 OPEN，未经明确授权不得合 main）。
@@ -123,12 +125,13 @@ WHERE channel = 'AIRWALLEX';
 > 应能 SUCCEEDED；旧 orphan 的 window_key 含纳秒 hash，可忽略或手工标 SKIPPED。
 
 
-- [ ] 进程 log：`airwallex_reconciliation=true` 且 `airwallex_webhook=true`
-- [ ] `POST /api/webhooks/airwallex` 健康：Console 重放或签名探测返回 200（错误只回状态码）
-- [ ] 一次 REST 日切/lookback 后，stage DB 出现 `channel=AIRWALLEX` 的 provider_events / facts / txns（命中 rule 的 SETTLED 样本）
-- [ ] 非 snapshot webhook 行 `event_state=IGNORED`，且不增加 facts/txns
-- [ ] 重复 webhook delivery 幂等（同一 `provider_event_id` 不双插）
-- [ ] 相关 Go 单测在 CI 绿
+- [x] 进程 log：`airwallex_reconciliation=true` 且 `airwallex_webhook=true`（2026-07-27 15:55:57 UTC）
+- [x] `POST /api/webhooks/airwallex` 健康：签名探测 200；坏签 400；公网可达
+- [x] webhook lookback REST：sync_run `80884` SUCCEEDED attempts=1 seen=5 created=5 → facts=5 txns=5
+- [x] 非 snapshot webhook 行 `event_state=IGNORED`，不增加 ledger
+- [x] 重复 webhook delivery 幂等（同一 `provider_event_id` 不双插）
+- [x] 相关 Go 单测绿；PR #68 合 stage 并 standard 部署成功
+- [x] 修复前 orphan PENDING 80791–80794 已手工 SKIPPED（window_key 含纳秒 hash，不可重放）
 
 ## 6. 明确不在本交付内
 
