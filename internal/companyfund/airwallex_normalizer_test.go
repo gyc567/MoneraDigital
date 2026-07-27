@@ -185,9 +185,9 @@ func TestAirwallexFinancialTransactionNormalizer_QuarantinesUnknownClassificatio
 			},
 		},
 		{
-			name: "net null instead of JSON number",
+			name: "net boolean instead of JSON number",
 			mutate: func(input *AirwallexFinancialTransactionNormalizationInput) {
-				input.FinancialTransaction.Net = json.RawMessage("null")
+				input.FinancialTransaction.Net = json.RawMessage("true")
 			},
 		},
 		{
@@ -206,6 +206,46 @@ func TestAirwallexFinancialTransactionNormalizer_QuarantinesUnknownClassificatio
 				t.Fatalf("Normalize() = %#v, want numeric/classification quarantine", result)
 			}
 		})
+	}
+}
+
+func TestAirwallexFinancialTransactionNormalizer_TreatsOptionalJSONNullAsAbsent(t *testing.T) {
+	normalizer := newAirwallexFinancialTransactionNormalizerForTest(t, testAirwallexPrincipalClassification())
+	input := validAirwallexFinancialTransactionInput()
+	// Sandbox emits explicit null for unused optional numeric fields.
+	input.FinancialTransaction.Fee = json.RawMessage("null")
+	input.FinancialTransaction.Net = json.RawMessage("null")
+	input.FinancialTransaction.ClientRate = json.RawMessage("null")
+
+	result := normalizer.Normalize(input)
+	if result.Disposition != AirwallexFinancialTransactionDispositionApply || result.Movement == nil {
+		t.Fatalf("Normalize() = %#v reason=%s, want APPLY with optional JSON null treated as absent", result, result.Reason)
+	}
+	if result.Transaction == nil || result.Transaction.ProviderDisplay.Fee.Amount != nil {
+		t.Fatalf("absent optional fee must not produce fee display: %#v", result.Transaction)
+	}
+	if result.ProviderFact == nil {
+		t.Fatal("applied normalize must emit provider fact")
+	}
+	extras := string(result.ProviderFact.ProviderExtrasJSON)
+	for _, key := range []string{`"fee"`, `"net"`, `"client_rate"`} {
+		if strings.Contains(extras, key) {
+			t.Fatalf("fact extras must omit optional JSON null numeric keys, got %s", extras)
+		}
+	}
+}
+
+func TestAirwallexFinancialTransactionNormalizer_RejectsRequiredAmountJSONNull(t *testing.T) {
+	normalizer := newAirwallexFinancialTransactionNormalizerForTest(t, testAirwallexPrincipalClassification())
+	input := validAirwallexFinancialTransactionInput()
+	input.FinancialTransaction.Amount = json.RawMessage("null")
+
+	result := normalizer.Normalize(input)
+	if result.Disposition != AirwallexFinancialTransactionDispositionQuarantine || result.Movement != nil {
+		t.Fatalf("Normalize(amount null) = %#v, want quarantine without movement", result)
+	}
+	if result.Reason != "AIRWALLEX_FINANCIAL_TRANSACTION_NUMERIC_INVALID" {
+		t.Fatalf("Normalize(amount null) reason = %q, want AIRWALLEX_FINANCIAL_TRANSACTION_NUMERIC_INVALID", result.Reason)
 	}
 }
 

@@ -148,6 +148,36 @@ func TestFinalizeCompanyFundSyncRun_RetryIsDurableAndLeaseGuarded(t *testing.T) 
 	assertSyncRunMockExpectations(t, mock)
 }
 
+func TestFinalizeCompanyFundSyncRun_SucceededWithNilRetryAtUsesTimestamptzCast(t *testing.T) {
+	// Regression for SQLSTATE 42P08: untyped NULL next_attempt_at must be cast
+	// as timestamptz so pgx can bind a nil retry deadline on success/skip.
+	if !strings.Contains(finalizeCompanyFundSyncRunSQL, "next_attempt_at = $4::timestamptz") {
+		t.Fatalf("finalize SQL missing $4::timestamptz cast:\n%s", finalizeCompanyFundSyncRunSQL)
+	}
+	if !strings.Contains(finalizeCompanyFundSyncRunSQL, "($4::timestamptz IS NOT NULL AND $4::timestamptz > NOW())") {
+		t.Fatalf("finalize SQL missing typed retry guard:\n%s", finalizeCompanyFundSyncRunSQL)
+	}
+
+	db, mock := newSyncRunMockDB(t)
+	defer db.Close()
+	repository := NewDBRepository(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta(finalizeCompanyFundSyncRunSQL)).
+		WithArgs(int64(92), "sync-worker-a", CompanyFundSyncRunStatusSucceeded, nil, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(92))
+	if err := repository.FinalizeCompanyFundSyncRun(context.Background(), 92, "sync-worker-a", CompanyFundSyncRunFinalizeSucceeded, nil, ""); err != nil {
+		t.Fatalf("FinalizeCompanyFundSyncRun(succeeded,nil retryAt) = %v", err)
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(finalizeCompanyFundSyncRunSQL)).
+		WithArgs(int64(93), "sync-worker-a", CompanyFundSyncRunStatusSkipped, nil, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(93))
+	if err := repository.FinalizeCompanyFundSyncRun(context.Background(), 93, "sync-worker-a", CompanyFundSyncRunFinalizeSkipped, nil, ""); err != nil {
+		t.Fatalf("FinalizeCompanyFundSyncRun(skipped,nil retryAt) = %v", err)
+	}
+	assertSyncRunMockExpectations(t, mock)
+}
+
 func TestCompanyFundSyncRunValidationAndSQLContracts(t *testing.T) {
 	input := validCompanyFundSyncRunInput()
 	for _, checkpoint := range [][]byte{

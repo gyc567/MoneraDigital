@@ -232,6 +232,24 @@ func TestCompanyFundValuationJobLeaseOwnershipAndRetry(t *testing.T) {
 	assertCompanyFundMockExpectations(t, mock)
 }
 
+func TestFinalizeCompanyFundValuationJob_SucceededWithNilRetryAtUsesTimestamptzCast(t *testing.T) {
+	// Same SQLSTATE 42P08 class as sync-run finalize: untyped NULL next_attempt_at
+	// must be cast as timestamptz when binding a nil retry deadline on success.
+	if !strings.Contains(finalizeCompanyFundValuationJobSQL, "next_attempt_at = $4::timestamptz") {
+		t.Fatalf("valuation finalize SQL missing $4::timestamptz cast:\n%s", finalizeCompanyFundValuationJobSQL)
+	}
+
+	db, mock := newCompanyFundMockDB(t)
+	defer db.Close()
+	mock.ExpectQuery(regexp.QuoteMeta(finalizeCompanyFundValuationJobSQL)).
+		WithArgs(int64(406), "worker-6", ValuationJobStateSucceeded, nil, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(406))
+	if err := NewDBRepository(db).FinalizeCompanyFundValuationJob(context.Background(), 406, "worker-6", ValuationJobFinalizeSucceeded, nil, ""); err != nil {
+		t.Fatalf("FinalizeCompanyFundValuationJob(succeeded,nil retryAt) = %v", err)
+	}
+	assertCompanyFundMockExpectations(t, mock)
+}
+
 func TestCompanyFundValuationJobFinalize_RejectsUnsafeRetryShapesBeforeDatabaseUse(t *testing.T) {
 	retryAt := time.Date(2026, time.July, 10, 3, 5, 0, 0, time.UTC)
 	repository := NewDBRepository(nil)
@@ -264,6 +282,7 @@ func TestCompanyFundValuationJobSQL_UsesSameTransactionFKAndSafeLeaseTransitions
 		"job_state = 'LEASED' AND lease_expires_at <= clock_timestamp()",
 		"lease_owner = $2",
 		"lease_expires_at > clock_timestamp()",
+		"next_attempt_at = $4::timestamptz",
 		"completed_at = CASE WHEN $3 IN ('SUCCEEDED', 'SUPERSEDED', 'FAILED') THEN clock_timestamp() ELSE NULL END",
 	} {
 		if !strings.Contains(allSQL, contract) {
