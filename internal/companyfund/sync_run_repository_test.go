@@ -213,6 +213,44 @@ func TestCompanyFundSyncRunValidationAndSQLContracts(t *testing.T) {
 	}
 }
 
+func TestCompanyFundSyncRunInputCanonical_TruncatesToPostgresMicroseconds(t *testing.T) {
+	// Regression: webhook lookback windows end at time.Now() with nanosecond
+	// residue. PG stores microseconds; MatchesWindow uses Equal, so untruncated
+	// inputs created orphan PENDING AIRWALLEX runs (attempts=0) on stage.
+	input := validCompanyFundSyncRunInput()
+	input.WindowStart = time.Date(2026, time.July, 26, 15, 35, 4, 661624123, time.UTC)
+	input.WindowEnd = time.Date(2026, time.July, 27, 15, 35, 4, 661624456, time.UTC)
+	got, err := input.canonical()
+	if err != nil {
+		t.Fatalf("canonical() error = %v", err)
+	}
+	wantStart := time.Date(2026, time.July, 26, 15, 35, 4, 661624000, time.UTC)
+	wantEnd := time.Date(2026, time.July, 27, 15, 35, 4, 661624000, time.UTC)
+	if !got.WindowStart.Equal(wantStart) || !got.WindowEnd.Equal(wantEnd) {
+		t.Fatalf("canonical windows = %s .. %s, want %s .. %s",
+			got.WindowStart.Format(time.RFC3339Nano), got.WindowEnd.Format(time.RFC3339Nano),
+			wantStart.Format(time.RFC3339Nano), wantEnd.Format(time.RFC3339Nano))
+	}
+	// Simulated DB round-trip equality (pgx scans microsecond times).
+	if err := companyFundSyncRunAdapterMatchesWindow(CompanyFundSyncRun{
+		ID: 1, Channel: got.Channel, SyncKind: got.SyncKind, WindowKey: got.WindowKey,
+		WindowStart: wantStart, WindowEnd: wantEnd,
+	}, got); err != nil {
+		t.Fatalf("MatchesWindow after micro truncate: %v", err)
+	}
+	// Untruncated input must still fail against the stored microsecond row.
+	raw := validCompanyFundSyncRunInput()
+	raw.WindowStart = time.Date(2026, time.July, 26, 15, 35, 4, 661624123, time.UTC)
+	raw.WindowEnd = time.Date(2026, time.July, 27, 15, 35, 4, 661624456, time.UTC)
+	raw.Checkpoint = []byte(`{}`)
+	if err := companyFundSyncRunAdapterMatchesWindow(CompanyFundSyncRun{
+		ID: 1, Channel: raw.Channel, SyncKind: raw.SyncKind, WindowKey: raw.WindowKey,
+		WindowStart: wantStart, WindowEnd: wantEnd,
+	}, raw); err == nil {
+		t.Fatal("untruncated input unexpectedly matched microsecond DB window")
+	}
+}
+
 func validCompanyFundSyncRunInput() CompanyFundSyncRunInput {
 	return CompanyFundSyncRunInput{
 		Channel:     ChannelSafeheron,
