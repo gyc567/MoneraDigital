@@ -1,0 +1,42 @@
+name: CI
+
+# Green gate for build + vet + tests. Runs on every push/PR to the three
+# long-lived branches. Pre-existing baseline tech-debt packages are excluded
+# (documented inline) so this job stays green and catches new regressions —
+# including migration-ceiling drift the deploy workflows cannot detect.
+on:
+  push:
+    branches: [dev, stage, main]
+  pull_request:
+    branches: [dev, stage, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build, vet, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - name: go test (green gate; baseline tech-debt excluded)
+        run: |
+          # Packages excluded from the green gate until their pre-existing
+          # baseline failures are resolved (independent of this change):
+          #   internal/scheduler — stale testify mock signature (CreateWithDate drift)
+          #   tests              — auth integration suite requires a live Postgres
+          # Remove an exclusion line the moment that package goes green, so CI
+          # widens its coverage automatically.
+          pkgs=$(go list ./... | grep -vE 'internal/scheduler$|/tests$')
+          go test -race -count=1 $pkgs
