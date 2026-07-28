@@ -66,7 +66,10 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 
 ## 4. 当前覆盖
 
-stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`（`mapping-sandbox-v1`）：**5 条 `ADJUSTMENT SETTLED INFLOW`**（CNY/EUR/GBP/SGD/USD），对应 sandbox 2026-07-27 验收的初始余额调整。`evidence_reference: sandbox-2026-07-27-adjustment-settled-*`。
+stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`（`mapping-sandbox-v1`）：**6 条 rule**：
+
+- 5 条 `ADJUSTMENT SETTLED INFLOW`（CNY/EUR/GBP/SGD/USD）— sandbox 2026-07-27 初始余额调整，`evidence_reference: sandbox-2026-07-27-adjustment-settled-*`
+- 1 条 `PAYOUT SETTLED OUTFLOW`（SGD）— 2026-07-28 验收（transfer `P260728-3824YVV`，1000 SGD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、`occurred_at_field=SETTLED_AT`），fact id=26 + transaction id=19 已入账，`evidence_reference: sandbox-2026-07-28-payout-settled-sgd`
 
 ## 5. 覆盖矩阵 + gap
 
@@ -133,11 +136,9 @@ runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`a
 - `status` 流转（`PENDING` → `SETTLED`）决定何时入账
 - direction 推断需实测确认（无显式 direction 字段）
 
-## 8. 当前阻塞
+## 8. 已解决阻塞
 
-**1000 SGD payout（`P260728-3824YVV`）不入账**：`PAYOUT` source_type 无 runtime config rule（Phase 1 未做）→ `mapping is unavailable` → `DEAD_LETTER`（fail-closed 正确）。issue #72 评论记录。
-
-补 `PAYOUT` rule 需要：sandbox 触发 payout + 查 Financial Transaction 字段 + 配 evidence rule。
+**1000 SGD payout（`P260728-3824YVV`）** — 2026-07-28 解决。配 `PAYOUT SGD SETTLED OUTFLOW` rule 后，fact id=26 + transaction id=19 已入账（原 DEAD_LETTER 的 provider event 已在 stage 重处理成功）。issue #72 记录。
 
 ## 9. 关联
 
@@ -145,3 +146,20 @@ runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`a
 - stage sandbox 验收：PR #67 / #68 / #69
 - stage→main release：PR #70
 - 域语言 / ADR：`CONTEXT.md`、`docs/adr/`
+
+## 10. sandbox 触发限制（2026-07-28 穷尽验证）
+
+Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以下限制：
+
+| 类型 | sandbox 可触发 | 限制 |
+|------|---------------|------|
+| `ADJUSTMENT` | ✅ 已配 5 币种 | — |
+| `PAYOUT`/SGD | ✅ 已配（1000 SGD 入账）| 用户通过 Console UI 发款；API `payouts/beneficiaries` + `payouts/transfers/{id}` 返回 404（账号无 Payouts 产品权限）|
+| `PAYOUT` 其他币种 | ❌ | 同上 + 无 beneficiary |
+| `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
+| `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |
+| `CONVERSION`（Phase 2）| ❌ | `conversions/create` 返回 `incorrect_version`（账号绑定的 API version 不支持该端点）|
+
+**sandbox 数据不稳定**：同一 `financial_transactions` 查询在不同时刻返回 6 → 1 → 0 条（疑似保留期/清理），不适合作为长期 evidence 基础。剩余 simple type 的 evidence-backed rule 须在**真实业务环境**（生产 Airwallex 账号产生真实 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`）后再补配，不能凭文档猜测 `amount_field` / `occurred_at_field` / 方向。
+
+Console "Send test event" 验签（`client-secret-key` 路径）已修复并 TDD 覆盖（commit `615a53e`）。
