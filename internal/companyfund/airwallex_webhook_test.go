@@ -63,3 +63,40 @@ func airwallexTestWebhookSignature(secret, timestamp string, body []byte) string
 	_, _ = mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
 }
+
+// Airwallex Console "Send test event" signs the payload with the per-delivery
+// client-secret-key header value, NOT the configured webhook secret. The
+// verifier must honour that path while real deliveries keep using the secret.
+func TestAirwallexWebhookVerifier_TestEventSignedWithClientSecretKey(t *testing.T) {
+	now := time.Date(2026, 7, 10, 3, 0, 0, 0, time.UTC)
+	verifier, err := NewAirwallexWebhookVerifier(AirwallexWebhookVerifierConfig{
+		Secret: "webhook-secret",
+		MaxAge: time.Minute,
+		Clock:  func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewAirwallexWebhookVerifier() error = %v", err)
+	}
+	timestamp := "1783652400000"
+	body := []byte(`{"id":"evt_test","name":"payout.transfer.paid","account_id":"acct_dummy"}`)
+	clientSecretKey := "BhaWQyMDI2"
+	signature := airwallexTestWebhookSignature(clientSecretKey, timestamp, body)
+
+	if err := verifier.VerifyTestEvent(timestamp, signature, body, clientSecretKey); err != nil {
+		t.Fatalf("VerifyTestEvent() error = %v", err)
+	}
+	// a signature produced with the webhook secret must not satisfy the test path
+	if err := verifier.VerifyTestEvent(timestamp, airwallexTestWebhookSignature("webhook-secret", timestamp, body), body, clientSecretKey); !errors.Is(err, ErrAirwallexWebhookInvalidSignature) {
+		t.Fatalf("webhook-secret signature on test path error = %v, want invalid signature", err)
+	}
+	// empty client-secret-key must fail closed
+	if err := verifier.VerifyTestEvent(timestamp, signature, body, "   "); !errors.Is(err, ErrAirwallexWebhookInvalidSignature) {
+		t.Fatalf("empty client-secret-key error = %v, want invalid signature", err)
+	}
+	// timestamp tolerance still applies on the test path
+	expired := "1783652280000"
+	expiredSig := airwallexTestWebhookSignature(clientSecretKey, expired, body)
+	if err := verifier.VerifyTestEvent(expired, expiredSig, body, clientSecretKey); !errors.Is(err, ErrAirwallexWebhookTimestampOutsideWindow) {
+		t.Fatalf("expired test-event timestamp error = %v, want outside window", err)
+	}
+}

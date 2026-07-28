@@ -42,6 +42,10 @@ type companyFundRouteAirwallexVerifier struct{}
 
 func (companyFundRouteAirwallexVerifier) Verify(string, string, []byte) error { return nil }
 
+func (companyFundRouteAirwallexVerifier) VerifyTestEvent(string, string, []byte, string) error {
+	return nil
+}
+
 type companyFundRouteAirwallexIngestor struct {
 	calls int
 }
