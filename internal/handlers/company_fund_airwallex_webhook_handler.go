@@ -20,6 +20,10 @@ import (
 // the exact raw request bytes before the handler parses a JSON envelope.
 type AirwallexWebhookSignatureVerifier interface {
 	Verify(timestamp, signature string, rawBody []byte) error
+	// VerifyTestEvent validates a Console "Send test event" delivery, which
+	// Airwallex signs with the per-request client-secret-key header value
+	// instead of the configured webhook secret.
+	VerifyTestEvent(timestamp, signature string, rawBody []byte, clientSecretKey string) error
 }
 
 // AirwallexWebhookPayloadIngestor is satisfied by
@@ -127,6 +131,19 @@ func (h *CompanyFundAirwallexWebhookHandler) Receive(c *gin.Context) {
 	}
 	if len(body) == 0 {
 		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	// Airwallex Console "Send test event" carries a client-secret-key header
+	// and is signed with that per-delivery value, not the webhook secret.
+	// Verify it for reachability/signaling, then acknowledge without
+	// ingesting: the synthetic payload uses a dummy account_id that must
+	// never reach the encrypted inbox or reconciliation.
+	if csk := strings.TrimSpace(c.GetHeader("client-secret-key")); csk != "" {
+		if h.verifier.VerifyTestEvent(timestamp, signature, body, csk) != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		c.Status(http.StatusOK)
 		return
 	}
 	if h.verifier.Verify(timestamp, signature, body) != nil {

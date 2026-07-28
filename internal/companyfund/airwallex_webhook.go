@@ -42,7 +42,27 @@ func (v *AirwallexWebhookVerifier) Verify(timestamp, signature string, rawBody [
 	if v == nil || len(v.secret) == 0 || v.now == nil {
 		return fmt.Errorf("airwallex webhook verifier is not configured")
 	}
-	expected := airwallexWebhookDigest(v.secret, timestamp, rawBody)
+	return v.verifyWithKey(timestamp, signature, rawBody, v.secret)
+}
+
+// VerifyTestEvent validates an Airwallex Console "Send test event" delivery.
+// Per Airwallex's webhook contract, test events are signed with the
+// per-delivery client-secret-key header value rather than the configured
+// webhook secret. Only the HMAC mathematics and timestamp tolerance are reused;
+// the key is supplied per request and never persisted.
+func (v *AirwallexWebhookVerifier) VerifyTestEvent(timestamp, signature string, rawBody []byte, clientSecretKey string) error {
+	if v == nil || v.now == nil {
+		return fmt.Errorf("airwallex webhook verifier is not configured")
+	}
+	key := strings.TrimSpace(clientSecretKey)
+	if key == "" {
+		return ErrAirwallexWebhookInvalidSignature
+	}
+	return v.verifyWithKey(timestamp, signature, rawBody, []byte(key))
+}
+
+func (v *AirwallexWebhookVerifier) verifyWithKey(timestamp, signature string, rawBody, key []byte) error {
+	expected := airwallexWebhookDigest(key, timestamp, rawBody)
 	received, err := hex.DecodeString(strings.TrimSpace(signature))
 	if err != nil || !hmac.Equal(expected, received) {
 		return ErrAirwallexWebhookInvalidSignature
