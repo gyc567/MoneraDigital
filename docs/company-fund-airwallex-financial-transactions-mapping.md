@@ -158,8 +158,10 @@ Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以�
 | `PAYOUT` 其他币种 | ❌ | 同上 + 无 beneficiary |
 | `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
 | `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |
-| `CONVERSION`（Phase 2）| ❌ | `conversions/create` 返回 `incorrect_version`（账号绑定的 API version 不支持该端点）|
+| `CONVERSION`（Phase 2）| ✅ 已触发 evidence | 正确路径 `/api/v1/fx/conversions/create`（带 `fx` 前缀）；sell+buy 两腿 `source_id` 共享 conversion_id（**配对 key 确认**），SELL `amount=-1`/BUY `amount=+1.29`，`currency_pair=USDSGD`。amendment：`/api/v1/fx/conversion_amendments/create`（`type=CANCEL`）|
+| `FEE`（Phase 2）| ❌ | sandbox PAYOUT/CONVERSION 均 `fee=0`，无独立 `FEE` source_type（sandbox 不收手续费），需生产 evidence |
+| `REVERSAL`（Phase 2）| ❌ | sandbox conversion 立即 SETTLED，amendment `CANCEL` 被拒（`cannot amend in state SETTLED`）；需生产 evidence |
 
-**sandbox 数据不稳定**：同一 `financial_transactions` 查询在不同时刻返回 6 → 1 → 0 条（疑似保留期/清理），不适合作为长期 evidence 基础。剩余 simple type 的 evidence-backed rule 须在**真实业务环境**（生产 Airwallex 账号产生真实 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`）后再补配，不能凭文档猜测 `amount_field` / `occurred_at_field` / 方向。
+**Airwallex API `page_num` 是 0-based**（`page_num=0` 是第一页）。用 1-based 假设查询会得到空结果或残缺数据——曾因此误判为"数据不稳定"，实际数据始终稳定。sandbox 实测稳定 8 条（5 `ADJUSTMENT` + 1 `PAYOUT`/SGD + 2 `CONVERSION`，stage DB 前置 6 条全部 `PROCESSED`），**没有 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`/`FEE`/`REVERSAL` 类型**。剩余 simple type 的 evidence-backed rule 须在**真实业务环境**（生产 Airwallex 账号产生真实 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`）后补配，不能凭文档猜测 `amount_field` / `occurred_at_field` / 方向。
 
 Console "Send test event" 验签（`client-secret-key` 路径）已修复并 TDD 覆盖（commit `615a53e`）。
