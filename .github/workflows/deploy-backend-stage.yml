@@ -21,7 +21,7 @@ jobs:
     environment: stage
     env:
       ARTIFACT_REF: ${{ github.sha }}
-      EXPECTED_MIGRATION_CEILING: "062"
+      EXPECTED_MIGRATION_CEILING: "063"
     steps:
       - name: Checkout stage HEAD
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3

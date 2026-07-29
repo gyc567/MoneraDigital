@@ -142,8 +142,8 @@ WHERE channel = 'AIRWALLEX';
    - 订阅任意业务事件即可（用于 wake）；入账不依赖 envelope 类型
 
 3. **部署**
-   - artifact 通过 `monera-migrate -print-release-sequence` 声明本次顺序：
-     `061` → `062`
+   - 当前 artifact 通过 `monera-migrate -print-release-sequence` 声明本次迁移：
+     `063`（要求数据库已存在 `062` provenance）
    - standard deploy 使用 direct `MIGRATION_DATABASE_URL`，逐个执行：
      `EXPECTED_MIGRATION_CEILING=<version> monera-migrate -exact-version <version>`
    - 任一步失败都必须在安装新 server 前停止；已应用版本按 provenance
@@ -195,9 +195,22 @@ WHERE channel = 'AIRWALLEX';
       坏签 400，test event 不写入 provider inbox
 - [ ] 回滚时先停 worker；代码回退前评估 migration `062` Down 对新关系/分类审计数据的影响
 
+### Account Lifecycle Stage 证据（migration 063）
+
+- [ ] standard deploy 使用 exact migration `063`，完成后才安装新 server
+- [ ] 错误 Account ID 校验失败且不改变候选生命周期
+- [ ] 正确 Sandbox Account ID 校验成功并保存脱敏身份摘要
+- [ ] `CURRENT → PAUSED → CURRENT`，暂停路径不依赖 Provider
+- [ ] 身份纠正后 REST/Webhook 重放不重复流水
+- [ ] 旧账户仍有未完成 provider event 时 cutover 失败关闭
+- [ ] 若 Sandbox 有第二个真实 Account ID，验证 `CURRENT + CANDIDATE`
+      原子切换；否则记录 Provider evidence gap
+- [ ] MGT 浏览器验收权限、二次确认、异步命令状态、流水关系与分类来源
+- [ ] 运行日志无异常、无密钥或数据库连接串泄露
+
 ## 6. 明确不在本交付内
 
-- 多账户 Airwallex（需每账户独立 client/credential）
+- 同时启用多个 Airwallex `CURRENT` 账户
 - 无 exact identity evidence 的 FEE parent / REVERSAL original 映射
 - 动态业务对手方解析与 KYT
 - CONVERSION 汇兑损益 movement
