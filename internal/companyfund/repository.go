@@ -913,6 +913,19 @@ FROM company_fund_transactions
 WHERE movement_key = $1
 FOR UPDATE`
 
+const selectAirwallexCompanyFundTransactionMovementKeyForUpdateSQL = `
+SELECT movement_key
+FROM company_fund_transactions
+WHERE channel = 'AIRWALLEX'
+  AND provider_account_key = $1
+  AND provider_transaction_id = $2
+  AND provider_movement_id = $3
+  AND from_company_fund_account_id IS NOT DISTINCT FROM $4::bigint
+  AND to_company_fund_account_id IS NOT DISTINCT FROM $5::bigint
+ORDER BY id
+LIMIT 2
+FOR UPDATE`
+
 const selectSafeheronCompanyFundTransactionForUpdateSQL = `
 SELECT id, movement_key, channel, identity_algorithm_version,
 	   COALESCE(provider_occurrence_key, ''), COALESCE(provider_occurrence_algorithm_version, ''),
@@ -949,7 +962,7 @@ INSERT INTO company_fund_transactions (
 	$25, $26, $27, $28,
 	$29, $30, $31
 )
-ON CONFLICT (movement_key) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING id`
 
 const insertSafeheronCompanyFundTransactionSQL = `
@@ -1124,6 +1137,7 @@ func (r *DBRepository) upsertCompanyFundTransactionTx(
 		return TransactionUpsertResult{Quarantined: true}, &TransactionQuarantineError{MovementKey: input.MovementKey, Reason: err.Error()}
 	}
 
+	stableIdentityFallback := false
 	for attempt := 0; attempt < 2; attempt++ {
 		var existing persistedCompanyFundTransaction
 		var found bool
@@ -1131,6 +1145,14 @@ func (r *DBRepository) upsertCompanyFundTransactionTx(
 			existing, found, err = loadSafeheronCompanyFundTransactionForUpdate(ctx, tx, input)
 		} else {
 			existing, found, err = loadCompanyFundTransactionForUpdate(ctx, tx, input.MovementKey)
+			if err == nil && !found && stableIdentityFallback &&
+				input.Channel == ChannelAirwallex {
+				existing, found, err = loadAirwallexCompanyFundTransactionForUpdate(
+					ctx,
+					tx,
+					input,
+				)
+			}
 		}
 		if err != nil {
 			return TransactionUpsertResult{}, err
@@ -1161,6 +1183,7 @@ func (r *DBRepository) upsertCompanyFundTransactionTx(
 			}
 			// A concurrent insert won the unique key. Read/lock it in the same
 			// transaction and apply the protected update on the next iteration.
+			stableIdentityFallback = true
 			continue
 		}
 		if existing.Channel != input.Channel {
@@ -1213,6 +1236,52 @@ func (r *DBRepository) upsertCompanyFundTransactionTx(
 		return TransactionUpsertResult{ID: id}, nil
 	}
 	return TransactionUpsertResult{}, fmt.Errorf("company-fund transaction %q could not be locked after concurrent insert", input.MovementKey)
+}
+
+func loadAirwallexCompanyFundTransactionForUpdate(
+	ctx context.Context,
+	tx *sql.Tx,
+	input TransactionUpsertInput,
+) (persistedCompanyFundTransaction, bool, error) {
+	if input.ProviderAccountKey == "" || input.ProviderTransactionID == "" ||
+		input.ProviderMovementID == "" {
+		return persistedCompanyFundTransaction{}, false, nil
+	}
+	rows, err := tx.QueryContext(
+		ctx,
+		selectAirwallexCompanyFundTransactionMovementKeyForUpdateSQL,
+		input.ProviderAccountKey,
+		input.ProviderTransactionID,
+		input.ProviderMovementID,
+		nullableInt64(input.FromCompanyFundAccountID),
+		nullableInt64(input.ToCompanyFundAccountID),
+	)
+	if err != nil {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("lock Airwallex company-fund transaction by stable identity: %w", err)
+	}
+	defer rows.Close()
+	var movementKeys []string
+	for rows.Next() {
+		var movementKey string
+		if err := rows.Scan(&movementKey); err != nil {
+			return persistedCompanyFundTransaction{}, false,
+				fmt.Errorf("scan Airwallex stable movement key: %w", err)
+		}
+		movementKeys = append(movementKeys, movementKey)
+	}
+	if err := rows.Err(); err != nil {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("iterate Airwallex stable movement keys: %w", err)
+	}
+	if len(movementKeys) == 0 {
+		return persistedCompanyFundTransaction{}, false, nil
+	}
+	if len(movementKeys) != 1 {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("Airwallex stable transaction identity is ambiguous")
+	}
+	return loadCompanyFundTransactionForUpdate(ctx, tx, movementKeys[0])
 }
 
 func ensureCompanyRoutingAction(ctx context.Context, tx *sql.Tx, actionID int64) error {
