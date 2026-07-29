@@ -31,6 +31,7 @@ type ProviderTransactionFactInput struct {
 	Channel                   TransactionSource
 	ProviderAccountKey        string
 	ProviderTransactionID     string
+	ProviderSourceReference   string
 	ProviderGroupID           string
 	FactIdentityKey           string
 	FactVersion               int
@@ -70,6 +71,7 @@ channel,
 provider_account_key,
 provider_transaction_id,
 provider_group_id,
+provider_source_reference,
 fact_identity_key,
 fact_version,
 source_provider_event_id,
@@ -95,6 +97,7 @@ INSERT INTO company_fund_provider_transaction_facts (
 	channel,
 	provider_account_key,
 	provider_transaction_id,
+	provider_source_reference,
 	provider_group_id,
 	fact_identity_key,
 	fact_version,
@@ -115,7 +118,7 @@ INSERT INTO company_fund_provider_transaction_facts (
 	provider_extras
 ) VALUES (
 	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-	$12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb
+	$12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb
 )
 ON CONFLICT (channel, fact_identity_key, fact_version) DO NOTHING
 RETURNING ` + providerTransactionFactReturnedColumns
@@ -158,6 +161,7 @@ func (r *DBRepository) InsertProviderTransactionFact(ctx context.Context, input 
 		input.Channel,
 		input.ProviderAccountKey,
 		nullableString(input.ProviderTransactionID),
+		nullableString(input.ProviderSourceReference),
 		nullableString(input.ProviderGroupID),
 		input.FactIdentityKey,
 		input.FactVersion,
@@ -277,6 +281,9 @@ func (input ProviderTransactionFactInput) validate() (string, error) {
 		return "", err
 	}
 	if err := validateOptionalProviderFactString("provider group ID", input.ProviderGroupID, maxProviderFactReferenceBytes); err != nil {
+		return "", err
+	}
+	if err := validateOptionalProviderFactString("provider source reference", input.ProviderSourceReference, maxProviderFactReferenceBytes); err != nil {
 		return "", err
 	}
 	if !validProviderFactValueScope(input.ValueScope) {
@@ -421,6 +428,7 @@ func immutableProviderTransactionFactConflict(existing ProviderTransactionFact, 
 		{"provider_account_key", existing.ProviderAccountKey == input.ProviderAccountKey},
 		{"provider_transaction_id", existing.ProviderTransactionID == input.ProviderTransactionID},
 		{"provider_group_id", existing.ProviderGroupID == input.ProviderGroupID},
+		{"provider_source_reference", existing.ProviderSourceReference == input.ProviderSourceReference},
 		{"fact_identity_key", existing.FactIdentityKey == input.FactIdentityKey},
 		{"fact_version", existing.FactVersion == input.FactVersion},
 		{"source_payload_digest", existing.SourcePayloadDigest == input.SourcePayloadDigest},
@@ -483,6 +491,7 @@ func scanProviderTransactionFact(row providerTransactionFactScanner) (ProviderTr
 	var providerAccountKey sql.NullString
 	var providerTransactionID sql.NullString
 	var providerGroupID sql.NullString
+	var providerSourceReference sql.NullString
 	var providerOccurredAt sql.NullTime
 	var providerAmountText sql.NullString
 	var providerCurrency sql.NullString
@@ -500,6 +509,7 @@ func scanProviderTransactionFact(row providerTransactionFactScanner) (ProviderTr
 		&providerAccountKey,
 		&providerTransactionID,
 		&providerGroupID,
+		&providerSourceReference,
 		&fact.FactIdentityKey,
 		&fact.FactVersion,
 		&fact.SourceEventID,
@@ -529,6 +539,7 @@ func scanProviderTransactionFact(row providerTransactionFactScanner) (ProviderTr
 	fact.ProviderAccountKey = providerAccountKey.String
 	fact.ProviderTransactionID = providerTransactionID.String
 	fact.ProviderGroupID = providerGroupID.String
+	fact.ProviderSourceReference = providerSourceReference.String
 	fact.ProviderOccurredAt = nullTimePointer(providerOccurredAt)
 	fact.ProviderCurrency = providerCurrency.String
 	fact.ConversionFromCurrency = conversionFromCurrency.String

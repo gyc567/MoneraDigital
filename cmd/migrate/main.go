@@ -33,7 +33,7 @@ import (
 )
 
 var version = "dev"
-var artifactMigrationCeiling = "061"
+var artifactMigrationCeiling = "062"
 
 const controlledCommitOutcomeIndeterminateExitCode = 75
 
@@ -159,6 +159,7 @@ func validateExactMigrationOptions(exactVersion, expectedCeiling string, rollbac
 		"059": "058",
 		"060": "059",
 		"061": "060",
+		"062": "061",
 	}
 	predecessor, ok := predecessors[exactVersion]
 	if !ok {
@@ -197,7 +198,7 @@ func registerMigrations(m *migration.Migrator) {
 }
 
 func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error {
-	if ceiling != "052" && ceiling != "053" && ceiling != "054" && ceiling != "055" && ceiling != "056" && ceiling != "057" && ceiling != "058" && ceiling != "059" && ceiling != "060" && ceiling != "061" {
+	if ceiling != "052" && ceiling != "053" && ceiling != "054" && ceiling != "055" && ceiling != "056" && ceiling != "057" && ceiling != "058" && ceiling != "059" && ceiling != "060" && ceiling != "061" && ceiling != "062" {
 		return fmt.Errorf("unsupported compiled migration ceiling %q", ceiling)
 	}
 	m.Register(&migrations.CreateUsersTable{})
@@ -222,32 +223,35 @@ func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error 
 	m.Register(&migrations.CreateCompanyFundLedger{})
 	m.Register(&migrations.WidenAmountPrecision{})
 	m.Register(&migrations.ExpandCompanyFundOccurrenceAndManualValuation{})
-	if ceiling == "053" || ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "053" || ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.EnforceSafeheronOccurrence{})
 	}
-	if ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.AllowManualCompanyFundTransactions{})
 	}
-	if ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.AddCounterpartyNameOverride{})
 	}
-	if ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.UnifySafeheronAddressOwnership{})
 	}
-	if ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.CreateSafeheronRoutingCases{})
 	}
-	if ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "058" || ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.ScopeSafeheronProviderEventsByOccurrence{})
 	}
-	if ceiling == "059" || ceiling == "060" || ceiling == "061" {
+	if ceiling == "059" || ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
 	}
-	if ceiling == "060" || ceiling == "061" {
+	if ceiling == "060" || ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.AddManualTransactionVoidColumns{})
 	}
-	if ceiling == "061" {
+	if ceiling == "061" || ceiling == "062" {
 		m.Register(&migrations.CreateWithdrawalsTable{})
+	}
+	if ceiling == "062" {
+		m.Register(&migrations.AddAirwallexPhase2Ledger{})
 	}
 	return nil
 }
@@ -282,6 +286,8 @@ func registerSelectedMigrations(m *migration.Migrator, exactVersion string) erro
 		m.Register(&migrations.AddManualTransactionVoidColumns{})
 	case "061":
 		m.Register(&migrations.CreateWithdrawalsTable{})
+	case "062":
+		m.Register(&migrations.AddAirwallexPhase2Ledger{})
 	default:
 		return fmt.Errorf("unsupported exact migration version %q", exactVersion)
 	}

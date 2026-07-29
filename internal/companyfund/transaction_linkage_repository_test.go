@@ -29,7 +29,7 @@ func TestUpsertCompanyFundTransaction_PersistsFeeParentFromExplicitMovementKey(t
 		WithArgs(input.ParentMovementKey).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "channel"}).AddRow(401, "SAFEHERON"))
 	mock.ExpectQuery(regexp.QuoteMeta(updateCompanyFundTransactionProviderLinkageSQL)).
-		WithArgs(int64(501), int64(401), nil, nil, nil, nil).
+		WithArgs(int64(501), int64(401), nil, nil, nil, nil, nil, nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(501))
 	mock.ExpectCommit()
 
@@ -85,7 +85,7 @@ func TestUpsertCompanyFundTransaction_PersistsExplicitReversalTargetByMovementKe
 		WithArgs(input.ReversalOfMovementKey).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "channel"}).AddRow(402, "SAFEHERON"))
 	mock.ExpectQuery(regexp.QuoteMeta(updateCompanyFundTransactionProviderLinkageSQL)).
-		WithArgs(int64(503), nil, int64(402), nil, nil, nil).
+		WithArgs(int64(503), nil, int64(402), nil, nil, nil, nil, nil, nil).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(503))
 	mock.ExpectCommit()
 
@@ -190,5 +190,8 @@ func companyFundTransactionLinkageRows(parentID, reversalID any, groupKey, leg, 
 		"conversion_group_key",
 		"conversion_leg",
 		"conversion_group_status",
-	}).AddRow(parentID, reversalID, groupKey, leg, groupState)
+		"relationship_reference_type",
+		"relationship_reference_key",
+		"relationship_group_key",
+	}).AddRow(parentID, reversalID, groupKey, leg, groupState, "", "", "")
 }

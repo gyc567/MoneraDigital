@@ -13,7 +13,10 @@ SELECT parent_transaction_id,
        reversal_of_transaction_id,
        COALESCE(conversion_group_key, ''),
        COALESCE(conversion_leg, ''),
-       COALESCE(conversion_group_status, '')
+       COALESCE(conversion_group_status, ''),
+       COALESCE(relationship_reference_type, ''),
+       COALESCE(relationship_reference_key, ''),
+       COALESCE(relationship_group_key, '')
 FROM company_fund_transactions
 WHERE id = $1
 FOR UPDATE`
@@ -34,36 +37,48 @@ SET parent_transaction_id = $2,
 	conversion_group_key = $4,
 	conversion_leg = $5,
 	conversion_group_status = $6,
+	relationship_reference_type = $7,
+	relationship_reference_key = $8,
+	relationship_group_key = $9,
 	updated_at = NOW()
 WHERE id = $1
 RETURNING id`
 
 type transactionProviderLinkage struct {
-	ParentTransactionID     *int64
-	ReversalOfTransactionID *int64
-	ConversionGroupKey      string
-	ConversionLeg           ConversionLeg
-	ConversionGroupState    ConversionGroupState
+	ParentTransactionID       *int64
+	ReversalOfTransactionID   *int64
+	ConversionGroupKey        string
+	ConversionLeg             ConversionLeg
+	ConversionGroupState      ConversionGroupState
+	RelationshipReferenceType RelationshipReferenceType
+	RelationshipReferenceKey  string
+	RelationshipGroupKey      string
 }
 
 func (input TransactionUpsertInput) movementRelation() MovementRelation {
 	return MovementRelation{
-		MovementKind:          input.MovementKind,
-		TransferMode:          input.TransferMode,
-		Direction:             input.Direction,
-		HasFromAccount:        input.FromCompanyFundAccountID != nil,
-		HasToAccount:          input.ToCompanyFundAccountID != nil,
-		ParentMovementKey:     input.ParentMovementKey,
-		ReversalOfMovementKey: input.ReversalOfMovementKey,
-		ConversionGroupKey:    input.ConversionGroupKey,
-		ConversionLeg:         input.ConversionLeg,
-		ConversionGroupState:  input.ConversionGroupState,
+		MovementKind:              input.MovementKind,
+		TransferMode:              input.TransferMode,
+		Direction:                 input.Direction,
+		HasFromAccount:            input.FromCompanyFundAccountID != nil,
+		HasToAccount:              input.ToCompanyFundAccountID != nil,
+		ParentMovementKey:         input.ParentMovementKey,
+		ReversalOfMovementKey:     input.ReversalOfMovementKey,
+		RelationshipReferenceType: input.RelationshipReferenceType,
+		RelationshipReferenceKey:  input.RelationshipReferenceKey,
+		RelationshipGroupKey:      input.RelationshipGroupKey,
+		ConversionGroupKey:        input.ConversionGroupKey,
+		ConversionLeg:             input.ConversionLeg,
+		ConversionGroupState:      input.ConversionGroupState,
 	}
 }
 
 func (input TransactionUpsertInput) hasProviderLinkage() bool {
 	return input.ParentMovementKey != "" ||
 		input.ReversalOfMovementKey != "" ||
+		input.RelationshipReferenceType != "" ||
+		input.RelationshipReferenceKey != "" ||
+		input.RelationshipGroupKey != "" ||
 		input.ConversionGroupKey != "" ||
 		input.ConversionLeg != "" ||
 		input.ConversionGroupState != ""
@@ -74,9 +89,11 @@ func (input TransactionUpsertInput) validateProviderLinkage() error {
 		return err
 	}
 	for label, key := range map[string]string{
-		"parent movement key":   input.ParentMovementKey,
-		"reversal movement key": input.ReversalOfMovementKey,
-		"conversion group key":  input.ConversionGroupKey,
+		"parent movement key":        input.ParentMovementKey,
+		"reversal movement key":      input.ReversalOfMovementKey,
+		"conversion group key":       input.ConversionGroupKey,
+		"relationship reference key": input.RelationshipReferenceKey,
+		"relationship group key":     input.RelationshipGroupKey,
 	} {
 		if key != "" {
 			if err := validateRequiredString(label, key, 256); err != nil {
@@ -90,13 +107,29 @@ func (input TransactionUpsertInput) validateProviderLinkage() error {
 		if input.ReversalOfMovementKey != "" || input.ConversionGroupKey != "" || input.ConversionLeg != "" || input.ConversionGroupState != "" {
 			return fmt.Errorf("fee movement may only carry a parent movement link")
 		}
+		if input.ParentMovementKey != "" && input.RelationshipReferenceType != "" &&
+			input.RelationshipReferenceType != RelationshipReferenceSourceIDExactParent {
+			return fmt.Errorf("fee parent link requires exact-parent relationship evidence")
+		}
+		if input.ParentMovementKey == "" &&
+			((input.RelationshipReferenceType != RelationshipReferenceBatchIDGroupOnly &&
+				input.RelationshipReferenceType != RelationshipReferenceSourceIDGroupOnly) ||
+				input.RelationshipGroupKey == "") {
+			return fmt.Errorf("fee without an exact parent requires proven group evidence")
+		}
 	case MovementKindReversal:
-		if input.ParentMovementKey != "" || input.ConversionGroupKey != "" || input.ConversionLeg != "" || input.ConversionGroupState != "" {
+		if input.ParentMovementKey != "" || input.ConversionGroupKey != "" || input.ConversionLeg != "" || input.ConversionGroupState != "" ||
+			(input.RelationshipReferenceType != "" && input.RelationshipReferenceType != RelationshipReferenceSourceIDReversalTarget) {
 			return fmt.Errorf("reversal movement may only carry a reversal target link")
 		}
 	case MovementKindConversion:
 		if input.ParentMovementKey != "" || input.ReversalOfMovementKey != "" {
 			return fmt.Errorf("conversion movement may not carry parent or reversal links")
+		}
+		if input.RelationshipReferenceType != "" &&
+			(input.RelationshipReferenceType != RelationshipReferenceSourceIDConversion ||
+				input.RelationshipReferenceKey == "" || input.RelationshipGroupKey == "") {
+			return fmt.Errorf("conversion movement requires proven conversion-group evidence")
 		}
 	default:
 		if input.hasProviderLinkage() {
@@ -130,6 +163,9 @@ func (r *DBRepository) applyCompanyFundTransactionProviderLinkage(ctx context.Co
 		nullableString(resolved.ConversionGroupKey),
 		nullableConversionLeg(resolved.ConversionLeg),
 		nullableConversionGroupState(resolved.ConversionGroupState),
+		nullableRelationshipReferenceType(resolved.RelationshipReferenceType),
+		nullableString(resolved.RelationshipReferenceKey),
+		nullableString(resolved.RelationshipGroupKey),
 	).Scan(&updatedID); err != nil {
 		return fmt.Errorf("update company-fund transaction provider linkage: %w", err)
 	}
@@ -141,12 +177,15 @@ func (r *DBRepository) applyCompanyFundTransactionProviderLinkage(ctx context.Co
 
 func loadCompanyFundTransactionProviderLinkage(ctx context.Context, tx *sql.Tx, transactionID int64) (transactionProviderLinkage, error) {
 	var (
-		linkage     transactionProviderLinkage
-		parentID    sql.NullInt64
-		reversalID  sql.NullInt64
-		groupKey    string
-		leg         string
-		groupStatus string
+		linkage              transactionProviderLinkage
+		parentID             sql.NullInt64
+		reversalID           sql.NullInt64
+		groupKey             string
+		leg                  string
+		groupStatus          string
+		referenceType        string
+		referenceKey         string
+		relationshipGroupKey string
 	)
 	if err := tx.QueryRowContext(ctx, selectCompanyFundTransactionLinkageForUpdateSQL, transactionID).Scan(
 		&parentID,
@@ -154,6 +193,9 @@ func loadCompanyFundTransactionProviderLinkage(ctx context.Context, tx *sql.Tx, 
 		&groupKey,
 		&leg,
 		&groupStatus,
+		&referenceType,
+		&referenceKey,
+		&relationshipGroupKey,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return transactionProviderLinkage{}, fmt.Errorf("company-fund transaction %d does not exist for provider linkage", transactionID)
@@ -171,6 +213,9 @@ func loadCompanyFundTransactionProviderLinkage(ctx context.Context, tx *sql.Tx, 
 	linkage.ConversionGroupKey = groupKey
 	linkage.ConversionLeg = ConversionLeg(leg)
 	linkage.ConversionGroupState = ConversionGroupState(groupStatus)
+	linkage.RelationshipReferenceType = RelationshipReferenceType(referenceType)
+	linkage.RelationshipReferenceKey = referenceKey
+	linkage.RelationshipGroupKey = relationshipGroupKey
 	return linkage, nil
 }
 
@@ -204,7 +249,26 @@ func (r *DBRepository) resolveCompanyFundTransactionProviderLinkage(
 		return transactionProviderLinkage{}, err
 	}
 	resolved.ConversionGroupState = resolveConversionGroupState(existing.ConversionGroupState, input.ConversionGroupState)
+	if resolved.RelationshipReferenceType, err = resolveImmutableRelationshipReferenceType(existing.RelationshipReferenceType, input.RelationshipReferenceType); err != nil {
+		return transactionProviderLinkage{}, err
+	}
+	if resolved.RelationshipReferenceKey, err = resolveImmutableTransactionLinkString("relationship reference", existing.RelationshipReferenceKey, input.RelationshipReferenceKey); err != nil {
+		return transactionProviderLinkage{}, err
+	}
+	if resolved.RelationshipGroupKey, err = resolveImmutableTransactionLinkString("relationship group", existing.RelationshipGroupKey, input.RelationshipGroupKey); err != nil {
+		return transactionProviderLinkage{}, err
+	}
 	return resolved, nil
+}
+
+func resolveImmutableRelationshipReferenceType(existing, incoming RelationshipReferenceType) (RelationshipReferenceType, error) {
+	if incoming == "" {
+		return existing, nil
+	}
+	if existing == "" || existing == incoming {
+		return incoming, nil
+	}
+	return "", fmt.Errorf("immutable relationship reference type conflicts with stored transaction linkage")
 }
 
 func (r *DBRepository) resolveCompanyFundTransactionLinkTarget(
@@ -286,7 +350,10 @@ func (linkage transactionProviderLinkage) equal(other transactionProviderLinkage
 		transactionLinkIDsEqual(linkage.ReversalOfTransactionID, other.ReversalOfTransactionID) &&
 		linkage.ConversionGroupKey == other.ConversionGroupKey &&
 		linkage.ConversionLeg == other.ConversionLeg &&
-		linkage.ConversionGroupState == other.ConversionGroupState
+		linkage.ConversionGroupState == other.ConversionGroupState &&
+		linkage.RelationshipReferenceType == other.RelationshipReferenceType &&
+		linkage.RelationshipReferenceKey == other.RelationshipReferenceKey &&
+		linkage.RelationshipGroupKey == other.RelationshipGroupKey
 }
 
 func transactionLinkIDsEqual(left, right *int64) bool {

@@ -1,11 +1,13 @@
-# Airwallex company-fund — stage 交付清单
+# Airwallex company-fund — Stage 交付与 Phase 2 验收清单
 
-> 状态：**stage sandbox 验收已通过**（2026-07-27，binary `6ec3fe2` / fix `951472b`）。
+> 状态：基础采集曾在 Stage 验收通过；Phase 2 代码于 2026-07-29 完成本机门禁，
+> 尚待合入 Stage 后执行本清单的受控迁移和运行时验收。
 > 装配 `airwallex_reconciliation=true airwallex_webhook=true`；webhook lookback
 > REST 入账 `seen=5 created=5 facts=5 txns=5`。Console 真实 webhook URL/secret
 > 对齐仍为可选运维项（当前用 stage `.env` secret 自签探测）。
 >
-> 目标环境：测试环境（stage 分支 → `18.179.50.82` / `mdtestapi.cryptoagg.xyz`）。
+> 目标环境：测试环境（stage 分支 → `18.179.50.82` /
+> `test-mdapi.moneradigital.com`）。
 > 本清单不覆盖 production（#35 仍 OPEN，未经明确授权不得合 main）。
 
 ## 1. 功能边界（交付口径）
@@ -14,7 +16,8 @@
 | --- | --- | --- |
 | REST Financial Transactions | 权威事实源：snapshot → encrypted inbox → worker → facts/txns | 是（仅 `FINANCIAL_TRANSACTION_SNAPSHOT` + 命中 runtime rule） |
 | Webhook `POST /api/webhooks/airwallex` | HMAC 验签 → 加密入库 → wake REST lookback | **否**。非 snapshot envelope 一律 `IGNORED`（审计 + 唤醒） |
-| 映射规则 | 严格 JSON `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG` | 仅 exact account/type/source/currency/status；generic APPLY 只允许 PRINCIPAL/ADJUSTMENT |
+| 映射规则 | 严格 JSON `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG` | exact account/type/source/currency/status；复杂类型还必须有 evidence-pinned relationship |
+| Phase 2 task | PostgreSQL durable lease/retry/SLA | 关系未到时只存 fact/task；关系满足后才登记 movement |
 
 单账户 fail-closed：`AIRWALLEX_LOGIN_AS` 必须等于唯一一条 enabled `AIRWALLEX` 账户的 `provider_account_key`。多账户 / 空白 / 不匹配 → REST 与 webhook 同时关闭。
 
@@ -40,6 +43,15 @@ go run ./cmd/airwallex_sandbox_smoke -webhook
 
 # 4) 全门禁
 go run ./cmd/airwallex_sandbox_smoke -persist -webhook
+
+# 5) 脱敏 evidence 结构（只读，不输出 Provider ID/payload/凭据）
+go run ./cmd/airwallex_sandbox_smoke -evidence
+
+# 6) migration 与真实 PostgreSQL Phase 2 集成测试
+go run ./cmd/migrate -dry-run
+RUN_COMPANY_FUND_AIRWALLEX_PHASE2_INTEGRATION=1 \
+  go test ./internal/companyfund \
+  -run 'TestAirwallexPhase2.*PostgresIntegration' -count=1 -v
 ```
 
 期望：
@@ -53,6 +65,8 @@ go run ./cmd/airwallex_sandbox_smoke -persist -webhook
 go test ./internal/companyfund/ -count=1 \
   -run 'Airwallex|FinalizeCompanyFundSyncRun|OwnedProviderPayload|ProviderEventWorker_ProcessNextIgnores'
 go test ./internal/handlers/ -count=1 -run 'CompanyFundAirwallexWebhook'
+go test ./... -count=1
+go vet ./...
 ```
 
 ## 3. Stage 环境变量（与 `.env.example` 对齐）
@@ -81,6 +95,17 @@ COMPANY_FUND_AIRWALLEX_WEBHOOK_LOOKBACK=24h
 AIRWALLEX_FINANCIAL_TRANSACTIONS_PAGE_SIZE=100
 AIRWALLEX_FINANCIAL_TRANSACTIONS_MAX_PAGES=100
 
+# Phase 2 durable task + finance policy（code 必须对应已存在且 enabled 的分类）
+COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_OWNER=
+COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_DURATION=1m
+COMPANY_FUND_AIRWALLEX_LEDGER_TASK_RETRY_DELAY=1m
+COMPANY_FUND_AIRWALLEX_LEDGER_TASK_SLA=168h
+COMPANY_FUND_AIRWALLEX_LEDGER_MAINTENANCE_BATCH=100
+COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL1_CODE=<stable-level-1-code>
+COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL2_CODE=<stable-level-2-code>
+COMPANY_FUND_AIRWALLEX_FEE_CLASSIFICATION_POLICY_VERSION=airwallex-fee-v1
+COMPANY_FUND_AIRWALLEX_REVERSAL_POLICY_VERSION=airwallex-reversal-v1
+
 # 必须是单行 JSON；event_version 必须 == AIRWALLEX_WEBHOOK_VERSION
 AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG={"enabled":true,"api_version":"2026-07-17","schema_version":"schema-v1","event_version":"event-v1","mapping_version":"mapping-stage-v1","fact_version":1,"rules":[...]}
 ```
@@ -89,6 +114,8 @@ AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG={"enabled":true,"api_version":"2
 
 - `AIRWALLEX_WEBHOOK_VERSION` ≠ runtime `event_version` → container **关闭 webhook**（打 log，不暴露 handler）
 - runtime JSON 非法 / enabled=false → Airwallex REST+worker normalizer 关闭
+- Phase 2 分类 code/数据库行缺失、停用或父子关系错误 → relationship processor
+  仍工作，FEE movement 保留且分类任务可重试；不按中文名或 ID 猜测，不静默创建分类
 - 密钥与 runtime JSON **不得**进 git；`secrets/` 已 gitignore
 
 ## 4. Stage 数据与 Console
@@ -97,22 +124,24 @@ AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG={"enabled":true,"api_version":"2
 
 ```sql
 -- 形状示意；真实列名以 schema 为准，执行前在 stage 只读确认
-SELECT id, channel, enabled, provider_account_key
+SELECT id, channel, is_enabled, provider_account_key
 FROM company_fund_accounts
 WHERE channel = 'AIRWALLEX';
 -- 期望：恰好 1 行 enabled=true，provider_account_key = AIRWALLEX_LOGIN_AS
 ```
 
 2. **Airwallex Console（sandbox 或 stage 对应环境）**
-   - Webhook URL：`https://mdtestapi.cryptoagg.xyz/api/webhooks/airwallex`
+   - Webhook URL：`https://test-mdapi.moneradigital.com/api/webhooks/airwallex`
    - 直打 Go 后端（Caddy 反代到 `:8086`），**不要**走 Vercel
    - Secret → `AIRWALLEX_WEBHOOK_SECRET`
    - 订阅任意业务事件即可（用于 wake）；入账不依赖 envelope 类型
 
 3. **部署**
+   - 先使用 direct `MIGRATION_DATABASE_URL` 执行：
+     `EXPECTED_MIGRATION_CEILING=062 go run ./cmd/migrate -exact-version 062`
    - 含本功能的 commit 进 `stage` 后走 standard 一条龙
    - 启动 log 应出现类似：
-     `company-fund runtime assembled: ... airwallex_reconciliation=true airwallex_webhook=true ...`
+     `company-fund runtime assembled: ... airwallex_reconciliation=true airwallex_webhook=true airwallex_ledger=true ...`
    - 任一为 false：按第 3 节对照缺项，不要靠重启碰运气
 
 ## 5. Stage 验收标准
@@ -133,10 +162,26 @@ WHERE channel = 'AIRWALLEX';
 - [x] 相关 Go 单测绿；PR #68 合 stage 并 standard 部署成功
 - [x] 修复前 orphan PENDING 80791–80794 已手工 SKIPPED（window_key 含纳秒 hash，不可重放）
 
+### Phase 2 上 Stage 后必须补齐的证据
+
+- [ ] migration dry-run 无越界，并以 direct connection 完成 exact-version `062`
+- [ ] FEE 一级/二级 category code 存在、enabled、层级与父子关系正确
+- [ ] 启动日志显示 ledger task processor 已装配，且无 payload、Token、API key、
+      Webhook secret 或 DATABASE_URL
+- [ ] Sandbox CONVERSION 两腿最终 `COMPLETE`，明细两条、默认汇总零条、无 FX gain/loss
+- [ ] 当前 FEE 仅用 `SOURCE_ID_GROUP_ONLY`；明细有组关系、无虚构 parent，默认自动分类正确
+- [ ] 当前 PAYOUT_REVERSAL 在 exact-target evidence 未补齐前保持 fail-closed
+- [ ] 重复 webhook / REST reconciliation / replay 不增加 fact、movement 或分类副作用
+- [ ] 财务手工改类与手工清空后均为 `MANUAL`，维护循环不覆盖
+- [ ] 观察任务 WAITING/LEASED/COMPLETED/DEAD_LETTER 分布与重试间隔，无热循环
+- [ ] 回滚时先停 worker；代码回退前评估 migration `062` Down 对新关系/分类审计数据的影响
+
 ## 6. 明确不在本交付内
 
-- FEE / REVERSAL / CONVERSION 自动入账（需 relation resolver，设计上仍拦截）
 - 多账户 Airwallex（需每账户独立 client/credential）
+- 无 exact identity evidence 的 FEE parent / REVERSAL original 映射
+- 动态业务对手方解析与 KYT
+- CONVERSION 汇兑损益 movement
 - production 切换与 PR #35 合并
 - 把 sandbox runtime JSON 或 webhook secret 提交进仓库
 

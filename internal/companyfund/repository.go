@@ -863,6 +863,9 @@ type TransactionUpsertInput struct {
 	// parent from nullable provider account/organization metadata.
 	ParentMovementKey          string
 	ReversalOfMovementKey      string
+	RelationshipReferenceType  RelationshipReferenceType
+	RelationshipReferenceKey   string
+	RelationshipGroupKey       string
 	ConversionGroupKey         string
 	ConversionLeg              ConversionLeg
 	ConversionGroupState       ConversionGroupState
@@ -1089,6 +1092,26 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 			_ = tx.Rollback()
 		}
 	}()
+	result, err := r.upsertCompanyFundTransactionTx(ctx, tx, input, supplement)
+	if err != nil {
+		return result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction upsert: %w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+// upsertCompanyFundTransactionTx applies one already validated movement inside
+// a caller-owned transaction. It is used by conversion pairing so both legs
+// and their COMPLETE transition share one commit boundary.
+func (r *DBRepository) upsertCompanyFundTransactionTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	input TransactionUpsertInput,
+	supplement normalizedTransactionProviderSupplement,
+) (TransactionUpsertResult, error) {
 	if err := ensureCompanyRoutingAction(ctx, tx, input.AuthorizingRoutingActionID); err != nil {
 		return TransactionUpsertResult{}, err
 	}
@@ -1134,10 +1157,6 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 				if err := r.applyCompanyFundTransactionProviderLinkage(ctx, tx, id, input); err != nil {
 					return TransactionUpsertResult{}, err
 				}
-				if err := tx.Commit(); err != nil {
-					return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction insert: %w", err)
-				}
-				committed = true
 				return TransactionUpsertResult{ID: id, Inserted: true}, nil
 			}
 			// A concurrent insert won the unique key. Read/lock it in the same
@@ -1191,10 +1210,6 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 		if err := r.applyCompanyFundTransactionProviderLinkage(ctx, tx, id, input); err != nil {
 			return TransactionUpsertResult{}, err
 		}
-		if err := tx.Commit(); err != nil {
-			return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction update: %w", err)
-		}
-		committed = true
 		return TransactionUpsertResult{ID: id}, nil
 	}
 	return TransactionUpsertResult{}, fmt.Errorf("company-fund transaction %q could not be locked after concurrent insert", input.MovementKey)

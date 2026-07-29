@@ -42,6 +42,13 @@ func (worker *ProviderEventWorker) persistNormalizedProviderFacts(
 		factID := factIDsByReference[binding.FactReference]
 		prepared.movements[movementIndex].ProviderTransactionFactID = &factID
 	}
+	for _, deferred := range normalized.DeferredMovements {
+		task := deferred.Task
+		task.ProviderTransactionFactID = factIDsByReference[deferred.FactReference]
+		if _, err := worker.repository.EnqueueCompanyFundLedgerTask(ctx, task); err != nil {
+			return nil, fmt.Errorf("enqueue deferred company-fund ledger task: %w", err)
+		}
+	}
 	return prepared.movements, nil
 }
 

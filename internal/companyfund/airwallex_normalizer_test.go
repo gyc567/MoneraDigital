@@ -352,6 +352,7 @@ func TestAirwallexFinancialTransactionNormalizer_MapsFeeAdjustmentReversalAndCon
 				input.FinancialTransaction.TransactionType = "CONVERSION_LEG"
 				input.FinancialTransaction.Amount = json.RawMessage("-100")
 				input.FinancialTransaction.ClientRate = json.RawMessage("0.00725")
+				input.FinancialTransaction.CurrencyPair = "JPYUSD"
 				input.CounterpartyCompanyAccount = &CompanyFundAccount{ID: 8, Channel: AccountChannelAirwallex, ProviderAccountKey: "awx-jpy", Enabled: true}
 				input.ConfiguredAccountSide = AirwallexConfiguredAccountSideFrom
 				input.Relationship.ConversionGroupKey = "conversion_1"
@@ -392,6 +393,39 @@ func TestAirwallexFinancialTransactionNormalizer_MapsFeeAdjustmentReversalAndCon
 				testCase.validate(t, result)
 			}
 		})
+	}
+}
+
+func TestAirwallexFinancialTransactionNormalizer_RejectsProviderCurrencyPairConflict(t *testing.T) {
+	normalizer := newAirwallexFinancialTransactionNormalizerForTest(t,
+		AirwallexFinancialTransactionClassification{
+			TransactionType: "CONVERSION_LEG", SourceType: "BANK_FEED",
+			Action:       AirwallexFinancialTransactionActionApply,
+			MovementKind: MovementKindConversion, Direction: DirectionInternalTransfer,
+			TransferMode: TransferModeSingle, AmountField: AirwallexFinancialAmountFieldAmount,
+			ExpectedSign:    AirwallexFinancialValueSignNegative,
+			OccurredAtField: AirwallexFinancialOccurredAtCreated,
+			ClientRateUse:   AirwallexFinancialClientRateUseConversionRate,
+		},
+	)
+	input := validAirwallexFinancialTransactionInput()
+	input.FinancialTransaction.TransactionType = "CONVERSION_LEG"
+	input.FinancialTransaction.Amount = json.RawMessage("-100")
+	input.FinancialTransaction.ClientRate = json.RawMessage("0.00725")
+	input.FinancialTransaction.CurrencyPair = "JPYEUR"
+	input.CounterpartyCompanyAccount = &CompanyFundAccount{
+		ID: 8, Channel: AccountChannelAirwallex, ProviderAccountKey: "awx-jpy", Enabled: true,
+	}
+	input.ConfiguredAccountSide = AirwallexConfiguredAccountSideFrom
+	input.Relationship.ConversionGroupKey = "conversion_1"
+	input.Relationship.ConversionLeg = ConversionLegSell
+	input.Relationship.ConversionGroupState = ConversionGroupIncomplete
+	input.Conversion = AirwallexConversionDetails{FromCurrency: "JPY", ToCurrency: "USD"}
+
+	result := normalizer.Normalize(input)
+	if result.Disposition != AirwallexFinancialTransactionDispositionQuarantine ||
+		result.Reason != "AIRWALLEX_CONVERSION_FACT_INVALID" {
+		t.Fatalf("currency-pair conflict result = %#v", result)
 	}
 }
 

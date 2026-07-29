@@ -1,6 +1,8 @@
-# Airwallex Financial Transactions Mapping 覆盖梳理
+# Airwallex Financial Transactions Mapping 覆盖与 Phase 2 契约
 
-> 状态：梳理文档（2026-07-28）。梳理当前 Airwallex Financial Transactions normalize mapping 的实现、覆盖与 gap，规划补全路径。**本文档不引入代码变更。**
+> 状态：实现与证据文档（2026-07-29）。本文记录当前代码对 Financial
+> Transactions 的严格映射、Phase 2 关系协调，以及仍必须 fail-closed 的
+> Provider evidence gap。
 
 ## 1. 背景
 
@@ -31,21 +33,25 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 
 | 字段 | 枚举 | runtime config 约束 |
 |------|------|---------------------|
-| Action | `APPLY` / `IGNORE` / `QUARANTINE` | 必须 `APPLY`（`airwallex_runtime_config.go:479`）|
-| MovementKind | `PRINCIPAL` / `FEE` / `REVERSAL` / `ADJUSTMENT` / `CONVERSION` | 拒绝 `FEE`/`REVERSAL`/`CONVERSION`（`:472`，需 dedicated resolver）|
+| Action | `APPLY` / `IGNORE` / `QUARANTINE` | 三者均需 exact rule；未知 tuple fail-closed |
+| MovementKind | `PRINCIPAL` / `FEE` / `REVERSAL` / `ADJUSTMENT` / `CONVERSION` | 复杂类型必须声明 evidence-pinned `relationship` |
 | Direction | `INFLOW` / `OUTFLOW` / `INTERNAL_TRANSFER` | 三者之一（`:485`）|
 | TransferMode | `SINGLE` / `BATCH` | — |
 | AmountField | `AMOUNT` / `FEE` / `NET` | — |
 | ExpectedSign | `POSITIVE` / `NEGATIVE` | — |
 | OccurredAtField | `CREATED_AT` / `SETTLED_AT` | — |
 
-### 2.3 dedicated resolver 现状
+### 2.3 relationship resolver 现状
 
 `AirwallexProviderEventNormalizer` 有 3 个 resolver 接口（`mappings` / `relationships` / `counterparties`，`airwallex_provider_event_normalizer.go:114-116`）：
 
-- 当前三个 resolver **全部由 runtime config 实现**（静态 rule）
-- **dedicated resolver 未实现**（FEE/CONVERSION/REVERSAL 的 relationship + 动态 counterparty）
-- runtime config 的 relationship resolver 返回空关系（`airwallex_runtime_config.go:288` 注释："intentionally leaves linked movement kinds quarantined until a dedicated, evidence-backed relation resolver exists"）
+- 三个 resolver 均由严格 runtime rule 驱动；不存在 wildcard 或生产默认映射。
+- FEE、CONVERSION、REVERSAL 必须配置 `relationship.strategy`、
+  `evidence_reference` 和正数 SLA。
+- `已解析`关系可立即生成 movement；精确父交易、原交易或换汇对腿尚未到达时，
+  只保存 fact 与 `company_fund_ledger_tasks`，由 PostgreSQL lease/retry 恢复。
+- `source_id` 只保存为 provider fact 和关系证据，**不参与 movement identity**。
+- 动态业务对手方仍不在本期 relationship resolver 范围内。
 
 ## 3. Airwallex Financial Transaction 枚举（官方文档）
 
@@ -64,9 +70,11 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 - **Outflow**：`PAYOUT`, `BATCH_PAYOUT`, `CARD_PURCHASE`, `PURCHASE`, `DD_DEBIT`, `DC_DEBIT`, `TRANSFER_OUT`, `CONVERSION_SELL`, `FEE`, `REFUND`, `DISPUTE`, `CHARGE`, `WITHHOLDING_TAX`, `ISSUING_AUTHORISATION_HOLD`, `ISSUING_CAPTURE`, `PREPAYMENT`, `REPAYMENT_DEDUCTION`, ...
 - **Neutral / 双向**：`TRANSFER`, `CONVERSION`, `ADJUSTMENT`（方向依赖上下文）
 
-## 4. 当前覆盖
+## 4. 历史 Stage 覆盖快照
 
-stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`（`mapping-sandbox-v1`）：**6 条 rule**：
+2026-07-28 的 stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`
+（`mapping-sandbox-v1`）曾包含以下简单类型规则；部署 Phase 2 时必须根据当前
+Sandbox evidence 重新生成配置，不能直接把这份历史清单当作当前环境事实：
 
 - 5 条 `ADJUSTMENT SETTLED INFLOW`（CNY/EUR/GBP/SGD/USD）— sandbox 2026-07-27 初始余额调整，`evidence_reference: sandbox-2026-07-27-adjustment-settled-*`
 - 1 条 `PAYOUT SETTLED OUTFLOW`（SGD）— 2026-07-28 验收（transfer `P260728-3824YVV`，1000 SGD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、`occurred_at_field=SETTLED_AT`），fact id=26 + transaction id=19 已入账，`evidence_reference: sandbox-2026-07-28-payout-settled-sgd`
@@ -90,15 +98,17 @@ stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`（`mapping-sandbox-v1`�
 | `REFUND` | outflow | 退款 | 低 |
 | `CHARGE` | outflow | 扣费 | 低 |
 
-### 5.2 复杂类型（runtime config 不支持，需 dedicated resolver）
+### 5.2 复杂类型（已实现，启用仍需 evidence）
 
-MovementKind ∈ {`FEE`, `REVERSAL`, `CONVERSION`}，runtime config 明确拒绝（`airwallex_runtime_config.go:472`）。需开发 dedicated relationship resolver：
+| 类型 | 策略 | 入账语义 |
+|------|------|----------|
+| 独立 `FEE` | `SOURCE_ID_EXACT_PARENT` / `SOURCE_ID_GROUP_ONLY` / `BATCH_ID_GROUP_ONLY` | 精确证据才写 parent；组证据只写 group；自动分类为配置的“经营支出 / 手续费 / 是” |
+| `CONVERSION_SELL` + `CONVERSION_BUY` | `SOURCE_ID_CONVERSION_GROUP` | 同一已验证 conversion identifier 恰好一买一卖；同一 Airwallex 账户的不同币种余额；`INTERNAL_TRANSFER` |
+| `*_REVERSAL` | `SOURCE_ID_REVERSAL_TARGET` | 原交易尚未到达则等待；到达后保存独立 reversal 并继承有效分类 |
 
-| source_type / transaction_type | MovementKind | 关联需求 |
-|--------------------------------|--------------|----------|
-| `FEE` | `FEE` | `fee.source_id` → 父交易 |
-| `CONVERSION`（`CONVERSION_SELL` + `CONVERSION_BUY`）| `CONVERSION` | 买卖腿配对（conversion group）|
-| `*_REVERSAL`（`PAYOUT_REVERSAL` / `REFUND_REVERSAL` / `CONVERSION_REVERSAL` / `TRANSFER_*_REVERSAL`）| `REVERSAL` | `reversal.source_id` → 原交易 |
+复杂类型的 task payload 只保存 allowlisted normalized proposal 和 SHA-256
+digest，不保存原始 Provider payload。等待任务有 lease、attempt、next-attempt、
+SLA、terminal state 和安全错误码，进程重启可恢复。
 
 ### 5.3 动态 counterparty gap
 
@@ -116,11 +126,15 @@ runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`a
 - 配 evidence-backed rule（`AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`，每条带 `evidence_reference`）
 - 验证各类型入账（facts 创建）
 
-### Phase 2：dedicated relationship resolver（复杂类型，代码开发）
-- `FEE` resolver：fee → 父交易关联
-- `CONVERSION` resolver：sell + buy 腿配对（conversion group）
-- `REVERSAL` resolver：reversal → 原交易关联
-- 实现 `AirwallexProviderEventRelationshipResolver`（非 runtime config 路径）
+### Phase 2：复杂流水关系与财务语义（代码已完成）
+
+- 独立 FEE movement、精确/组级关系、默认自动分类与历史分批回填。
+- CONVERSION 一买一卖配对；孤儿腿耐久等待；完成前不进入财务明细；完成后
+  两腿可审计但自动排除外部/经营汇总；本期不生成 FX gain/loss。
+- REVERSAL 独立 movement、原交易关联、分类/经营属性/汇总语义继承与反向净额。
+- 管理后台直接修改共享数据库会触发 `MANUAL` 所有权；人工修改或人工清空后，
+  provider replay、自动规则和 reversal 传播都不覆盖。
+- 受控 schema 版本：migration `062`。
 
 ### Phase 3：dedicated counterparty resolver（动态对手方，代码开发）
 - 从 transaction field 提取对手方
@@ -147,7 +161,7 @@ runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`a
 - stage→main release：PR #70
 - 域语言 / ADR：`CONTEXT.md`、`docs/adr/`
 
-## 10. sandbox 触发限制（2026-07-28 穷尽验证）
+## 10. Sandbox evidence（2026-07-29 复核）
 
 Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以下限制：
 
@@ -158,10 +172,13 @@ Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以�
 | `PAYOUT` 其他币种 | ❌ | 同上 + 无 beneficiary |
 | `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
 | `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |
-| `CONVERSION`（Phase 2）| ✅ 已触发 evidence | 正确路径 `/api/v1/fx/conversions/create`（带 `fx` 前缀）；sell+buy 两腿 `source_id` 共享 conversion_id（**配对 key 确认**），SELL `amount=-1`/BUY `amount=+1.29`，`currency_pair=USDSGD`。amendment：`/api/v1/fx/conversion_amendments/create`（`type=CANCEL`）|
-| `FEE`（Phase 2）| ❌ | sandbox PAYOUT/CONVERSION 均 `fee=0`，无独立 `FEE` source_type（sandbox 不收手续费），需生产 evidence |
-| `REVERSAL`（Phase 2）| ❌ | sandbox conversion 立即 SETTLED，amendment `CANCEL` 被拒（`cannot amend in state SETTLED`）；需生产 evidence |
+| `CONVERSION`（Phase 2）| ✅ | `/api/v1/fx/conversions/create`；SELL/BUY 两腿共享 `source_id=conversion_id`，SELL 为负、BUY 为正，币对与两腿币种一致。可配置 `SOURCE_ID_CONVERSION_GROUP`。|
+| `FEE`（Phase 2）| ✅ 有独立样本 | `source_type=FEE`、`transaction_type=FEE`、SETTLED；`amount` 为负、`fee` 字段为零；`source_id` 在当前 Financial Transactions 列表中不等于某条父 item ID。因此当前证据只允许 `SOURCE_ID_GROUP_ONLY`，不得配置 exact parent。|
+| `PAYOUT_REVERSAL`（Phase 2）| ✅ 有独立样本 | SETTLED、金额为正，存在 `source_id`，部分记录有 `batch_id`；但 `source_id` 未命中当前 Financial Transaction item ID，尚不足以配置 `SOURCE_ID_REVERSAL_TARGET`，继续 fail-closed。|
 
-**Airwallex API `page_num` 是 0-based**（`page_num=0` 是第一页）。用 1-based 假设查询会得到空结果或残缺数据——曾因此误判为"数据不稳定"，实际数据始终稳定。sandbox 实测稳定 8 条（5 `ADJUSTMENT` + 1 `PAYOUT`/SGD + 2 `CONVERSION`，stage DB 前置 6 条全部 `PROCESSED`），**没有 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`/`FEE`/`REVERSAL` 类型**。剩余 simple type 的 evidence-backed rule 须在**真实业务环境**（生产 Airwallex 账号产生真实 `DEPOSIT`/`YIELD`/`TAX`/`TRANSFER`）后补配，不能凭文档猜测 `amount_field` / `occurred_at_field` / 方向。
+**Airwallex API `page_num` 是 0-based**（`page_num=0` 是第一页）。本地
+`go run ./cmd/airwallex_sandbox_smoke -evidence` 只输出脱敏后的结构证据，不输出
+Provider ID、凭据或 payload。任何新增 exact-parent / exact-reversal rule 都必须先用
+可复核的跨资源 identity evidence 更新本节，不能按金额、时间、顺序或相似 ID 猜测。
 
 Console "Send test event" 验签（`client-secret-key` 路径）已修复并 TDD 覆盖（commit `615a53e`）。

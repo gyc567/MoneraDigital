@@ -157,6 +157,47 @@ func TestCompanyFundRuntime_ProviderEventCyclePublishesDurableRetryDue(t *testin
 	}
 }
 
+func TestCompanyFundRuntime_ProviderMovementWakesLedgerMaintenance(t *testing.T) {
+	worker := &companyFundRuntimeEventWorkerStub{results: []companyFundRuntimeEventWorkerCall{
+		{result: ProviderEventWorkerResult{
+			Claimed:       true,
+			Outcome:       ProviderEventFinalizeProcessed,
+			MovementCount: 1,
+		}},
+		{},
+	}}
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{
+		ProviderEventWorker: worker,
+		LedgerTaskProcessor: &companyFundRuntimeLedgerTaskProcessorStub{},
+	}, CompanyFundRuntimeConfig{})
+
+	if _, err := runtime.providerEventCycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.ledgerTaskLoop.Notify() {
+		t.Fatal("provider movement must already have queued a coalesced ledger maintenance wake")
+	}
+}
+
+func TestCompanyFundRuntime_LedgerTaskCyclePublishesDurableRetryDue(t *testing.T) {
+	due := time.Now().Add(35 * time.Second).Round(time.Microsecond)
+	processor := &companyFundRuntimeLedgerTaskProcessorStub{due: due}
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{
+		LedgerTaskProcessor: processor,
+	}, CompanyFundRuntimeConfig{})
+
+	outcome, err := runtime.ledgerTaskCycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.NextDue.Equal(due) {
+		t.Fatalf("NextDue=%s, want %s", outcome.NextDue, due)
+	}
+	if processor.dueCalls != 1 {
+		t.Fatalf("NextCompanyFundLedgerTaskDue calls=%d, want 1", processor.dueCalls)
+	}
+}
+
 func TestCompanyFundRuntime_NotifyProviderEventIsNoopWithoutWorker(t *testing.T) {
 	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{}, CompanyFundRuntimeConfig{})
 	if runtime.NotifyProviderEvent() {
@@ -165,6 +206,20 @@ func TestCompanyFundRuntime_NotifyProviderEventIsNoopWithoutWorker(t *testing.T)
 	if runtime.ProviderEventWakeFunc() != nil {
 		t.Fatal("ProviderEventWakeFunc must be nil without a provider-event worker")
 	}
+}
+
+type companyFundRuntimeLedgerTaskProcessorStub struct {
+	due      time.Time
+	dueCalls int
+}
+
+func (*companyFundRuntimeLedgerTaskProcessorStub) ProcessNext(context.Context) (LedgerTaskProcessResult, error) {
+	return LedgerTaskProcessResult{Outcome: LedgerTaskProcessIdle}, nil
+}
+
+func (stub *companyFundRuntimeLedgerTaskProcessorStub) NextCompanyFundLedgerTaskDue(context.Context) (time.Time, error) {
+	stub.dueCalls++
+	return stub.due, nil
 }
 
 func TestCompanyFundRuntime_ReconciliationUsesAdaptiveLoopNotFixedMinuteTicker(t *testing.T) {

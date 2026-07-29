@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -66,6 +67,27 @@ type AirwallexFinancialTransactionsRuntimeRule struct {
 	ConfiguredAccountSide                 AirwallexConfiguredAccountSide
 	CounterpartyCompanyProviderAccountKey string
 	Counterparty                          *AirwallexRuntimeManualCounterparty
+	Relationship                          AirwallexRuntimeRelationshipRule
+}
+
+type AirwallexRuntimeRelationshipStrategy string
+
+const (
+	AirwallexRuntimeRelationshipNone              AirwallexRuntimeRelationshipStrategy = ""
+	AirwallexRuntimeRelationshipSourceExactParent AirwallexRuntimeRelationshipStrategy = "SOURCE_ID_EXACT_PARENT"
+	AirwallexRuntimeRelationshipBatchGroupOnly    AirwallexRuntimeRelationshipStrategy = "BATCH_ID_GROUP_ONLY"
+	AirwallexRuntimeRelationshipSourceGroupOnly   AirwallexRuntimeRelationshipStrategy = "SOURCE_ID_GROUP_ONLY"
+	AirwallexRuntimeRelationshipSourceConversion  AirwallexRuntimeRelationshipStrategy = "SOURCE_ID_CONVERSION_GROUP"
+	AirwallexRuntimeRelationshipSourceReversal    AirwallexRuntimeRelationshipStrategy = "SOURCE_ID_REVERSAL_TARGET"
+)
+
+type AirwallexRuntimeRelationshipRule struct {
+	Strategy          AirwallexRuntimeRelationshipStrategy `json:"strategy"`
+	EvidenceReference string                               `json:"evidence_reference"`
+	ConversionLeg     ConversionLeg                        `json:"conversion_leg"`
+	FromCurrency      string                               `json:"from_currency"`
+	ToCurrency        string                               `json:"to_currency"`
+	SLADuration       time.Duration                        `json:"-"`
 }
 
 // AirwallexRuntimeManualCounterparty is an operator-maintained display value,
@@ -105,6 +127,7 @@ type airwallexFinancialTransactionsRuntimeRule struct {
 	configuredAccountSide                 AirwallexConfiguredAccountSide
 	counterpartyCompanyProviderAccountKey string
 	counterparty                          *AirwallexCounterparty
+	relationship                          AirwallexRuntimeRelationshipRule
 }
 
 type airwallexFinancialTransactionsRuntimeRuleKey struct {
@@ -277,14 +300,11 @@ func (r *AirwallexFinancialTransactionsRuntimeResolvers) ResolveAirwallexProvide
 	if err := ctx.Err(); err != nil {
 		return AirwallexProviderEventRelationshipResolution{}, err
 	}
-	if _, err := r.lookup(input); err != nil {
+	rule, err := r.lookup(input)
+	if err != nil {
 		return AirwallexProviderEventRelationshipResolution{}, err
 	}
-	// A generic static config cannot safely derive a parent, reversal, or
-	// conversion group key. Returning an empty relation intentionally leaves
-	// linked movement kinds quarantined until a dedicated, evidence-backed
-	// relation resolver exists.
-	return AirwallexProviderEventRelationshipResolution{}, nil
+	return resolveAirwallexRuntimeRelationship(rule.relationship, input)
 }
 
 func (r *AirwallexFinancialTransactionsRuntimeResolvers) ResolveAirwallexProviderEventCounterparty(
@@ -423,6 +443,7 @@ func normalizeAirwallexFinancialTransactionsRuntimeConfig(source AirwallexFinanc
 			configuredAccountSide:                 rule.ConfiguredAccountSide,
 			counterpartyCompanyProviderAccountKey: rule.CounterpartyCompanyProviderAccountKey,
 			counterparty:                          runtimeCounterpartyToProviderCounterparty(rule.Counterparty),
+			relationship:                          rule.Relationship,
 		}
 	}
 
@@ -469,15 +490,24 @@ func normalizeAirwallexFinancialTransactionsRuntimeRule(source AirwallexFinancia
 	if err != nil {
 		return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, err
 	}
-	if classification.MovementKind == MovementKindFee || classification.MovementKind == MovementKindReversal || classification.MovementKind == MovementKindConversion {
-		return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("Airwallex runtime configuration refuses %s because it requires a dedicated relationship resolver", classification.MovementKind)
+	relationship, err := normalizeAirwallexRuntimeRelationshipRule(source.Relationship, classification, currency)
+	if err != nil {
+		return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, err
+	}
+	normalized.Relationship = relationship
+	if classification.MovementKind == MovementKindConversion &&
+		(classification.Direction != DirectionInternalTransfer ||
+			classification.ClientRateUse != AirwallexFinancialClientRateUseConversionRate) {
+		return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{},
+			fmt.Errorf("Airwallex conversion mapping requires INTERNAL_TRANSFER direction and provider conversion rate evidence")
 	}
 
 	normalized.ProviderAccountKey = providerAccountKey
 	normalized.Currency = currency
 	normalized.Status = status
 	if classification.Action != AirwallexFinancialTransactionActionApply {
-		if source.ConfiguredAccountSide != "" || source.CounterpartyCompanyProviderAccountKey != "" || source.Counterparty != nil {
+		if source.ConfiguredAccountSide != "" || source.CounterpartyCompanyProviderAccountKey != "" || source.Counterparty != nil ||
+			source.Relationship.Strategy != "" {
 			return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("terminal Airwallex runtime classification cannot carry relationship or counterparty mapping")
 		}
 		return normalized, classification, classificationKey, nil
@@ -496,6 +526,13 @@ func normalizeAirwallexFinancialTransactionsRuntimeRule(source AirwallexFinancia
 		if source.Counterparty != nil {
 			return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("internal Airwallex runtime mapping cannot use a manual external counterparty")
 		}
+		if classification.MovementKind == MovementKindConversion &&
+			source.Relationship.Strategy == AirwallexRuntimeRelationshipSourceConversion {
+			if source.ConfiguredAccountSide != "" || source.CounterpartyCompanyProviderAccountKey != "" {
+				return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("Airwallex conversion mapping uses the configured account on both currency-balance endpoints")
+			}
+			break
+		}
 		if source.ConfiguredAccountSide != AirwallexConfiguredAccountSideFrom && source.ConfiguredAccountSide != AirwallexConfiguredAccountSideTo {
 			return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("internal Airwallex runtime mapping requires an explicit configured account side")
 		}
@@ -509,6 +546,166 @@ func normalizeAirwallexFinancialTransactionsRuntimeRule(source AirwallexFinancia
 		return AirwallexFinancialTransactionsRuntimeRule{}, AirwallexFinancialTransactionClassification{}, airwallexFinancialTransactionClassificationKey{}, fmt.Errorf("Airwallex runtime mapping has unsupported direction")
 	}
 	return normalized, classification, classificationKey, nil
+}
+
+func normalizeAirwallexRuntimeRelationshipRule(
+	source AirwallexRuntimeRelationshipRule,
+	classification AirwallexFinancialTransactionClassification,
+	ruleCurrency string,
+) (AirwallexRuntimeRelationshipRule, error) {
+	normalized := source
+	if source.Strategy == AirwallexRuntimeRelationshipNone {
+		if classification.Action == AirwallexFinancialTransactionActionApply &&
+			(classification.MovementKind == MovementKindFee || classification.MovementKind == MovementKindReversal ||
+				classification.MovementKind == MovementKindConversion) {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("%s mapping requires an evidence-pinned relationship strategy", classification.MovementKind)
+		}
+		if source.EvidenceReference != "" || source.ConversionLeg != "" || source.FromCurrency != "" ||
+			source.ToCurrency != "" || source.SLADuration != 0 {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("empty relationship strategy cannot carry relationship details")
+		}
+		return AirwallexRuntimeRelationshipRule{}, nil
+	}
+	evidence, err := normalizeAirwallexRuntimeEvidenceReference(source.EvidenceReference)
+	if err != nil {
+		return AirwallexRuntimeRelationshipRule{}, err
+	}
+	normalized.EvidenceReference = evidence
+	if source.SLADuration <= 0 {
+		return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("Airwallex relationship strategy requires a positive SLA")
+	}
+	switch source.Strategy {
+	case AirwallexRuntimeRelationshipSourceExactParent, AirwallexRuntimeRelationshipBatchGroupOnly,
+		AirwallexRuntimeRelationshipSourceGroupOnly:
+		if classification.MovementKind != MovementKindFee {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("fee relationship strategies are valid only for FEE movements")
+		}
+	case AirwallexRuntimeRelationshipSourceReversal:
+		if classification.MovementKind != MovementKindReversal {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("reversal relationship strategy is valid only for REVERSAL movements")
+		}
+	case AirwallexRuntimeRelationshipSourceConversion:
+		if classification.MovementKind != MovementKindConversion || !source.ConversionLeg.Valid() {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("conversion relationship strategy requires a conversion movement and leg")
+		}
+		fromCurrency, err := normalizeAirwallexRuntimeCurrency(source.FromCurrency)
+		if err != nil {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("conversion from currency: %w", err)
+		}
+		toCurrency, err := normalizeAirwallexRuntimeCurrency(source.ToCurrency)
+		if err != nil {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("conversion to currency: %w", err)
+		}
+		if fromCurrency == toCurrency ||
+			(source.ConversionLeg == ConversionLegSell && ruleCurrency != fromCurrency) ||
+			(source.ConversionLeg == ConversionLegBuy && ruleCurrency != toCurrency) {
+			return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("conversion relationship currencies do not match the configured leg")
+		}
+		normalized.FromCurrency = fromCurrency
+		normalized.ToCurrency = toCurrency
+	default:
+		return AirwallexRuntimeRelationshipRule{}, fmt.Errorf("unsupported Airwallex relationship strategy %q", source.Strategy)
+	}
+	return normalized, nil
+}
+
+func resolveAirwallexRuntimeRelationship(
+	rule AirwallexRuntimeRelationshipRule,
+	input AirwallexProviderEventResolutionInput,
+) (AirwallexProviderEventRelationshipResolution, error) {
+	if rule.Strategy == AirwallexRuntimeRelationshipNone {
+		return AirwallexProviderEventRelationshipResolution{State: AirwallexProviderEventRelationshipResolved}, nil
+	}
+	sourceReference := strings.TrimSpace(input.Transaction.SourceReference)
+	batchID := strings.TrimSpace(input.Transaction.BatchID)
+	task := &AirwallexDeferredRelationshipTask{
+		EvidenceReference: rule.EvidenceReference,
+		RelationshipSLA:   rule.SLADuration,
+	}
+	switch rule.Strategy {
+	case AirwallexRuntimeRelationshipSourceGroupOnly:
+		if sourceReference == "" {
+			return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+		}
+		return AirwallexProviderEventRelationshipResolution{
+			State: AirwallexProviderEventRelationshipResolved,
+			Relationship: AirwallexMovementRelationship{
+				ReferenceType: RelationshipReferenceSourceIDGroupOnly,
+				ReferenceKey:  sourceReference,
+				GroupKey:      sourceReference,
+			},
+		}, nil
+	case AirwallexRuntimeRelationshipBatchGroupOnly:
+		if batchID == "" {
+			return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+		}
+		return AirwallexProviderEventRelationshipResolution{
+			State: AirwallexProviderEventRelationshipResolved,
+			Relationship: AirwallexMovementRelationship{
+				ReferenceType: RelationshipReferenceBatchIDGroupOnly,
+				ReferenceKey:  batchID,
+				GroupKey:      batchID,
+			},
+		}, nil
+	case AirwallexRuntimeRelationshipSourceExactParent:
+		if sourceReference == "" {
+			return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+		}
+		task.Kind = LedgerTaskKindFeeRelationship
+		task.ReferenceType = RelationshipReferenceSourceIDExactParent
+		task.ReferenceKey = sourceReference
+		return AirwallexProviderEventRelationshipResolution{
+			State: AirwallexProviderEventRelationshipWaiting,
+			Relationship: AirwallexMovementRelationship{
+				ParentMovementKey: "pending-parent:" + sourceReference,
+				ReferenceType:     task.ReferenceType,
+				ReferenceKey:      sourceReference,
+			},
+			Task: task,
+		}, nil
+	case AirwallexRuntimeRelationshipSourceReversal:
+		if sourceReference == "" {
+			return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+		}
+		task.Kind = LedgerTaskKindReversalRelationship
+		task.ReferenceType = RelationshipReferenceSourceIDReversalTarget
+		task.ReferenceKey = sourceReference
+		return AirwallexProviderEventRelationshipResolution{
+			State: AirwallexProviderEventRelationshipWaiting,
+			Relationship: AirwallexMovementRelationship{
+				ReversalOfMovementKey: "pending-reversal:" + sourceReference,
+				ReferenceType:         task.ReferenceType,
+				ReferenceKey:          sourceReference,
+			},
+			Task: task,
+		}, nil
+	case AirwallexRuntimeRelationshipSourceConversion:
+		if sourceReference == "" {
+			return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+		}
+		task.Kind = LedgerTaskKindConversionPair
+		task.ReferenceType = RelationshipReferenceSourceIDConversion
+		task.ReferenceKey = sourceReference
+		task.GroupKey = sourceReference
+		return AirwallexProviderEventRelationshipResolution{
+			State: AirwallexProviderEventRelationshipWaiting,
+			Relationship: AirwallexMovementRelationship{
+				ReferenceType:        task.ReferenceType,
+				ReferenceKey:         sourceReference,
+				GroupKey:             sourceReference,
+				ConversionGroupKey:   sourceReference,
+				ConversionLeg:        rule.ConversionLeg,
+				ConversionGroupState: ConversionGroupIncomplete,
+			},
+			Conversion: AirwallexConversionDetails{
+				FromCurrency: rule.FromCurrency,
+				ToCurrency:   rule.ToCurrency,
+			},
+			Task: task,
+		}, nil
+	default:
+		return AirwallexProviderEventRelationshipResolution{}, ErrAirwallexRuntimeMappingNotFound
+	}
 }
 
 func normalizeAirwallexRuntimeProviderAccountKey(value string) (string, error) {
@@ -594,6 +791,7 @@ func cloneAirwallexFinancialTransactionsRuntimeRule(source airwallexFinancialTra
 		configuredAccountSide:                 source.configuredAccountSide,
 		counterpartyCompanyProviderAccountKey: source.counterpartyCompanyProviderAccountKey,
 		counterparty:                          cloneAirwallexProviderEventCounterparty(source.counterparty),
+		relationship:                          source.relationship,
 	}
 }
 
@@ -627,6 +825,16 @@ type airwallexFinancialTransactionsRuntimeRuleJSON struct {
 	ConfiguredAccountSide                 AirwallexConfiguredAccountSide                  `json:"configured_account_side"`
 	CounterpartyCompanyProviderAccountKey string                                          `json:"counterparty_company_provider_account_key"`
 	Counterparty                          *airwallexRuntimeManualCounterpartyJSON         `json:"counterparty"`
+	Relationship                          airwallexRuntimeRelationshipRuleJSON            `json:"relationship"`
+}
+
+type airwallexRuntimeRelationshipRuleJSON struct {
+	Strategy          AirwallexRuntimeRelationshipStrategy `json:"strategy"`
+	EvidenceReference string                               `json:"evidence_reference"`
+	ConversionLeg     ConversionLeg                        `json:"conversion_leg"`
+	FromCurrency      string                               `json:"from_currency"`
+	ToCurrency        string                               `json:"to_currency"`
+	RelationshipSLA   string                               `json:"relationship_sla"`
 }
 
 func (source airwallexFinancialTransactionsRuntimeRuleJSON) runtimeRule() (AirwallexFinancialTransactionsRuntimeRule, error) {
@@ -639,6 +847,20 @@ func (source airwallexFinancialTransactionsRuntimeRuleJSON) runtimeRule() (Airwa
 		Classification:                        classification,
 		ConfiguredAccountSide:                 source.ConfiguredAccountSide,
 		CounterpartyCompanyProviderAccountKey: source.CounterpartyCompanyProviderAccountKey,
+		Relationship: AirwallexRuntimeRelationshipRule{
+			Strategy:          source.Relationship.Strategy,
+			EvidenceReference: source.Relationship.EvidenceReference,
+			ConversionLeg:     source.Relationship.ConversionLeg,
+			FromCurrency:      source.Relationship.FromCurrency,
+			ToCurrency:        source.Relationship.ToCurrency,
+		},
+	}
+	if source.Relationship.RelationshipSLA != "" {
+		duration, err := time.ParseDuration(source.Relationship.RelationshipSLA)
+		if err != nil {
+			return AirwallexFinancialTransactionsRuntimeRule{}, fmt.Errorf("relationship_sla is invalid")
+		}
+		rule.Relationship.SLADuration = duration
 	}
 	if source.Counterparty != nil {
 		rule.Counterparty = source.Counterparty.counterparty()
