@@ -20,6 +20,10 @@ type financeCategoryPair struct {
 	Level2ID int64
 }
 
+var errAirwallexFeeCategoryUnavailable = errors.New(
+	"configured Airwallex fee category hierarchy is unavailable",
+)
+
 const resolveAirwallexFeeCategoriesSQL = `
 SELECT level1.id, level2.id
 FROM finance_categories level1
@@ -30,6 +34,33 @@ WHERE level1.code = $1
   AND level2.code = $2
   AND level2.level = 2
   AND level2.is_enabled`
+
+const publishAirwallexFeeClassificationBindingSQL = `
+INSERT INTO company_fund_classification_policy_bindings (
+	policy_key,
+	channel,
+	movement_kind,
+	finance_category_level1_id,
+	finance_category_level2_id,
+	policy_version,
+	is_active,
+	updated_at
+) VALUES (
+	'AIRWALLEX_FEE',
+	'AIRWALLEX',
+	'FEE',
+	$1,
+	$2,
+	$3,
+	TRUE,
+	clock_timestamp()
+)
+ON CONFLICT (policy_key) DO UPDATE
+SET finance_category_level1_id = EXCLUDED.finance_category_level1_id,
+	finance_category_level2_id = EXCLUDED.finance_category_level2_id,
+	policy_version = EXCLUDED.policy_version,
+	is_active = TRUE,
+	updated_at = clock_timestamp()`
 
 const applyAirwallexFeeClassificationSQL = `
 WITH system_write AS (
@@ -107,11 +138,28 @@ func (r *DBRepository) resolveAirwallexFeeCategories(
 		strings.TrimSpace(policy.Level1Code), strings.TrimSpace(policy.Level2Code),
 	).Scan(&pair.Level1ID, &pair.Level2ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return financeCategoryPair{}, fmt.Errorf("configured Airwallex fee category hierarchy is unavailable")
+			return financeCategoryPair{}, errAirwallexFeeCategoryUnavailable
 		}
 		return financeCategoryPair{}, fmt.Errorf("resolve Airwallex fee category hierarchy: %w", err)
 	}
 	return pair, nil
+}
+
+func (r *DBRepository) publishAirwallexFeeClassificationBinding(
+	ctx context.Context,
+	pair financeCategoryPair,
+	policyVersion string,
+) error {
+	if _, err := r.db.ExecContext(
+		ctx,
+		publishAirwallexFeeClassificationBindingSQL,
+		pair.Level1ID,
+		pair.Level2ID,
+		strings.TrimSpace(policyVersion),
+	); err != nil {
+		return fmt.Errorf("publish Airwallex fee classification binding: %w", err)
+	}
+	return nil
 }
 
 func (r *DBRepository) ApplyAirwallexFeeClassification(
@@ -127,6 +175,9 @@ func (r *DBRepository) ApplyAirwallexFeeClassification(
 	}
 	pair, err := r.resolveAirwallexFeeCategories(ctx, policy)
 	if err != nil {
+		return false, err
+	}
+	if err := r.publishAirwallexFeeClassificationBinding(ctx, pair, policy.PolicyVersion); err != nil {
 		return false, err
 	}
 	var updated int64
@@ -162,6 +213,18 @@ func (r *DBRepository) EnqueueAirwallexFeeClassificationBackfill(
 	if limit <= 0 || limit > 1000 || taskSLA <= 0 {
 		return 0, fmt.Errorf("invalid Airwallex fee classification backfill bounds")
 	}
+	if strings.TrimSpace(policy.Level1Code) != "" && strings.TrimSpace(policy.Level2Code) != "" {
+		pair, err := r.resolveAirwallexFeeCategories(ctx, policy)
+		if err != nil && !errors.Is(err, errAirwallexFeeCategoryUnavailable) {
+			return 0, err
+		}
+		if err == nil {
+			if err := r.publishAirwallexFeeClassificationBinding(ctx, pair, policy.PolicyVersion); err != nil {
+				return 0, err
+			}
+		}
+	}
+
 	rows, err := r.db.QueryContext(ctx, listAirwallexFeesNeedingClassificationSQL, policy.PolicyVersion, limit)
 	if err != nil {
 		return 0, fmt.Errorf("list Airwallex fees needing classification: %w", err)

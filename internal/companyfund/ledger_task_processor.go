@@ -70,12 +70,25 @@ WITH locked AS (
 ), updated AS (
 	UPDATE company_fund_transactions transaction
 	SET conversion_group_status = 'COMPLETE',
+		conversion_pair_transaction_id = (
+			SELECT peer.id
+			FROM locked peer
+			WHERE peer.id <> transaction.id
+		),
 		updated_at = clock_timestamp()
 	FROM validated
 	WHERE transaction.id IN (SELECT id FROM locked)
 	  AND validated.total = 2
 	  AND validated.sell_count = 1
 	  AND validated.buy_count = 1
+	  AND (
+		transaction.conversion_pair_transaction_id IS NULL
+		OR transaction.conversion_pair_transaction_id = (
+			SELECT peer.id
+			FROM locked peer
+			WHERE peer.id <> transaction.id
+		)
+	  )
 	RETURNING transaction.id
 )
 SELECT COUNT(*) FROM updated`

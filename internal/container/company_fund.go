@@ -40,6 +40,8 @@ const (
 	defaultCompanyFundAirwallexLedgerRetryDelay       = time.Minute
 	defaultCompanyFundAirwallexLedgerTaskSLA          = 7 * 24 * time.Hour
 	defaultCompanyFundAirwallexLedgerMaintenanceBatch = 100
+	defaultCompanyFundAccountLifecycleLeaseDuration   = time.Minute
+	defaultCompanyFundAccountLifecycleRetryDelay      = 5 * time.Second
 	defaultCompanyFundCurrentRateRefreshInterval      = 5 * time.Minute
 	defaultCompanyFundCurrentRateCacheTTL             = 10 * time.Minute
 	defaultCompanyFundCurrentRateCacheMaxAge          = 60 * time.Minute
@@ -76,6 +78,11 @@ type companyFundRuntimeConfig struct {
 	EventRenewInterval            time.Duration
 	EventRetryInitial             time.Duration
 	EventRetryMax                 time.Duration
+	AccountLifecyclePollInterval  time.Duration
+	AccountLifecycleMaxIdle       time.Duration
+	AccountLifecycleLeaseOwner    string
+	AccountLifecycleLease         time.Duration
+	AccountLifecycleRetryDelay    time.Duration
 	ReconciliationPoll            time.Duration
 	ReconciliationZone            string
 	ReconciliationTime            string
@@ -154,6 +161,11 @@ func companyFundRuntimeConfigFromViper() companyFundRuntimeConfig {
 		EventRenewInterval:                      viper.GetDuration("COMPANY_FUND_EVENT_LEASE_RENEW_INTERVAL"),
 		EventRetryInitial:                       viper.GetDuration("COMPANY_FUND_EVENT_RETRY_INITIAL_DELAY"),
 		EventRetryMax:                           viper.GetDuration("COMPANY_FUND_EVENT_RETRY_MAX_DELAY"),
+		AccountLifecyclePollInterval:            viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_POLL_INTERVAL"),
+		AccountLifecycleMaxIdle:                 viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_MAX_IDLE_INTERVAL"),
+		AccountLifecycleLeaseOwner:              viper.GetString("COMPANY_FUND_ACCOUNT_LIFECYCLE_LEASE_OWNER"),
+		AccountLifecycleLease:                   viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_LEASE_DURATION"),
+		AccountLifecycleRetryDelay:              viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_RETRY_DELAY"),
 		ReconciliationPoll:                      viper.GetDuration("COMPANY_FUND_RECONCILIATION_POLL_INTERVAL"),
 		ReconciliationZone:                      viper.GetString("COMPANY_FUND_RECONCILIATION_TIME_ZONE"),
 		ReconciliationTime:                      viper.GetString("COMPANY_FUND_RECONCILIATION_DAILY_TIME"),
@@ -325,33 +337,31 @@ func finalizeCompanyFundRuntime(c *Container) {
 	if airBundle != nil && airBundle.Enabled && airBundle.ProviderEvents != nil {
 		normalizers[companyfund.ChannelAirwallex] = airBundle.ProviderEvents
 	}
+	var worker *companyfund.ProviderEventWorker
+	var err error
 	if len(normalizers) == 0 {
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		log.Printf("company-fund workers disabled: no provider normalizer is configured")
-		return
-	}
-
-	payloadReader, err := companyfund.NewProviderEventSourceBytesReader(
-		companyfund.NewPostgresSafeheronWebhookPayloadReader(c.DB),
-		c.CompanyFundOwnedPayloadService,
-	)
-	if err != nil {
-		log.Printf("company-fund workers disabled: provider event source reader could not be initialized")
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		return
-	}
-	worker, err := companyfund.NewProviderEventWorker(
-		c.CompanyFundRepository,
-		payloadReader,
-		normalizers,
-		companyFundProviderEventWorkerConfig(config, valuator, func() {
-			notifyCompanyFundValuationWork(c)
-		}),
-	)
-	if err != nil {
-		log.Printf("company-fund workers disabled: provider event worker configuration is invalid")
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		return
+		log.Printf("company-fund provider-event worker disabled: no provider normalizer is configured")
+	} else {
+		payloadReader, readerErr := companyfund.NewProviderEventSourceBytesReader(
+			companyfund.NewPostgresSafeheronWebhookPayloadReader(c.DB),
+			c.CompanyFundOwnedPayloadService,
+		)
+		if readerErr != nil {
+			log.Printf("company-fund provider-event worker disabled: source reader could not be initialized")
+		} else {
+			worker, err = companyfund.NewProviderEventWorker(
+				c.CompanyFundRepository,
+				payloadReader,
+				normalizers,
+				companyFundProviderEventWorkerConfig(config, valuator, func() {
+					notifyCompanyFundValuationWork(c)
+				}),
+			)
+			if err != nil {
+				log.Printf("company-fund provider-event worker disabled: configuration is invalid")
+				worker = nil
+			}
+		}
 	}
 
 	reconciliation := newCompanyFundReconciliationRuntime(
@@ -368,6 +378,39 @@ func finalizeCompanyFundRuntime(c *Container) {
 
 	runtimeDependencies := companyfund.CompanyFundRuntimeDependencies{
 		ProviderEventWorker: worker,
+	}
+	lifecycleValidationClient := airwallexClient
+	if lifecycleValidationClient == nil {
+		lifecycleValidationClient, err = newCompanyFundAirwallexClient(config)
+		if err != nil {
+			log.Printf("company-fund Airwallex lifecycle validation disabled: client configuration is invalid")
+			lifecycleValidationClient = nil
+		}
+	}
+	lifecycleWorker, lifecycleErr := companyfund.NewAccountLifecycleCommandWorker(
+		c.CompanyFundRepository,
+		lifecycleValidationClient,
+		c.CompanyFundAccountRegistry,
+		companyfund.AccountLifecycleCommandWorkerConfig{
+			Owner: companyFundLeaseOwner(
+				"company-fund-account-lifecycle",
+				config.AccountLifecycleLeaseOwner,
+			),
+			LeaseDuration: companyFundDurationOrDefault(
+				config.AccountLifecycleLease,
+				defaultCompanyFundAccountLifecycleLeaseDuration,
+			),
+			RetryDelay: companyFundDurationOrDefault(
+				config.AccountLifecycleRetryDelay,
+				defaultCompanyFundAccountLifecycleRetryDelay,
+			),
+		},
+	)
+	if lifecycleErr != nil {
+		log.Printf("company-fund Airwallex account lifecycle worker disabled: configuration is invalid")
+	} else {
+		runtimeDependencies.AccountLifecycleProcessor = lifecycleWorker
+		c.CompanyFundAccountLifecycleWorker = lifecycleWorker
 	}
 	if airBundle != nil && airBundle.Enabled {
 		ledgerProcessor, processorErr := companyfund.NewAirwallexLedgerTaskProcessor(
@@ -418,10 +461,12 @@ func finalizeCompanyFundRuntime(c *Container) {
 		runtimeDependencies.AirwallexReconciler = airwallexReconciler
 	}
 	runtime, err := companyfund.NewCompanyFundRuntime(runtimeDependencies, companyfund.CompanyFundRuntimeConfig{
-		EventPollInterval:          config.EventPollInterval,
-		EventMaxIdleInterval:       config.EventMaxIdleInterval,
-		EventDrainLimit:            config.EventDrainLimit,
-		ReconciliationPollInterval: config.ReconciliationPoll,
+		EventPollInterval:               config.EventPollInterval,
+		EventMaxIdleInterval:            config.EventMaxIdleInterval,
+		EventDrainLimit:                 config.EventDrainLimit,
+		AccountLifecyclePollInterval:    config.AccountLifecyclePollInterval,
+		AccountLifecycleMaxIdleInterval: config.AccountLifecycleMaxIdle,
+		ReconciliationPollInterval:      config.ReconciliationPoll,
 		ReconciliationSchedule: companyfund.ReconciliationDailyScheduleConfig{
 			TimeZone:    config.ReconciliationZone,
 			DailyTime:   config.ReconciliationTime,
@@ -671,14 +716,7 @@ func newCompanyFundAirwallexRuntimeBundle(registry *companyfund.AccountRegistry,
 		log.Printf("company-fund Airwallex runtime disabled: configured account scope is not eligible")
 		return nil, runtimeConfig
 	}
-	if _, eligible := companyfund.ResolveAirwallexSingleAccountScope(registry.Snapshot(), config.AirwallexLoginAs); !eligible {
-		// The official Financial Transactions response has no account ownership
-		// proof. Never enable its worker, REST reconciler, or webhook route
-		// unless one configured account exactly matches x-login-as.
-		log.Printf("company-fund Airwallex runtime disabled: configured account scope is not eligible")
-		return nil, runtimeConfig
-	}
-	bundle, err := companyfund.NewAirwallexFinancialTransactionsScopedRuntimeBundle(runtimeConfig, registry, config.AirwallexLoginAs)
+	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundle(runtimeConfig, registry)
 	if err != nil {
 		log.Printf("company-fund Airwallex runtime disabled: strict mapping configuration is invalid")
 		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}
@@ -825,16 +863,20 @@ func newCompanyFundAirwallexClient(config companyFundRuntimeConfig) (*companyfun
 	if !configured {
 		return nil, nil
 	}
-	if strings.TrimSpace(config.AirwallexClientID) == "" || strings.TrimSpace(config.AirwallexAPIKey) == "" || strings.TrimSpace(config.AirwallexAPIVersion) == "" ||
-		config.AirwallexLoginAs == "" || config.AirwallexLoginAs != strings.TrimSpace(config.AirwallexLoginAs) {
-		return nil, fmt.Errorf("Airwallex client credentials, API version, and exact login scope are required together")
+	if strings.TrimSpace(config.AirwallexClientID) == "" || strings.TrimSpace(config.AirwallexAPIKey) == "" ||
+		strings.TrimSpace(config.AirwallexAPIVersion) == "" ||
+		(config.AirwallexLoginAs != "" && config.AirwallexLoginAs != strings.TrimSpace(config.AirwallexLoginAs)) {
+		return nil, fmt.Errorf("Airwallex client credentials and API version are required together")
 	}
 	return companyfund.NewAirwallexClient(companyfund.AirwallexClientConfig{
 		BaseURL:    config.AirwallexBaseURL,
 		ClientID:   config.AirwallexClientID,
 		APIKey:     config.AirwallexAPIKey,
 		APIVersion: config.AirwallexAPIVersion,
-		LoginAs:    config.AirwallexLoginAs,
+		// Company-fund business requests create a fresh immutable scope from
+		// the database CURRENT account. AIRWALLEX_LOGIN_AS is accepted only as
+		// a legacy startup setting and is deliberately not pinned here.
+		LoginAs: "",
 	})
 }
 

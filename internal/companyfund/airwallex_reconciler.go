@@ -26,8 +26,9 @@ func (r *AirwallexFinancialTransactionsReconciler) Reconcile(
 	if strings.TrimSpace(r.client.PinnedAPIVersion()) != r.config.APIVersion {
 		return AirwallexFinancialTransactionsReconcileResult{}, fmt.Errorf("Airwallex financial transactions client API version no longer matches reconciler pin")
 	}
-	if loginAsScope := r.client.PinnedLoginAsScope(); loginAsScope != normalizedInput.ProviderAccountKey {
-		return AirwallexFinancialTransactionsReconcileResult{}, fmt.Errorf("Airwallex financial transactions client login scope no longer matches configured company account")
+	scopedClient, err := r.scopedClient(normalizedInput.ProviderAccountKey)
+	if err != nil {
+		return AirwallexFinancialTransactionsReconcileResult{}, err
 	}
 
 	runInput := airwallexFinancialTransactionsSyncRunInput(normalizedInput, r.config.PageSize)
@@ -53,7 +54,7 @@ func (r *AirwallexFinancialTransactionsReconciler) Reconcile(
 		if pageNum > maxAirwallexFinancialTransactionPageNumber {
 			return result, fmt.Errorf("Airwallex financial transactions checkpoint page exceeds provider bound")
 		}
-		page, err := r.client.ListFinancialTransactions(ctx, AirwallexFinancialTransactionsRequest{
+		page, err := scopedClient.ListFinancialTransactions(ctx, AirwallexFinancialTransactionsRequest{
 			FromCreatedAt: normalizedInput.WindowStart,
 			ToCreatedAt:   normalizedInput.WindowEnd,
 			PageNum:       pageNum,
@@ -136,10 +137,6 @@ func (r *AirwallexFinancialTransactionsReconciler) validateInput(input Airwallex
 	providedAccountKey, err := normalizeAirwallexReconcilerAccountKey(input.ProviderAccountKey)
 	if err != nil || configuredAccountKey != providedAccountKey {
 		return AirwallexFinancialTransactionsReconcileInput{}, fmt.Errorf("Airwallex reconciliation provider account key does not match configured company account")
-	}
-	loginAsScope, err := normalizeAirwallexReconcilerAccountKey(r.client.PinnedLoginAsScope())
-	if err != nil || loginAsScope != configuredAccountKey {
-		return AirwallexFinancialTransactionsReconcileInput{}, fmt.Errorf("Airwallex reconciliation account is outside the configured login scope")
 	}
 	apiVersion, err := parseAirwallexAPIVersion(input.APIVersion)
 	if err != nil || apiVersion != r.config.APIVersion {

@@ -109,6 +109,32 @@ func (c *AirwallexClient) PinnedLoginAsScope() string {
 	return c.loginAs
 }
 
+// AirwallexFinancialTransactionsClientForScope returns an immutable client
+// whose token cache belongs only to the requested x-login-as account. The
+// credential material and hardened HTTP transport are reused, while tokens
+// never cross account boundaries.
+func (c *AirwallexClient) AirwallexFinancialTransactionsClientForScope(
+	providerAccountKey string,
+) (AirwallexFinancialTransactionsClient, error) {
+	if c == nil || c.baseURL == nil || c.httpClient == nil || c.now == nil {
+		return nil, fmt.Errorf("airwallex client is not configured")
+	}
+	scope, err := normalizeAirwallexReconcilerAccountKey(providerAccountKey)
+	if err != nil {
+		return nil, err
+	}
+	return &AirwallexClient{
+		baseURL:    c.baseURL,
+		clientID:   c.clientID,
+		apiKey:     c.apiKey,
+		apiVersion: c.apiVersion,
+		loginAs:    scope,
+		httpClient: c.httpClient,
+		now:        c.now,
+		skew:       c.skew,
+	}, nil
+}
+
 func airwallexHTTPClientWithoutRedirects(source *http.Client) *http.Client {
 	clone := *source
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error {

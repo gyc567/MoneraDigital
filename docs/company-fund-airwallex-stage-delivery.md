@@ -19,7 +19,11 @@
 | 映射规则 | 严格 JSON `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG` | exact account/type/source/currency/status；复杂类型还必须有 evidence-pinned relationship |
 | Phase 2 task | PostgreSQL durable lease/retry/SLA | 关系未到时只存 fact/task；关系满足后才登记 movement |
 
-单账户 fail-closed：`AIRWALLEX_LOGIN_AS` 必须等于唯一一条 enabled `AIRWALLEX` 账户的 `provider_account_key`。多账户 / 空白 / 不匹配 → REST 与 webhook 同时关闭。
+单账户 fail-closed：共享数据库中必须恰好有一条 `CURRENT`（即 enabled）
+`AIRWALLEX` 账户。REST 每次调用从 Account Registry 取得该账户并创建独立
+`x-login-as` scope；切换或纠错命令完成并刷新 Registry 后，无需修改环境变量或
+重启服务。`AIRWALLEX_LOGIN_AS` 仅保留为旧部署兼容项，不再决定 Company Fund
+采集账户。
 
 ## 2. 本地交付门禁（开发机）
 
@@ -85,7 +89,8 @@ COMPANY_FUND_PAYLOAD_LEGAL_HOLD=false
 AIRWALLEX_BASE_URL=https://api.sandbox.airwallex.com
 AIRWALLEX_CLIENT_ID=<stage>
 AIRWALLEX_API_KEY=<stage>
-AIRWALLEX_LOGIN_AS=<exact provider_account_key>
+# 旧部署兼容项；新账户范围由数据库 CURRENT 状态决定
+AIRWALLEX_LOGIN_AS=
 AIRWALLEX_API_VERSION=2026-07-17
 
 AIRWALLEX_WEBHOOK_VERSION=event-v1
@@ -127,7 +132,7 @@ AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG={"enabled":true,"api_version":"2
 SELECT id, channel, is_enabled, provider_account_key
 FROM company_fund_accounts
 WHERE channel = 'AIRWALLEX';
--- 期望：恰好 1 行 enabled=true，provider_account_key = AIRWALLEX_LOGIN_AS
+-- 期望：恰好 1 行 enabled=true 且 lifecycle=CURRENT
 ```
 
 2. **Airwallex Console（sandbox 或 stage 对应环境）**
