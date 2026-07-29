@@ -178,7 +178,9 @@ SELECT
   + (SELECT count(*) FROM company_fund_ledger_tasks
     WHERE channel = 'AIRWALLEX' AND provider_account_key = $2)
   + (SELECT count(*) FROM company_fund_account_lifecycle_commands
-    WHERE id <> $3 AND (target_account_id = $1 OR related_account_id = $1))`
+    WHERE id <> $3
+      AND status IN ('PENDING', 'PROCESSING')
+      AND (target_account_id = $1 OR related_account_id = $1))`
 
 const deleteAirwallexCandidateSQL = `
 UPDATE company_fund_accounts

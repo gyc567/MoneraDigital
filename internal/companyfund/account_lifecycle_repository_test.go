@@ -152,6 +152,7 @@ func TestAccountLifecycleCorrectionAndDeletionReferenceManifestsAreComplete(t *t
 		"company_fund_provider_transaction_facts",
 		"company_fund_transactions",
 		"company_fund_ledger_tasks",
+		"status IN ('PENDING', 'PROCESSING')",
 	} {
 		if !strings.Contains(countAirwallexCandidateReferencesSQL, reference) {
 			t.Errorf("deletion reference check omits %s", reference)
