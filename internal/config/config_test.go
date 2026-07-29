@@ -58,3 +58,20 @@ func TestLoad_MissingDotEnvNoPanic(t *testing.T) {
 		t.Errorf("missing .env should fall through to shell env, got DatabaseURL=%s", cfg.DatabaseURL)
 	}
 }
+
+func TestLoad_UsesAppEnvAsTheOnlyApplicationEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	os.Chdir(dir)
+
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("ENV", "production")
+	t.Setenv("GO_ENV", "production")
+	t.Setenv("GIN_MODE", "release")
+
+	cfg := Load()
+	if cfg.AppEnv != "test" {
+		t.Errorf("application environment = %q, want APP_ENV value %q", cfg.AppEnv, "test")
+	}
+}

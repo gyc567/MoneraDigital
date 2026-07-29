@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	AppEnv                          string
 	Port                            string
 	DatabaseURL                     string
 	RedisURL                        string
@@ -43,6 +44,7 @@ func Load() *Config {
 
 	// Use PORT from environment, default to 80 for Cloud Run compatibility
 	viper.SetDefault("PORT", "80")
+	viper.SetDefault("APP_ENV", "local")
 	viper.SetDefault("DATABASE_URL", "postgres://user:password@localhost/monera?sslmode=disable")
 	viper.SetDefault("REDIS_URL", "redis://localhost:6379")
 	viper.SetDefault("JWT_SECRET", "your-secret-key")
@@ -51,6 +53,7 @@ func Load() *Config {
 	viper.AutomaticEnv()
 
 	cfg := &Config{
+		AppEnv:                          viper.GetString("APP_ENV"),
 		Port:                            viper.GetString("PORT"),
 		DatabaseURL:                     viper.GetString("DATABASE_URL"),
 		RedisURL:                        viper.GetString("REDIS_URL"),
