@@ -645,7 +645,7 @@ func TestUpsertCompanyFundTransaction_EqualPriorityConflictingAssetQuarantinesWi
 
 func TestProtectedTransactionUpsertSQLContracts(t *testing.T) {
 	for _, contract := range []string{
-		"ON CONFLICT (movement_key) DO NOTHING",
+		"ON CONFLICT DO NOTHING",
 		"COALESCE($",
 		"provider_status",
 		"status_rank",

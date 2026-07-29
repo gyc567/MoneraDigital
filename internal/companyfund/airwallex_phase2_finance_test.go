@@ -24,6 +24,9 @@ func TestApplyAirwallexFeeClassification_UsesCodesAndPreservesManualOwnership(t 
 	mock.ExpectQuery(regexp.QuoteMeta(resolveAirwallexFeeCategoriesSQL)).
 		WithArgs(policy.Level1Code, policy.Level2Code).
 		WillReturnRows(sqlmock.NewRows([]string{"level1_id", "level2_id"}).AddRow(11, 22))
+	mock.ExpectExec(regexp.QuoteMeta(publishAirwallexFeeClassificationBindingSQL)).
+		WithArgs(int64(11), int64(22), policy.PolicyVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(regexp.QuoteMeta(applyAirwallexFeeClassificationSQL)).
 		WithArgs(int64(71), int64(11), int64(22), policy.PolicyVersion).
 		WillReturnError(sql.ErrNoRows)

@@ -141,6 +141,12 @@ func TestCompanyFundRuntime_DefaultsEventMaxIdleToTenMinutes(t *testing.T) {
 	if runtime.config.EventPollInterval != time.Second {
 		t.Fatalf("EventPollInterval = %s, want 1s", runtime.config.EventPollInterval)
 	}
+	if runtime.config.AccountLifecyclePollInterval != time.Second ||
+		runtime.config.AccountLifecycleMaxIdleInterval != 10*time.Minute {
+		t.Fatalf("account lifecycle idle range = %s..%s, want 1s..10m",
+			runtime.config.AccountLifecyclePollInterval,
+			runtime.config.AccountLifecycleMaxIdleInterval)
+	}
 }
 
 func TestCompanyFundRuntime_ProviderEventCyclePublishesDurableRetryDue(t *testing.T) {
@@ -211,6 +217,51 @@ func TestCompanyFundRuntime_NotifyProviderEventIsNoopWithoutWorker(t *testing.T)
 type companyFundRuntimeLedgerTaskProcessorStub struct {
 	due      time.Time
 	dueCalls int
+}
+
+type companyFundRuntimeAccountLifecycleProcessorStub struct {
+	results  []AccountLifecycleProcessResult
+	due      time.Time
+	calls    int
+	dueCalls int
+}
+
+func (stub *companyFundRuntimeAccountLifecycleProcessorStub) ProcessNext(context.Context) (AccountLifecycleProcessResult, error) {
+	stub.calls++
+	if len(stub.results) == 0 {
+		return AccountLifecycleProcessResult{Outcome: AccountLifecycleProcessIdle}, nil
+	}
+	result := stub.results[0]
+	stub.results = stub.results[1:]
+	return result, nil
+}
+
+func (stub *companyFundRuntimeAccountLifecycleProcessorStub) NextAccountLifecycleCommandDue(context.Context) (time.Time, error) {
+	stub.dueCalls++
+	return stub.due, nil
+}
+
+func TestCompanyFundRuntime_AccountLifecycleCycleDrainsAndPublishesDue(t *testing.T) {
+	due := time.Now().Add(40 * time.Second).Round(time.Microsecond)
+	processor := &companyFundRuntimeAccountLifecycleProcessorStub{
+		results: []AccountLifecycleProcessResult{
+			{Outcome: AccountLifecycleProcessSucceeded, CommandID: 1},
+			{Outcome: AccountLifecycleProcessIdle},
+		},
+		due: due,
+	}
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{
+		AccountLifecycleProcessor: processor,
+	}, CompanyFundRuntimeConfig{EventDrainLimit: 10})
+
+	outcome, err := runtime.accountLifecycleCycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.Worked || outcome.MoreWork || !outcome.NextDue.Equal(due) ||
+		processor.calls != 2 || processor.dueCalls != 1 {
+		t.Fatalf("outcome=%#v calls=%d dueCalls=%d", outcome, processor.calls, processor.dueCalls)
+	}
 }
 
 func (*companyFundRuntimeLedgerTaskProcessorStub) ProcessNext(context.Context) (LedgerTaskProcessResult, error) {
@@ -576,6 +627,49 @@ func TestCompanyFundRuntime_AirwallexWebhookWakeReconcilesOnlyTheOneScopedAccoun
 	}
 	if runtime.NotifyAirwallexWebhook() {
 		t.Fatal("webhook wake must fail closed after registry becomes multi-account")
+	}
+}
+
+func TestCompanyFundRuntime_DynamicAirwallexScopeFollowsRefreshedCurrentAccount(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
+	airwallex := &companyFundRuntimeAirwallexReconcilerStub{
+		contract: AirwallexFinancialTransactionsReconciliationContract{
+			APIVersion:    airwallexTestAPIVersion,
+			SchemaVersion: "schema-v1",
+			EventVersion:  "event-v1",
+		},
+	}
+	snapshots := companyFundRuntimeSnapshotSource(t, []CompanyFundAccount{{
+		ID: 22, Channel: AccountChannelAirwallex,
+		ProviderAccountKey: "awx-old", Enabled: true,
+	}})
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{
+		AccountSnapshots:    &snapshots,
+		AirwallexReconciler: airwallex,
+		SyncRunFinalizer:    &companyFundRuntimeFinalizerStub{},
+	}, CompanyFundRuntimeConfig{
+		AirwallexWebhookLookback: time.Hour,
+		Now:                      nowFunc(now),
+	})
+
+	if _, err := runtime.ReconcileAirwallexWebhookWindow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	switched, err := buildAccountRegistrySnapshot([]CompanyFundAccount{{
+		ID: 23, Channel: AccountChannelAirwallex,
+		ProviderAccountKey: "awx-new", Enabled: true,
+	}}, nil, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshots.snapshot = switched
+	if _, err := runtime.ReconcileAirwallexWebhookWindow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(airwallex.inputs) != 2 ||
+		airwallex.inputs[0].ProviderAccountKey != "awx-old" ||
+		airwallex.inputs[1].ProviderAccountKey != "awx-new" {
+		t.Fatalf("dynamic reconciliation inputs = %#v", airwallex.inputs)
 	}
 }
 

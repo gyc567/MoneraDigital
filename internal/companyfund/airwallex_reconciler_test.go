@@ -211,6 +211,36 @@ func TestAirwallexFinancialTransactionsReconciler_RequiresExactSingleClientLogin
 	}
 }
 
+func TestAirwallexFinancialTransactionsReconciler_UsesFreshRequestedScopeFromFactory(t *testing.T) {
+	scoped := &airwallexFinancialTransactionsClientStub{
+		apiVersion:   airwallexTestAPIVersion,
+		loginAsScope: "awx-main",
+		pages:        map[int]AirwallexFinancialTransactionsPage{0: {}},
+	}
+	factory := &airwallexFinancialTransactionsClientFactoryStub{
+		apiVersion: airwallexTestAPIVersion,
+		clients:    map[string]AirwallexFinancialTransactionsClient{"awx-main": scoped},
+	}
+	ingester := &airwallexOwnedEventIngestorStub{}
+	syncRuns := &airwallexFinancialTransactionsSyncRunStoreStub{
+		run: AirwallexFinancialTransactionsSyncRun{ID: 100},
+	}
+	reconciler := newAirwallexFinancialTransactionsReconcilerForTest(t, factory, ingester, syncRuns)
+
+	if _, err := reconciler.Reconcile(
+		context.Background(),
+		validAirwallexFinancialTransactionsReconcileInput(),
+	); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if len(factory.requestedScopes) != 1 || factory.requestedScopes[0] != "awx-main" {
+		t.Fatalf("requested scopes = %#v, want current account scope", factory.requestedScopes)
+	}
+	if len(scoped.requests) != 1 {
+		t.Fatalf("scoped client requests = %d, want one", len(scoped.requests))
+	}
+}
+
 func TestAirwallexFinancialTransactionsReconciler_UsesIndependentLateStatusSyncKeyOverride(t *testing.T) {
 	client := &airwallexFinancialTransactionsClientStub{
 		apiVersion:   airwallexTestAPIVersion,
@@ -310,13 +340,13 @@ func TestAirwallexFinancialTransactionsReconciler_RejectsOversizedProviderPageAn
 
 func newAirwallexFinancialTransactionsReconcilerForTest(
 	t *testing.T,
-	client *airwallexFinancialTransactionsClientStub,
+	client AirwallexFinancialTransactionsClient,
 	ingester *airwallexOwnedEventIngestorStub,
 	syncRuns *airwallexFinancialTransactionsSyncRunStoreStub,
 ) *AirwallexFinancialTransactionsReconciler {
 	t.Helper()
-	if client.loginAsScope == "" {
-		client.loginAsScope = "awx-main"
+	if stub, ok := client.(*airwallexFinancialTransactionsClientStub); ok && stub.loginAsScope == "" {
+		stub.loginAsScope = "awx-main"
 	}
 	reconciler, err := NewAirwallexFinancialTransactionsReconciler(client, ingester, syncRuns, AirwallexFinancialTransactionsReconcilerConfig{
 		APIVersion:        airwallexTestAPIVersion,
@@ -364,6 +394,38 @@ type airwallexFinancialTransactionsClientStub struct {
 	pages        map[int]AirwallexFinancialTransactionsPage
 	errs         map[int]error
 	requests     []AirwallexFinancialTransactionsRequest
+}
+
+type airwallexFinancialTransactionsClientFactoryStub struct {
+	apiVersion      string
+	clients         map[string]AirwallexFinancialTransactionsClient
+	requestedScopes []string
+}
+
+func (stub *airwallexFinancialTransactionsClientFactoryStub) PinnedAPIVersion() string {
+	return stub.apiVersion
+}
+
+func (stub *airwallexFinancialTransactionsClientFactoryStub) PinnedLoginAsScope() string {
+	return ""
+}
+
+func (stub *airwallexFinancialTransactionsClientFactoryStub) ListFinancialTransactions(
+	context.Context,
+	AirwallexFinancialTransactionsRequest,
+) (AirwallexFinancialTransactionsPage, error) {
+	return AirwallexFinancialTransactionsPage{}, errors.New("unscoped factory client must not perform business requests")
+}
+
+func (stub *airwallexFinancialTransactionsClientFactoryStub) AirwallexFinancialTransactionsClientForScope(
+	providerAccountKey string,
+) (AirwallexFinancialTransactionsClient, error) {
+	stub.requestedScopes = append(stub.requestedScopes, providerAccountKey)
+	client := stub.clients[providerAccountKey]
+	if client == nil {
+		return nil, errors.New("unknown Airwallex account scope")
+	}
+	return client, nil
 }
 
 func (stub *airwallexFinancialTransactionsClientStub) PinnedAPIVersion() string {

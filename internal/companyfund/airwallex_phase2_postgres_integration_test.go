@@ -546,7 +546,7 @@ WHERE task_kind = 'CONVERSION_PAIR' AND task_state = 'WAITING'`); err != nil {
 			}
 
 			rows, err := db.QueryContext(ctx, `
-SELECT id, conversion_leg
+SELECT id, conversion_pair_transaction_id, conversion_leg
 FROM company_fund_transactions
 WHERE conversion_group_key = $1
   AND conversion_group_status = 'COMPLETE'
@@ -560,14 +560,17 @@ ORDER BY conversion_leg`, groupKey, source.accountID)
 			}
 			defer rows.Close()
 			transactionIDs := make(map[int64]struct{}, 2)
+			transactionPairs := make(map[int64]int64, 2)
 			legs := make([]ConversionLeg, 0, 2)
 			for rows.Next() {
 				var transactionID int64
+				var pairTransactionID int64
 				var leg ConversionLeg
-				if err := rows.Scan(&transactionID, &leg); err != nil {
+				if err := rows.Scan(&transactionID, &pairTransactionID, &leg); err != nil {
 					t.Fatalf("scan completed conversion: %v", err)
 				}
 				transactionIDs[transactionID] = struct{}{}
+				transactionPairs[transactionID] = pairTransactionID
 				legs = append(legs, leg)
 			}
 			if err := rows.Err(); err != nil {
@@ -576,6 +579,15 @@ ORDER BY conversion_leg`, groupKey, source.accountID)
 			if len(transactionIDs) != 2 || len(legs) != 2 ||
 				legs[0] != ConversionLegBuy || legs[1] != ConversionLegSell {
 				t.Fatalf("completed conversion IDs=%v legs=%v", transactionIDs, legs)
+			}
+			for transactionID, pairTransactionID := range transactionPairs {
+				if pairTransactionID == transactionID {
+					t.Fatalf("conversion %d points to itself", transactionID)
+				}
+				if _, exists := transactionIDs[pairTransactionID]; !exists ||
+					transactionPairs[pairTransactionID] != transactionID {
+					t.Fatalf("conversion pair links are not reciprocal: %#v", transactionPairs)
+				}
 			}
 
 			defaultDetails, err := repository.ListFinanceTransactionDetails(ctx, FinanceTransactionDetailRequest{
@@ -1046,10 +1058,14 @@ func newAirwallexPhase2PostgresFixture(t *testing.T, databaseURL string) *sql.DB
 	for _, table := range []string{
 		"finance_categories",
 		"company_fund_accounts",
+		"company_fund_account_asset_policies",
 		"company_fund_provider_events",
 		"company_fund_provider_transaction_facts",
 		"company_fund_transactions",
 		"company_fund_ledger_tasks",
+		"company_fund_classification_policy_bindings",
+		"company_fund_account_lifecycle_commands",
+		"company_fund_account_lifecycle_audits",
 		"safeheron_transaction_routing_cases",
 		"safeheron_transaction_routing_case_commands",
 		"safeheron_transaction_routing_case_actions",
@@ -1075,10 +1091,13 @@ func newAirwallexPhase2PostgresFixture(t *testing.T, databaseURL string) *sql.DB
 	for _, table := range []string{
 		"finance_categories",
 		"company_fund_accounts",
+		"company_fund_account_asset_policies",
 		"company_fund_provider_events",
 		"company_fund_provider_transaction_facts",
 		"company_fund_transactions",
 		"company_fund_ledger_tasks",
+		"company_fund_account_lifecycle_commands",
+		"company_fund_account_lifecycle_audits",
 	} {
 		sequence := table + "_phase2_id_seq"
 		if _, err := admin.ExecContext(context.Background(),

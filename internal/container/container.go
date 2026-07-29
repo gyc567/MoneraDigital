@@ -315,6 +315,7 @@ type Container struct {
 	CompanyFundAccountRegistry         *companyfund.AccountRegistry
 	CompanyFundOwnedPayloadService     *companyfund.OwnedProviderPayloadService
 	CompanyFundProviderEventWorker     *companyfund.ProviderEventWorker
+	CompanyFundAccountLifecycleWorker  *companyfund.AccountLifecycleCommandWorker
 	CompanyFundRuntime                 *companyfund.CompanyFundRuntime
 	CompanyFundSafeheronNormalizer     *companyfund.SafeheronProviderEventNormalizer
 	CompanyFundSafeheronCoinCatalog    *companyfund.SafeheronCoinCatalog

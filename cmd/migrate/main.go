@@ -34,7 +34,7 @@ import (
 
 var version = "dev"
 
-var artifactMigrationReleaseSequence = []string{"061", "062"}
+var artifactMigrationReleaseSequence = []string{"063"}
 
 type migrationDescriptor struct {
 	version          string
@@ -77,6 +77,11 @@ var migrationRegistry = []migrationDescriptor{
 	{version: "060", predecessor: "059", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AddManualTransactionVoidColumns{} }},
 	{version: "061", predecessor: "060", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.CreateWithdrawalsTable{} }},
 	{version: "062", predecessor: "061", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AddAirwallexPhase2Ledger{} }},
+	{version: "063", predecessor: "062", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddAirwallexAccountLifecycle{
+			LegacyMappingJSON: os.Getenv("AIRWALLEX_LEGACY_LIFECYCLE_MAPPING_JSON"),
+		}
+	}},
 }
 
 const controlledCommitOutcomeIndeterminateExitCode = 75
