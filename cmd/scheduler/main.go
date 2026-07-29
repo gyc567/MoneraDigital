@@ -40,25 +40,13 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
-	env := os.Getenv("ENV")
-	if env == "" {
-		env = os.Getenv("GO_ENV")
-	}
-	if env == "" {
-		if os.Getenv("GIN_MODE") == "release" {
-			env = "production"
-		} else {
-			env = "development"
-		}
-	}
-
-	if err := logger.Init(env); err != nil {
+	if err := logger.Init(cfg.AppEnv); err != nil {
 		log.Fatal("Failed to initialize logger: ", err)
 	}
 	defer logger.GetLogger().Sync()
 
 	logger.Info("Starting Monera Digital Interest Scheduler",
-		"environment", env)
+		"environment", cfg.AppEnv)
 
 	database, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {

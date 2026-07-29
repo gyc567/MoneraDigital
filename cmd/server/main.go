@@ -39,20 +39,8 @@ func main() {
 		panic(err)
 	}
 
-	// Initialize logger - use ENV variable for proper environment detection
-	env := os.Getenv("ENV")
-	if env == "" {
-		env = os.Getenv("GO_ENV")
-	}
-	if env == "" {
-		// Default to production if GIN_MODE is release
-		if os.Getenv("GIN_MODE") == "release" {
-			env = "production"
-		} else {
-			env = "development"
-		}
-	}
-	if err := logger.Init(env); err != nil {
+	// APP_ENV is the single source of truth for application environment.
+	if err := logger.Init(cfg.AppEnv); err != nil {
 		panic("Failed to initialize logger: " + err.Error())
 	}
 	defer logger.GetLogger().Sync()
@@ -60,7 +48,7 @@ func main() {
 	// Log startup
 	logger.Info("Starting Monera Digital API server",
 		"port", cfg.Port,
-		"environment", env,
+		"environment", cfg.AppEnv,
 		"version", version,
 		"safeheron_transaction_routing_mode", routingMode)
 
