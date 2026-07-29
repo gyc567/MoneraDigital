@@ -265,6 +265,87 @@ INSERT INTO company_fund_account_lifecycle_commands (
 	}
 }
 
+func TestAirwallexCandidateDeletionIgnoresTerminalLifecycleHistoryPostgresIntegration(t *testing.T) {
+	if os.Getenv(airwallexPhase2PostgresGate) != "1" {
+		t.Skip("set RUN_COMPANY_FUND_AIRWALLEX_PHASE2_INTEGRATION=1 to run PostgreSQL lifecycle coverage")
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		t.Fatal("DATABASE_URL is required when Airwallex lifecycle integration coverage is enabled")
+	}
+	db := newAirwallexPhase2PostgresFixture(t, databaseURL)
+	ctx := context.Background()
+	for _, table := range []string{
+		"company_fund_account_lifecycle_audits",
+		"company_fund_account_lifecycle_commands",
+		"company_fund_accounts",
+	} {
+		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			t.Fatalf("clear %s: %v", table, err)
+		}
+	}
+
+	var accountID, lifecycleVersion int64
+	if err := db.QueryRowContext(ctx, `
+INSERT INTO company_fund_accounts (
+  channel, provider_account_key, account_name, is_enabled,
+  monitoring_started_at, airwallex_lifecycle
+) VALUES (
+  'AIRWALLEX', 'awx-delete-failed-candidate', 'Failed candidate', false,
+  clock_timestamp(), 'CANDIDATE'
+)
+RETURNING id, lifecycle_version`).Scan(&accountID, &lifecycleVersion); err != nil {
+		t.Fatalf("insert deletion candidate: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO company_fund_account_lifecycle_commands (
+  command_type, target_account_id, requested_by, reason,
+  idempotency_key, expected_target_version, status,
+  error_code, error_message, completed_at
+) VALUES (
+  'VALIDATE_CANDIDATE', $1, 'integration@example.com',
+  'invalid provider identity',
+  'lifecycle-delete-terminal-history', $2, 'FAILED',
+  'PROVIDER_VALIDATION_FAILED', 'validation failed', clock_timestamp()
+)`, accountID, lifecycleVersion); err != nil {
+		t.Fatalf("insert terminal validation history: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO company_fund_account_lifecycle_commands (
+  command_type, target_account_id, requested_by, reason,
+  idempotency_key, expected_target_version
+) VALUES (
+  'DELETE_CANDIDATE', $1, 'integration@example.com',
+  'remove invalid unreferenced candidate',
+  'lifecycle-delete-after-failed-validation', $2
+)`, accountID, lifecycleVersion); err != nil {
+		t.Fatalf("insert deletion command: %v", err)
+	}
+
+	worker := newAccountLifecycleWorkerForTest(
+		t,
+		NewDBRepository(db),
+		&fakeAirwallexAccountIdentityValidator{},
+		&fakeAccountRegistryRefresher{},
+	)
+	result, err := worker.ProcessNext(ctx)
+	if err != nil || result.Outcome != AccountLifecycleProcessSucceeded {
+		t.Fatalf("process candidate deletion = %#v, %v", result, err)
+	}
+
+	var lifecycle string
+	var deleted bool
+	if err := db.QueryRowContext(ctx, `
+SELECT airwallex_lifecycle, deleted_at IS NOT NULL
+FROM company_fund_accounts
+WHERE id = $1`, accountID).Scan(&lifecycle, &deleted); err != nil {
+		t.Fatal(err)
+	}
+	if lifecycle != "DELETED" || !deleted {
+		t.Fatalf("candidate lifecycle=%s deleted=%t, want DELETED true", lifecycle, deleted)
+	}
+}
+
 func TestAirwallexTransientValidationRetryPostgresIntegration(t *testing.T) {
 	if os.Getenv(airwallexPhase2PostgresGate) != "1" {
 		t.Skip("set RUN_COMPANY_FUND_AIRWALLEX_PHASE2_INTEGRATION=1 to run PostgreSQL lifecycle coverage")
