@@ -51,15 +51,16 @@ func NewPermanentProviderEventError(cause error) error {
 // empty result without that explicit marker is a permanent parser contract
 // violation rather than a silently dropped delivery.
 type ProviderEventNormalizationResult struct {
-	Facts        []ProviderEventNormalizedFact
-	Movements    []TransactionUpsertInput
-	FactBindings []ProviderEventMovementFactBinding
-	Ignored      bool
+	Facts             []ProviderEventNormalizedFact
+	Movements         []TransactionUpsertInput
+	FactBindings      []ProviderEventMovementFactBinding
+	DeferredMovements []ProviderEventDeferredMovement
+	Ignored           bool
 }
 
 func (result ProviderEventNormalizationResult) validate() error {
-	if result.Ignored && (len(result.Facts) != 0 || len(result.Movements) != 0 || len(result.FactBindings) != 0) {
-		return NewPermanentProviderEventError(fmt.Errorf("ignored provider event cannot contain facts, movements, or fact bindings"))
+	if result.Ignored && (len(result.Facts) != 0 || len(result.Movements) != 0 || len(result.FactBindings) != 0 || len(result.DeferredMovements) != 0) {
+		return NewPermanentProviderEventError(fmt.Errorf("ignored provider event cannot contain facts, movements, fact bindings, or deferred movements"))
 	}
 	if !result.Ignored && len(result.Facts) == 0 && len(result.Movements) == 0 {
 		return NewPermanentProviderEventError(fmt.Errorf("provider event normalizer returned no facts or movements without marking the event ignored"))
@@ -106,6 +107,20 @@ func (result ProviderEventNormalizationResult) validate() error {
 		}
 		boundMovements[binding.MovementKey] = struct{}{}
 	}
+	deferredMovements := make(map[string]struct{}, len(result.DeferredMovements))
+	for _, deferred := range result.DeferredMovements {
+		if err := deferred.validate(factsByReference); err != nil {
+			return err
+		}
+		key := deferred.Task.Proposal.MovementKey
+		if _, found := movementsByKey[key]; found {
+			return NewPermanentProviderEventError(fmt.Errorf("movement %q cannot be both immediate and deferred", key))
+		}
+		if _, found := deferredMovements[key]; found {
+			return NewPermanentProviderEventError(fmt.Errorf("duplicate deferred movement key %q", key))
+		}
+		deferredMovements[key] = struct{}{}
+	}
 	return nil
 }
 
@@ -150,6 +165,7 @@ type ProviderEventWorkerRepository interface {
 	RenewProviderEventLease(ctx context.Context, eventID int64, owner string, leaseDuration time.Duration) (time.Time, error)
 	FinalizeProviderEvent(ctx context.Context, eventID int64, owner string, outcome ProviderEventFinalizeOutcome, retryAt *time.Time, failureDetail string) error
 	InsertProviderTransactionFact(ctx context.Context, input ProviderTransactionFactInput) (ProviderTransactionFactInsertResult, error)
+	EnqueueCompanyFundLedgerTask(ctx context.Context, input CompanyFundLedgerTaskInput) (CompanyFundLedgerTaskEnqueueResult, error)
 	UpsertCompanyFundTransaction(ctx context.Context, input TransactionUpsertInput) (TransactionUpsertResult, error)
 }
 
@@ -235,6 +251,7 @@ type ProviderEventWorkerResult struct {
 	Claimed       bool
 	EventID       int64
 	FactCount     int
+	TaskCount     int
 	MovementCount int
 	Outcome       ProviderEventFinalizeOutcome
 }

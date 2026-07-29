@@ -519,6 +519,7 @@ type providerEventWorkerRepositoryStub struct {
 	finalizeErr      error
 	renewCalls       int
 	facts            []ProviderTransactionFactInput
+	tasks            []CompanyFundLedgerTaskInput
 	upserts          []TransactionUpsertInput
 	finalizations    []providerEventFinalizationCall
 }
@@ -563,6 +564,11 @@ func (s *providerEventWorkerRepositoryStub) InsertProviderTransactionFact(_ cont
 		id = configuredID
 	}
 	return ProviderTransactionFactInsertResult{Fact: ProviderTransactionFact{ID: id}, Inserted: true}, nil
+}
+
+func (s *providerEventWorkerRepositoryStub) EnqueueCompanyFundLedgerTask(_ context.Context, input CompanyFundLedgerTaskInput) (CompanyFundLedgerTaskEnqueueResult, error) {
+	s.tasks = append(s.tasks, input)
+	return CompanyFundLedgerTaskEnqueueResult{ID: int64(len(s.tasks)), Inserted: true}, nil
 }
 
 func (s *providerEventWorkerRepositoryStub) FinalizeProviderEvent(_ context.Context, eventID int64, owner string, outcome ProviderEventFinalizeOutcome, retryAt *time.Time, failureDetail string) error {

@@ -196,34 +196,42 @@ type FinanceTransactionDetail struct {
 	// TransferMode distinguishes provider-normal single transfers from batches.
 	// DirectionInternalTransfer remains the authoritative internal-transfer
 	// marker, so the finance API does not invent a redundant stored type.
-	TransferMode              TransferMode `json:"transferMode"`
-	MovementKind              MovementKind `json:"movementKind"`
-	IsOperatingIncomeExpense  *bool        `json:"isOperatingIncomeExpense,omitempty"`
-	FinanceCategoryLevel1ID   *int64       `json:"financeCategoryLevel1Id,omitempty"`
-	FinanceCategoryLevel1Code string       `json:"financeCategoryLevel1Code"`
-	FinanceCategoryLevel1Name string       `json:"financeCategoryLevel1Name"`
-	FinanceCategoryLevel2ID   *int64       `json:"financeCategoryLevel2Id,omitempty"`
-	FinanceCategoryLevel2Code string       `json:"financeCategoryLevel2Code"`
-	FinanceCategoryLevel2Name string       `json:"financeCategoryLevel2Name"`
-	Currency                  string       `json:"currency"`
-	Amount                    string       `json:"amount"`
-	USDValue                  *string      `json:"usdValue,omitempty"`
-	FeeAmount                 *string      `json:"feeAmount,omitempty"`
-	FeeCurrency               string       `json:"feeCurrency"`
-	Payer                     string       `json:"payer"`
-	Payee                     string       `json:"payee"`
-	CounterpartyNameOverride  *string      `json:"counterpartyNameOverride,omitempty"`
-	EffectiveCounterpartyName string       `json:"effectiveCounterpartyName"`
-	FromAddressOrAccount      string       `json:"fromAddressOrAccount"`
-	ToAddressOrAccount        string       `json:"toAddressOrAccount"`
-	Applicant                 string       `json:"applicant"`
-	BusinessDescription       string       `json:"businessDescription"`
-	TxHash                    string       `json:"txHash"`
-	ProviderTransactionID     string       `json:"providerTransactionId"`
-	SummaryIncluded           bool         `json:"summaryIncluded"`
-	IsDust                    bool         `json:"isDust"`
-	AutoExcludedFromSummary   bool         `json:"autoExcludedFromSummary"`
-	SummaryInclusionOverride  *bool        `json:"summaryInclusionOverride,omitempty"`
+	TransferMode              TransferMode              `json:"transferMode"`
+	MovementKind              MovementKind              `json:"movementKind"`
+	IsOperatingIncomeExpense  *bool                     `json:"isOperatingIncomeExpense,omitempty"`
+	FinanceCategoryLevel1ID   *int64                    `json:"financeCategoryLevel1Id,omitempty"`
+	FinanceCategoryLevel1Code string                    `json:"financeCategoryLevel1Code"`
+	FinanceCategoryLevel1Name string                    `json:"financeCategoryLevel1Name"`
+	FinanceCategoryLevel2ID   *int64                    `json:"financeCategoryLevel2Id,omitempty"`
+	FinanceCategoryLevel2Code string                    `json:"financeCategoryLevel2Code"`
+	FinanceCategoryLevel2Name string                    `json:"financeCategoryLevel2Name"`
+	Currency                  string                    `json:"currency"`
+	Amount                    string                    `json:"amount"`
+	USDValue                  *string                   `json:"usdValue,omitempty"`
+	FeeAmount                 *string                   `json:"feeAmount,omitempty"`
+	FeeCurrency               string                    `json:"feeCurrency"`
+	Payer                     string                    `json:"payer"`
+	Payee                     string                    `json:"payee"`
+	CounterpartyNameOverride  *string                   `json:"counterpartyNameOverride,omitempty"`
+	EffectiveCounterpartyName string                    `json:"effectiveCounterpartyName"`
+	FromAddressOrAccount      string                    `json:"fromAddressOrAccount"`
+	ToAddressOrAccount        string                    `json:"toAddressOrAccount"`
+	Applicant                 string                    `json:"applicant"`
+	BusinessDescription       string                    `json:"businessDescription"`
+	TxHash                    string                    `json:"txHash"`
+	ProviderTransactionID     string                    `json:"providerTransactionId"`
+	ParentTransactionID       *int64                    `json:"parentTransactionId,omitempty"`
+	ReversalOfTransactionID   *int64                    `json:"reversalOfTransactionId,omitempty"`
+	RelationshipReferenceType RelationshipReferenceType `json:"relationshipReferenceType,omitempty"`
+	RelationshipReferenceKey  string                    `json:"relationshipReferenceKey,omitempty"`
+	RelationshipGroupKey      string                    `json:"relationshipGroupKey,omitempty"`
+	ConversionGroupKey        string                    `json:"conversionGroupKey,omitempty"`
+	ConversionLeg             ConversionLeg             `json:"conversionLeg,omitempty"`
+	ConversionGroupState      ConversionGroupState      `json:"conversionGroupState,omitempty"`
+	SummaryIncluded           bool                      `json:"summaryIncluded"`
+	IsDust                    bool                      `json:"isDust"`
+	AutoExcludedFromSummary   bool                      `json:"autoExcludedFromSummary"`
+	SummaryInclusionOverride  *bool                     `json:"summaryInclusionOverride,omitempty"`
 }
 
 // FinanceClassificationUpdate replaces finance-owned fields for one

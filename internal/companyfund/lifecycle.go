@@ -190,8 +190,13 @@ func ValidateMovementRelationship(relation MovementRelation) error {
 
 	switch relation.MovementKind {
 	case MovementKindFee:
-		if strings.TrimSpace(relation.ParentMovementKey) == "" {
-			return fmt.Errorf("fee movement requires a parent movement")
+		hasParent := strings.TrimSpace(relation.ParentMovementKey) != ""
+		hasGroup := (relation.RelationshipReferenceType == RelationshipReferenceBatchIDGroupOnly ||
+			relation.RelationshipReferenceType == RelationshipReferenceSourceIDGroupOnly) &&
+			strings.TrimSpace(relation.RelationshipReferenceKey) != "" &&
+			strings.TrimSpace(relation.RelationshipGroupKey) != ""
+		if !hasParent && !hasGroup {
+			return fmt.Errorf("fee movement requires a parent movement or a proven group relationship")
 		}
 	case MovementKindReversal:
 		if strings.TrimSpace(relation.ReversalOfMovementKey) == "" {

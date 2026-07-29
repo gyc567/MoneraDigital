@@ -32,6 +32,18 @@ type CompanyFundProviderEventProcessor interface {
 	ProcessNext(ctx context.Context) (ProviderEventWorkerResult, error)
 }
 
+type CompanyFundLedgerTaskProcessor interface {
+	ProcessNext(ctx context.Context) (LedgerTaskProcessResult, error)
+}
+
+type companyFundLedgerTaskMaintainer interface {
+	Maintain(ctx context.Context) (bool, error)
+}
+
+type companyFundLedgerTaskDueProvider interface {
+	NextCompanyFundLedgerTaskDue(ctx context.Context) (time.Time, error)
+}
+
 type companyFundProviderEventDueProvider interface {
 	NextProviderEventDue(ctx context.Context) (time.Time, error)
 }
@@ -110,6 +122,7 @@ func (policy CompanyFundReconciliationRetryPolicy) Delay(attempt int) (time.Dura
 // requires the immutable account cache and exact sync-run finalizer.
 type CompanyFundRuntimeDependencies struct {
 	ProviderEventWorker CompanyFundProviderEventProcessor
+	LedgerTaskProcessor CompanyFundLedgerTaskProcessor
 	AccountSnapshots    CompanyFundAccountSnapshotProvider
 	SafeheronReconciler CompanyFundSafeheronReconciliationRunner
 	AirwallexReconciler CompanyFundAirwallexReconciliationRunner
@@ -150,6 +163,7 @@ type CompanyFundProviderEventDrainResult struct {
 	Claimed       int
 	FactCount     int
 	MovementCount int
+	TaskCount     int
 	LimitReached  bool
 }
 
@@ -174,6 +188,7 @@ type CompanyFundRuntime struct {
 	airwallexContract  AirwallexFinancialTransactionsReconciliationContract
 	airwallexWake      chan struct{}
 	providerEventLoop  *adaptiveschedule.Loop
+	ledgerTaskLoop     *adaptiveschedule.Loop
 	reconciliationLoop *adaptiveschedule.Loop
 
 	mu        sync.Mutex
@@ -230,6 +245,18 @@ func NewCompanyFundRuntime(dependencies CompanyFundRuntimeDependencies, config C
 			return nil, fmt.Errorf("company-fund provider event adaptive schedule: %w", err)
 		}
 		runtime.providerEventLoop = loop
+	}
+	if dependencies.LedgerTaskProcessor != nil {
+		loop, err := adaptiveschedule.New(adaptiveschedule.Config{
+			Name:    "company-fund-ledger-task",
+			MinIdle: normalized.EventPollInterval,
+			MaxIdle: normalized.EventMaxIdleInterval,
+			Now:     normalized.Now,
+		}, runtime.ledgerTaskCycle)
+		if err != nil {
+			return nil, fmt.Errorf("company-fund ledger task adaptive schedule: %w", err)
+		}
+		runtime.ledgerTaskLoop = loop
 	}
 	if dependencies.AirwallexReconciler != nil {
 		contract := dependencies.AirwallexReconciler.ReconciliationContract()
@@ -411,6 +438,14 @@ func (runtime *CompanyFundRuntime) Run(ctx context.Context) {
 			runtime.reconciliationLoop.Run(ctx)
 		}()
 	}
+	if runtime.ledgerTaskLoop != nil {
+		loops.Add(1)
+		go func() {
+			defer loops.Done()
+			defer recoverCompanyFundTask("ledger_task")
+			runtime.ledgerTaskLoop.Run(ctx)
+		}()
+	}
 	loops.Wait()
 }
 
@@ -425,6 +460,12 @@ func recoverCompanyFundTask(kind string) {
 // EventDrainLimit; MoreWork re-enters immediately when the limit is hit.
 func (runtime *CompanyFundRuntime) providerEventCycle(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
 	result, err := runtime.DrainProviderEvents(ctx)
+	// Deferred relationship tasks and newly persisted movements both wake the
+	// ledger loop. The latter lets group-linked FEE movements receive their
+	// automatic classification promptly without introducing a fixed poll.
+	if (result.TaskCount > 0 || result.MovementCount > 0) && runtime.ledgerTaskLoop != nil {
+		_ = runtime.ledgerTaskLoop.Notify()
+	}
 	outcome := adaptiveschedule.CycleOutcome{
 		Worked:   result.Claimed > 0,
 		MoreWork: result.LimitReached,
@@ -446,6 +487,37 @@ func (runtime *CompanyFundRuntime) providerEventCycle(ctx context.Context) (adap
 		)
 	}
 	return outcome, err
+}
+
+func (runtime *CompanyFundRuntime) ledgerTaskCycle(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
+	worked := false
+	if maintainer, ok := runtime.dependencies.LedgerTaskProcessor.(companyFundLedgerTaskMaintainer); ok {
+		maintained, err := maintainer.Maintain(ctx)
+		if err != nil {
+			return adaptiveschedule.CycleOutcome{}, err
+		}
+		worked = maintained
+	}
+	for attempts := 0; attempts < runtime.config.EventDrainLimit; attempts++ {
+		result, err := runtime.dependencies.LedgerTaskProcessor.ProcessNext(ctx)
+		if err != nil {
+			return adaptiveschedule.CycleOutcome{Worked: worked}, err
+		}
+		if result.Outcome == LedgerTaskProcessIdle {
+			outcome := adaptiveschedule.CycleOutcome{Worked: worked}
+			if dueProvider, ok := runtime.dependencies.LedgerTaskProcessor.(companyFundLedgerTaskDueProvider); ok {
+				due, dueErr := dueProvider.NextCompanyFundLedgerTaskDue(ctx)
+				outcome.NextDue = adaptiveschedule.EarliestDue(outcome.NextDue, due)
+				return outcome, dueErr
+			}
+			return outcome, nil
+		}
+		worked = true
+		if attempts+1 == runtime.config.EventDrainLimit {
+			return adaptiveschedule.CycleOutcome{Worked: true, MoreWork: true}, nil
+		}
+	}
+	return adaptiveschedule.CycleOutcome{Worked: worked}, nil
 }
 
 // NotifyProviderEvent is the nonblocking callback for a handler or upstream
@@ -635,6 +707,7 @@ func (runtime *CompanyFundRuntime) DrainProviderEvents(ctx context.Context) (Com
 			result.Claimed++
 			result.FactCount += workerResult.FactCount
 			result.MovementCount += workerResult.MovementCount
+			result.TaskCount += workerResult.TaskCount
 		}
 		if err != nil {
 			return result, err

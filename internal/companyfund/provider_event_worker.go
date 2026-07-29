@@ -149,6 +149,7 @@ func (worker *ProviderEventWorker) ProcessNext(ctx context.Context) (result Prov
 			movements, processingErr = worker.persistNormalizedProviderFacts(processingContext, *lease, normalized)
 			if processingErr == nil {
 				result.FactCount = len(normalized.Facts)
+				result.TaskCount = len(normalized.DeferredMovements)
 			}
 			for _, movement := range movements {
 				if processingErr != nil {

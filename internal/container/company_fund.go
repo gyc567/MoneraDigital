@@ -36,6 +36,10 @@ const (
 	defaultCompanyFundSafeheronCollectorBatchSize     = 100
 	defaultCompanyFundAirwallexFinancialPageSize      = 100
 	defaultCompanyFundAirwallexFinancialMaxPages      = 100
+	defaultCompanyFundAirwallexLedgerLeaseDuration    = time.Minute
+	defaultCompanyFundAirwallexLedgerRetryDelay       = time.Minute
+	defaultCompanyFundAirwallexLedgerTaskSLA          = 7 * 24 * time.Hour
+	defaultCompanyFundAirwallexLedgerMaintenanceBatch = 100
 	defaultCompanyFundCurrentRateRefreshInterval      = 5 * time.Minute
 	defaultCompanyFundCurrentRateCacheTTL             = 10 * time.Minute
 	defaultCompanyFundCurrentRateCacheMaxAge          = 60 * time.Minute
@@ -90,18 +94,27 @@ type companyFundRuntimeConfig struct {
 	SafeheronCollectorBatchSize         int
 	SafeheronCoinCatalogRefreshInterval time.Duration
 
-	AirwallexBaseURL           string
-	AirwallexClientID          string
-	AirwallexAPIKey            string
-	AirwallexAPIVersion        string
-	AirwallexLoginAs           string
-	AirwallexWebhookVersion    string
-	AirwallexWebhookSecret     string
-	AirwallexWebhookMaxAge     time.Duration
-	AirwallexWebhookLookback   time.Duration
-	AirwallexRuntimeConfigJSON string
-	AirwallexFinancialPageSize int
-	AirwallexFinancialMaxPages int
+	AirwallexBaseURL                        string
+	AirwallexClientID                       string
+	AirwallexAPIKey                         string
+	AirwallexAPIVersion                     string
+	AirwallexLoginAs                        string
+	AirwallexWebhookVersion                 string
+	AirwallexWebhookSecret                  string
+	AirwallexWebhookMaxAge                  time.Duration
+	AirwallexWebhookLookback                time.Duration
+	AirwallexRuntimeConfigJSON              string
+	AirwallexFinancialPageSize              int
+	AirwallexFinancialMaxPages              int
+	AirwallexLedgerLeaseOwner               string
+	AirwallexLedgerLeaseDuration            time.Duration
+	AirwallexLedgerRetryDelay               time.Duration
+	AirwallexLedgerTaskSLA                  time.Duration
+	AirwallexLedgerMaintenanceBatch         int
+	AirwallexFeeCategoryLevel1Code          string
+	AirwallexFeeCategoryLevel2Code          string
+	AirwallexFeeClassificationPolicyVersion string
+	AirwallexReversalPolicyVersion          string
 
 	CoinGeckoBaseURL               string
 	CoinGeckoDemoAPIKey            string
@@ -125,59 +138,68 @@ func companyFundRuntimeConfigFromViper() companyFundRuntimeConfig {
 		lateStatusOverlapDays = viper.GetInt("COMPANY_FUND_LATE_STATUS_OVERLAP_DAYS")
 	}
 	return companyFundRuntimeConfig{
-		Enabled:                             viper.GetBool("COMPANY_FUND_ENABLED"),
-		StartBackgroundWorkers:              startBackgroundWorkers,
-		AccountRefreshInterval:              viper.GetDuration("COMPANY_FUND_ACCOUNT_REFRESH_INTERVAL"),
-		PayloadKey:                          viper.GetString("COMPANY_FUND_PAYLOAD_KEY"),
-		PayloadKeyVersion:                   viper.GetString("COMPANY_FUND_PAYLOAD_KEY_VERSION"),
-		PayloadRetention:                    viper.GetDuration("COMPANY_FUND_PAYLOAD_RETENTION"),
-		PayloadLegalHold:                    viper.GetBool("COMPANY_FUND_PAYLOAD_LEGAL_HOLD"),
-		AdminKey:                            viper.GetString("COMPANY_FUND_ADMIN_KEY"),
-		EventPollInterval:                   viper.GetDuration("COMPANY_FUND_EVENT_POLL_INTERVAL"),
-		EventMaxIdleInterval:                viper.GetDuration("COMPANY_FUND_EVENT_MAX_IDLE_INTERVAL"),
-		EventDrainLimit:                     viper.GetInt("COMPANY_FUND_EVENT_DRAIN_LIMIT"),
-		EventLeaseOwner:                     viper.GetString("COMPANY_FUND_EVENT_LEASE_OWNER"),
-		EventLeaseDuration:                  viper.GetDuration("COMPANY_FUND_EVENT_LEASE_DURATION"),
-		EventRenewInterval:                  viper.GetDuration("COMPANY_FUND_EVENT_LEASE_RENEW_INTERVAL"),
-		EventRetryInitial:                   viper.GetDuration("COMPANY_FUND_EVENT_RETRY_INITIAL_DELAY"),
-		EventRetryMax:                       viper.GetDuration("COMPANY_FUND_EVENT_RETRY_MAX_DELAY"),
-		ReconciliationPoll:                  viper.GetDuration("COMPANY_FUND_RECONCILIATION_POLL_INTERVAL"),
-		ReconciliationZone:                  viper.GetString("COMPANY_FUND_RECONCILIATION_TIME_ZONE"),
-		ReconciliationTime:                  viper.GetString("COMPANY_FUND_RECONCILIATION_DAILY_TIME"),
-		ReconciliationCatchUp:               viper.GetInt("COMPANY_FUND_RECONCILIATION_CATCH_UP_DAYS"),
-		LateStatusOverlapDays:               lateStatusOverlapDays,
-		LateStatusOverlapConfigured:         lateStatusOverlapConfigured,
-		ReconciliationLeaseOwner:            viper.GetString("COMPANY_FUND_RECONCILIATION_LEASE_OWNER"),
-		ReconciliationLeaseDuration:         viper.GetDuration("COMPANY_FUND_RECONCILIATION_LEASE_DURATION"),
-		ReconciliationRetryInitial:          viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_INITIAL_DELAY"),
-		ReconciliationRetryMax:              viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_MAX_DELAY"),
-		ReconciliationFinalizeTimeout:       viper.GetDuration("COMPANY_FUND_RECONCILIATION_FINALIZE_TIMEOUT"),
-		SafeheronHistoryPageSize:            viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_PAGE_SIZE"),
-		SafeheronHistoryMaxPages:            viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_MAX_PAGES"),
-		SafeheronCollectorInterval:          viper.GetDuration("COMPANY_FUND_SAFEHERON_COLLECTOR_INTERVAL"),
-		SafeheronCollectorBatchSize:         viper.GetInt("COMPANY_FUND_SAFEHERON_COLLECTOR_BATCH_SIZE"),
-		SafeheronCoinCatalogRefreshInterval: viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_REFRESH_INTERVAL"),
-		AirwallexBaseURL:                    viper.GetString("AIRWALLEX_BASE_URL"),
-		AirwallexClientID:                   viper.GetString("AIRWALLEX_CLIENT_ID"),
-		AirwallexAPIKey:                     viper.GetString("AIRWALLEX_API_KEY"),
-		AirwallexAPIVersion:                 viper.GetString("AIRWALLEX_API_VERSION"),
-		AirwallexLoginAs:                    viper.GetString("AIRWALLEX_LOGIN_AS"),
-		AirwallexWebhookVersion:             viper.GetString("AIRWALLEX_WEBHOOK_VERSION"),
-		AirwallexWebhookSecret:              viper.GetString("AIRWALLEX_WEBHOOK_SECRET"),
-		AirwallexWebhookMaxAge:              viper.GetDuration("AIRWALLEX_WEBHOOK_TIMESTAMP_TOLERANCE"),
-		AirwallexWebhookLookback:            viper.GetDuration("COMPANY_FUND_AIRWALLEX_WEBHOOK_LOOKBACK"),
-		AirwallexRuntimeConfigJSON:          viper.GetString("AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG"),
-		AirwallexFinancialPageSize:          viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_PAGE_SIZE"),
-		AirwallexFinancialMaxPages:          viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_MAX_PAGES"),
-		CoinGeckoBaseURL:                    viper.GetString("COINGECKO_BASE_URL"),
-		CoinGeckoDemoAPIKey:                 viper.GetString("COINGECKO_DEMO_API_KEY"),
-		CurrentRateDefaultMappingsJSON:      viper.GetString("COMPANY_FUND_USD_RATE_DEFAULT_MAPPINGS"),
-		CurrentRateRefreshInterval:          viper.GetDuration("COMPANY_FUND_USD_RATE_REFRESH_INTERVAL"),
-		CurrentRateCacheTTL:                 viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_TTL"),
-		CurrentRateCacheMaxAge:              viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_MAX_AGE"),
-		CurrentValuationSweepInterval:       viper.GetDuration("COMPANY_FUND_USD_VALUATION_SWEEP_INTERVAL"),
-		CurrentValuationSweepBatch:          viper.GetInt("COMPANY_FUND_USD_VALUATION_SWEEP_BATCH"),
-		CurrentValuationPolicyVersion:       viper.GetString("COMPANY_FUND_USD_VALUATION_POLICY_VERSION"),
+		Enabled:                                 viper.GetBool("COMPANY_FUND_ENABLED"),
+		StartBackgroundWorkers:                  startBackgroundWorkers,
+		AccountRefreshInterval:                  viper.GetDuration("COMPANY_FUND_ACCOUNT_REFRESH_INTERVAL"),
+		PayloadKey:                              viper.GetString("COMPANY_FUND_PAYLOAD_KEY"),
+		PayloadKeyVersion:                       viper.GetString("COMPANY_FUND_PAYLOAD_KEY_VERSION"),
+		PayloadRetention:                        viper.GetDuration("COMPANY_FUND_PAYLOAD_RETENTION"),
+		PayloadLegalHold:                        viper.GetBool("COMPANY_FUND_PAYLOAD_LEGAL_HOLD"),
+		AdminKey:                                viper.GetString("COMPANY_FUND_ADMIN_KEY"),
+		EventPollInterval:                       viper.GetDuration("COMPANY_FUND_EVENT_POLL_INTERVAL"),
+		EventMaxIdleInterval:                    viper.GetDuration("COMPANY_FUND_EVENT_MAX_IDLE_INTERVAL"),
+		EventDrainLimit:                         viper.GetInt("COMPANY_FUND_EVENT_DRAIN_LIMIT"),
+		EventLeaseOwner:                         viper.GetString("COMPANY_FUND_EVENT_LEASE_OWNER"),
+		EventLeaseDuration:                      viper.GetDuration("COMPANY_FUND_EVENT_LEASE_DURATION"),
+		EventRenewInterval:                      viper.GetDuration("COMPANY_FUND_EVENT_LEASE_RENEW_INTERVAL"),
+		EventRetryInitial:                       viper.GetDuration("COMPANY_FUND_EVENT_RETRY_INITIAL_DELAY"),
+		EventRetryMax:                           viper.GetDuration("COMPANY_FUND_EVENT_RETRY_MAX_DELAY"),
+		ReconciliationPoll:                      viper.GetDuration("COMPANY_FUND_RECONCILIATION_POLL_INTERVAL"),
+		ReconciliationZone:                      viper.GetString("COMPANY_FUND_RECONCILIATION_TIME_ZONE"),
+		ReconciliationTime:                      viper.GetString("COMPANY_FUND_RECONCILIATION_DAILY_TIME"),
+		ReconciliationCatchUp:                   viper.GetInt("COMPANY_FUND_RECONCILIATION_CATCH_UP_DAYS"),
+		LateStatusOverlapDays:                   lateStatusOverlapDays,
+		LateStatusOverlapConfigured:             lateStatusOverlapConfigured,
+		ReconciliationLeaseOwner:                viper.GetString("COMPANY_FUND_RECONCILIATION_LEASE_OWNER"),
+		ReconciliationLeaseDuration:             viper.GetDuration("COMPANY_FUND_RECONCILIATION_LEASE_DURATION"),
+		ReconciliationRetryInitial:              viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_INITIAL_DELAY"),
+		ReconciliationRetryMax:                  viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_MAX_DELAY"),
+		ReconciliationFinalizeTimeout:           viper.GetDuration("COMPANY_FUND_RECONCILIATION_FINALIZE_TIMEOUT"),
+		SafeheronHistoryPageSize:                viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_PAGE_SIZE"),
+		SafeheronHistoryMaxPages:                viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_MAX_PAGES"),
+		SafeheronCollectorInterval:              viper.GetDuration("COMPANY_FUND_SAFEHERON_COLLECTOR_INTERVAL"),
+		SafeheronCollectorBatchSize:             viper.GetInt("COMPANY_FUND_SAFEHERON_COLLECTOR_BATCH_SIZE"),
+		SafeheronCoinCatalogRefreshInterval:     viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_REFRESH_INTERVAL"),
+		AirwallexBaseURL:                        viper.GetString("AIRWALLEX_BASE_URL"),
+		AirwallexClientID:                       viper.GetString("AIRWALLEX_CLIENT_ID"),
+		AirwallexAPIKey:                         viper.GetString("AIRWALLEX_API_KEY"),
+		AirwallexAPIVersion:                     viper.GetString("AIRWALLEX_API_VERSION"),
+		AirwallexLoginAs:                        viper.GetString("AIRWALLEX_LOGIN_AS"),
+		AirwallexWebhookVersion:                 viper.GetString("AIRWALLEX_WEBHOOK_VERSION"),
+		AirwallexWebhookSecret:                  viper.GetString("AIRWALLEX_WEBHOOK_SECRET"),
+		AirwallexWebhookMaxAge:                  viper.GetDuration("AIRWALLEX_WEBHOOK_TIMESTAMP_TOLERANCE"),
+		AirwallexWebhookLookback:                viper.GetDuration("COMPANY_FUND_AIRWALLEX_WEBHOOK_LOOKBACK"),
+		AirwallexRuntimeConfigJSON:              viper.GetString("AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG"),
+		AirwallexFinancialPageSize:              viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_PAGE_SIZE"),
+		AirwallexFinancialMaxPages:              viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_MAX_PAGES"),
+		AirwallexLedgerLeaseOwner:               viper.GetString("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_OWNER"),
+		AirwallexLedgerLeaseDuration:            viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_DURATION"),
+		AirwallexLedgerRetryDelay:               viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_RETRY_DELAY"),
+		AirwallexLedgerTaskSLA:                  viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_SLA"),
+		AirwallexLedgerMaintenanceBatch:         viper.GetInt("COMPANY_FUND_AIRWALLEX_LEDGER_MAINTENANCE_BATCH"),
+		AirwallexFeeCategoryLevel1Code:          viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL1_CODE"),
+		AirwallexFeeCategoryLevel2Code:          viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL2_CODE"),
+		AirwallexFeeClassificationPolicyVersion: viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CLASSIFICATION_POLICY_VERSION"),
+		AirwallexReversalPolicyVersion:          viper.GetString("COMPANY_FUND_AIRWALLEX_REVERSAL_POLICY_VERSION"),
+		CoinGeckoBaseURL:                        viper.GetString("COINGECKO_BASE_URL"),
+		CoinGeckoDemoAPIKey:                     viper.GetString("COINGECKO_DEMO_API_KEY"),
+		CurrentRateDefaultMappingsJSON:          viper.GetString("COMPANY_FUND_USD_RATE_DEFAULT_MAPPINGS"),
+		CurrentRateRefreshInterval:              viper.GetDuration("COMPANY_FUND_USD_RATE_REFRESH_INTERVAL"),
+		CurrentRateCacheTTL:                     viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_TTL"),
+		CurrentRateCacheMaxAge:                  viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_MAX_AGE"),
+		CurrentValuationSweepInterval:           viper.GetDuration("COMPANY_FUND_USD_VALUATION_SWEEP_INTERVAL"),
+		CurrentValuationSweepBatch:              viper.GetInt("COMPANY_FUND_USD_VALUATION_SWEEP_BATCH"),
+		CurrentValuationPolicyVersion:           viper.GetString("COMPANY_FUND_USD_VALUATION_POLICY_VERSION"),
 	}
 }
 
@@ -409,6 +431,44 @@ func finalizeCompanyFundRuntime(c *Container) {
 	runtimeDependencies := companyfund.CompanyFundRuntimeDependencies{
 		ProviderEventWorker: worker,
 	}
+	if airBundle != nil && airBundle.Enabled {
+		ledgerProcessor, processorErr := companyfund.NewAirwallexLedgerTaskProcessor(
+			c.CompanyFundRepository,
+			companyfund.AirwallexLedgerTaskProcessorConfig{
+				Owner: companyFundLeaseOwner(
+					"company-fund-airwallex-ledger",
+					config.AirwallexLedgerLeaseOwner,
+				),
+				LeaseDuration: companyFundDurationOrDefault(
+					config.AirwallexLedgerLeaseDuration,
+					defaultCompanyFundAirwallexLedgerLeaseDuration,
+				),
+				RetryDelay: companyFundDurationOrDefault(
+					config.AirwallexLedgerRetryDelay,
+					defaultCompanyFundAirwallexLedgerRetryDelay,
+				),
+				FeeClassification: companyfund.AirwallexFeeClassificationPolicy{
+					Level1Code:    config.AirwallexFeeCategoryLevel1Code,
+					Level2Code:    config.AirwallexFeeCategoryLevel2Code,
+					PolicyVersion: config.AirwallexFeeClassificationPolicyVersion,
+				},
+				ReversalPolicyVersion: config.AirwallexReversalPolicyVersion,
+				MaintenanceBatch: companyFundPositiveIntOrDefault(
+					config.AirwallexLedgerMaintenanceBatch,
+					defaultCompanyFundAirwallexLedgerMaintenanceBatch,
+				),
+				TaskSLA: companyFundDurationOrDefault(
+					config.AirwallexLedgerTaskSLA,
+					defaultCompanyFundAirwallexLedgerTaskSLA,
+				),
+			},
+		)
+		if processorErr != nil {
+			log.Printf("company-fund Airwallex Phase 2 ledger maintenance disabled: worker configuration is invalid")
+		} else {
+			runtimeDependencies.LedgerTaskProcessor = ledgerProcessor
+		}
+	}
 	if safeReconciler != nil || airwallexReconciler != nil {
 		runtimeDependencies.AccountSnapshots = c.CompanyFundAccountRegistry
 		runtimeDependencies.SyncRunFinalizer = syncAdapter
@@ -490,8 +550,9 @@ func finalizeCompanyFundRuntime(c *Container) {
 	c.CompanyFundSafeheronCollector = collector
 	startCompanyFundCoreLoops(c, config, runtime, refresher, valuator)
 
-	log.Printf("company-fund runtime assembled: worker=%t safeheron_history=%t airwallex_reconciliation=%t airwallex_webhook=%t valuation=%t",
-		worker != nil, safeReconciler != nil, airwallexReconciler != nil, c.CompanyFundAirwallexWebhookHandler != nil, valuator != nil)
+	log.Printf("company-fund runtime assembled: worker=%t safeheron_history=%t airwallex_reconciliation=%t airwallex_webhook=%t airwallex_ledger=%t valuation=%t",
+		worker != nil, safeReconciler != nil, airwallexReconciler != nil, c.CompanyFundAirwallexWebhookHandler != nil,
+		runtimeDependencies.LedgerTaskProcessor != nil, valuator != nil)
 }
 
 func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time.Duration) (*companyfund.SafeheronProviderEventNormalizer, safeheron.TransactionHistoryClient) {

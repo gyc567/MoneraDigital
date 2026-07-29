@@ -174,16 +174,19 @@ type MovementIdentity struct {
 // provider parsing so invalid fee/reversal/conversion structures can be
 // quarantined before storage.
 type MovementRelation struct {
-	MovementKind          MovementKind
-	TransferMode          TransferMode
-	Direction             Direction
-	HasFromAccount        bool
-	HasToAccount          bool
-	ParentMovementKey     string
-	ReversalOfMovementKey string
-	ConversionGroupKey    string
-	ConversionLeg         ConversionLeg
-	ConversionGroupState  ConversionGroupState
+	MovementKind              MovementKind
+	TransferMode              TransferMode
+	Direction                 Direction
+	HasFromAccount            bool
+	HasToAccount              bool
+	ParentMovementKey         string
+	ReversalOfMovementKey     string
+	RelationshipReferenceType RelationshipReferenceType
+	RelationshipReferenceKey  string
+	RelationshipGroupKey      string
+	ConversionGroupKey        string
+	ConversionLeg             ConversionLeg
+	ConversionGroupState      ConversionGroupState
 }
 
 // LifecycleStatus is provider-owned status text normalized to uppercase.
@@ -291,24 +294,27 @@ type MovementState struct {
 // normalizers before it is persisted. Direction carries any economic sign;
 // Amount and all USD fields remain non-negative magnitudes.
 type CompanyFundMovement struct {
-	Identity              MovementIdentity
-	Channel               TransactionSource
-	MovementKind          MovementKind
-	TransferMode          TransferMode
-	Direction             Direction
-	Amount                decimal.Decimal
-	Asset                 AssetIdentity
-	FromAccountID         *int64
-	ToAccountID           *int64
-	ParentMovementKey     string
-	ReversalOfMovementKey string
-	ConversionGroupKey    string
-	ConversionLeg         ConversionLeg
-	ConversionGroupState  ConversionGroupState
-	ProviderReportedUSD   *decimal.Decimal
-	USDValuation          USDValuationResult
-	Provider              ProviderOwnedFields
-	Manual                ManualFields
+	Identity                  MovementIdentity
+	Channel                   TransactionSource
+	MovementKind              MovementKind
+	TransferMode              TransferMode
+	Direction                 Direction
+	Amount                    decimal.Decimal
+	Asset                     AssetIdentity
+	FromAccountID             *int64
+	ToAccountID               *int64
+	ParentMovementKey         string
+	ReversalOfMovementKey     string
+	RelationshipReferenceType RelationshipReferenceType
+	RelationshipReferenceKey  string
+	RelationshipGroupKey      string
+	ConversionGroupKey        string
+	ConversionLeg             ConversionLeg
+	ConversionGroupState      ConversionGroupState
+	ProviderReportedUSD       *decimal.Decimal
+	USDValuation              USDValuationResult
+	Provider                  ProviderOwnedFields
+	Manual                    ManualFields
 }
 
 // AccountAssetPolicy carries the applied provider/chain/contract mapping and
@@ -632,6 +638,7 @@ type ProviderTransactionFact struct {
 	Channel                   TransactionSource
 	ProviderAccountKey        string
 	ProviderTransactionID     string
+	ProviderSourceReference   string
 	ProviderGroupID           string
 	FactIdentityKey           string
 	FactVersion               int

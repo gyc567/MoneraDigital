@@ -65,6 +65,7 @@ import (
 func main() {
 	persist := flag.Bool("persist", false, "write sandbox FT snapshots into monera_local and drain the provider-event worker")
 	webhook := flag.Bool("webhook", false, "exercise signed webhook ingress + worker IGNORED path against monera_local")
+	evidence := flag.Bool("evidence", false, "print redacted relationship evidence for complex Financial Transactions")
 	lookback := flag.Duration("lookback", 72*time.Hour, "reconcile window length ending at now")
 	pageSize := flag.Int("page-size", 100, "Financial Transactions page size")
 	flag.Parse()
@@ -73,13 +74,13 @@ func main() {
 		_ = godotenv.Overload(".env")
 	}
 
-	if err := run(*persist, *webhook, *lookback, *pageSize); err != nil {
+	if err := run(*persist, *webhook, *evidence, *lookback, *pageSize); err != nil {
 		fmt.Fprintf(os.Stderr, "airwallex sandbox smoke failed: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(persist, webhook bool, lookback time.Duration, pageSize int) error {
+func run(persist, webhook, evidence bool, lookback time.Duration, pageSize int) error {
 	cfg, err := loadSmokeConfig(webhook)
 	if err != nil {
 		return err
@@ -162,12 +163,58 @@ func run(persist, webhook bool, lookback time.Duration, pageSize int) error {
 	if err := normalizeInMemory(bundle, runtimeConfig, account, page.Items); err != nil {
 		return err
 	}
+	if evidence {
+		printRedactedRelationshipEvidence(page.Items)
+	}
 	if !persist && !webhook {
 		fmt.Println("dry-run complete (no provider-event writes). re-run with -persist and/or -webhook.")
 		return nil
 	}
 
 	return runMutating(ctx, cfg, client, runtimeConfig, sqlDB, account, lookback, pageSize, now, persist, webhook)
+}
+
+func printRedactedRelationshipEvidence(items []companyfund.AirwallexFinancialTransaction) {
+	byID := make(map[string]companyfund.AirwallexFinancialTransaction, len(items))
+	for _, item := range items {
+		byID[strings.TrimSpace(item.ProviderID)] = item
+	}
+	for _, item := range items {
+		switch item.TransactionType {
+		case "FEE", "PAYOUT_REVERSAL", "CONVERSION_SELL", "CONVERSION_BUY":
+		default:
+			continue
+		}
+		target := "none"
+		if matched, found := byID[strings.TrimSpace(item.SourceID)]; found {
+			target = fmt.Sprintf("%s|%s|%s|%s", matched.TransactionType, matched.SourceType, matched.Status, matched.Currency)
+		}
+		fmt.Printf(
+			"  evidence combo=%s|%s|%s|%s source_ref=%t target=%s batch=%t pair=%s amount_sign=%s fee_sign=%s\n",
+			item.TransactionType,
+			item.SourceType,
+			item.Status,
+			item.Currency,
+			strings.TrimSpace(item.SourceID) != "",
+			target,
+			strings.TrimSpace(item.BatchID) != "",
+			item.CurrencyPair,
+			rawNumberSign(item.Amount),
+			rawNumberSign(item.Fee),
+		)
+	}
+}
+
+func rawNumberSign(value json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(value))
+	switch {
+	case strings.HasPrefix(trimmed, "-"):
+		return "NEGATIVE"
+	case trimmed == "", trimmed == "null", trimmed == "0", trimmed == "0.0":
+		return "ZERO"
+	default:
+		return "POSITIVE"
+	}
 }
 
 func normalizeInMemory(
