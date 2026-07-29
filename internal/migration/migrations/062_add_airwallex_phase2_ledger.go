@@ -10,6 +10,11 @@ import (
 
 // AddAirwallexPhase2Ledger adds the durable coordination and finance ownership
 // contract used by Airwallex FEE, CONVERSION, and REVERSAL processing.
+//
+// The DDL is intentionally strict rather than IF NOT EXISTS based. This
+// ControlledMigration runs all statements and its provenance insert in one
+// transaction, so an interrupted attempt rolls back atomically; pre-existing
+// partial objects indicate schema drift and must fail closed for inspection.
 type AddAirwallexPhase2Ledger struct{}
 
 func (*AddAirwallexPhase2Ledger) Version() string { return "062" }

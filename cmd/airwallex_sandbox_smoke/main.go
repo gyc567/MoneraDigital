@@ -19,6 +19,7 @@
 // Required env:
 //
 //	AIRWALLEX_BASE_URL, AIRWALLEX_CLIENT_ID, AIRWALLEX_API_KEY, AIRWALLEX_LOGIN_AS
+//	MONERA_DATABASE_URL (smoke override) or DATABASE_URL
 //
 // Optional env:
 //
@@ -29,8 +30,6 @@
 //	AIRWALLEX_WEBHOOK_VERSION (default event-v1; must match runtime event_version)
 //	COMPANY_FUND_PAYLOAD_KEY_PATH (default secrets/company-fund-payload.key)
 //	COMPANY_FUND_PAYLOAD_KEY_VERSION (default payload-v1)
-//	MONERA_DATABASE_URL (smoke override) or DATABASE_URL
-//	  (default postgresql://linden@localhost:5432/monera_local?sslmode=disable)
 //
 // Never prints API keys, tokens, webhook secrets, or full account ids.
 package main
@@ -716,11 +715,11 @@ func loadSmokeConfig(needWebhook bool) (smokeConfig, error) {
 	if cfg.WebhookVersion == "" {
 		cfg.WebhookVersion = "event-v1"
 	}
-	if cfg.DatabaseURL == "" {
-		cfg.DatabaseURL = "postgresql://linden@localhost:5432/monera_local?sslmode=disable"
-	}
 	if cfg.BaseURL == "" || cfg.ClientID == "" || cfg.APIKey == "" || cfg.LoginAs == "" {
 		return smokeConfig{}, fmt.Errorf("AIRWALLEX_BASE_URL/CLIENT_ID/API_KEY/LOGIN_AS are required")
+	}
+	if cfg.DatabaseURL == "" {
+		return smokeConfig{}, fmt.Errorf("MONERA_DATABASE_URL or DATABASE_URL is required")
 	}
 	if !strings.Contains(strings.ToLower(cfg.BaseURL), "sandbox") {
 		return smokeConfig{}, fmt.Errorf("refusing non-sandbox AIRWALLEX_BASE_URL %q", redactHost(cfg.BaseURL))

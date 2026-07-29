@@ -60,6 +60,127 @@ func TestDeployRemoteStandardPathTrace(t *testing.T) {
 	}
 }
 
+func TestDeployRemoteRunsArtifactMigrationSequenceBeforeInstallingServer(t *testing.T) {
+	t.Parallel()
+	root := deployScriptRepositoryRoot(t)
+	script := filepath.Join(root, "scripts", "deploy-remote.sh")
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	tmp := t.TempDir()
+	appDir := filepath.Join(tmp, "app")
+	deployDir := filepath.Join(tmp, "deploy")
+	tracePath := filepath.Join(tmp, "trace")
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(deployDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, ".env"), []byte("DATABASE_URL=postgresql://test@localhost/test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deployDir, "artifact-sha"), []byte(sha+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", script,
+		"--env", "test",
+		"--release-mode", "standard",
+		"--artifact-sha", sha,
+		"--expected-migration-ceiling", "062",
+	)
+	cmd.Env = append(os.Environ(),
+		"MONERA_DEPLOY_FAKE=1",
+		"MONERA_DEPLOY_FAKE_MIGRATION_SEQUENCE=061\n062",
+		"MONERA_DEPLOY_APP_DIR="+appDir,
+		"MONERA_DEPLOY_SRC="+deployDir,
+		"MONERA_DEPLOY_TRACE="+tracePath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("standard deploy failed: %v\n%s", err, output)
+	}
+	traceBytes, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace := string(traceBytes)
+	migration061 := strings.Index(trace, "migration-runner-061-started")
+	migration062 := strings.Index(trace, "migration-runner-062-started")
+	serverInstall := strings.Index(trace, "install-server")
+	if migration061 < 0 || migration062 < 0 || serverInstall < 0 {
+		t.Fatalf("release sequence trace incomplete:\n%s", trace)
+	}
+	if migration061 >= migration062 || migration062 >= serverInstall {
+		t.Fatalf("release sequence must finish before server installation:\n%s", trace)
+	}
+}
+
+func TestDeployRemoteStopsMigrationSequenceBeforeServerInstallWhenAnyVersionFails(t *testing.T) {
+	t.Parallel()
+	root := deployScriptRepositoryRoot(t)
+	script := filepath.Join(root, "scripts", "deploy-remote.sh")
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	for _, failedVersion := range []string{"061", "062"} {
+		failedVersion := failedVersion
+		t.Run(failedVersion, func(t *testing.T) {
+			t.Parallel()
+			tmp := t.TempDir()
+			appDir := filepath.Join(tmp, "app")
+			deployDir := filepath.Join(tmp, "deploy")
+			tracePath := filepath.Join(tmp, "trace")
+			if err := os.MkdirAll(appDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(deployDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(appDir, ".env"), []byte("DATABASE_URL=postgresql://test@localhost/test\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(deployDir, "artifact-sha"), []byte(sha+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := exec.Command("bash", script,
+				"--env", "production",
+				"--port", "8081",
+				"--release-mode", "standard",
+				"--artifact-sha", sha,
+				"--expected-migration-ceiling", "062",
+			)
+			cmd.Env = append(os.Environ(),
+				"MONERA_DEPLOY_FAKE=1",
+				"MONERA_DEPLOY_FAKE_MIGRATION_SEQUENCE=061\n062",
+				"MONERA_DEPLOY_FAKE_MIGRATION_FAIL_VERSION="+failedVersion,
+				"MONERA_DEPLOY_APP_DIR="+appDir,
+				"MONERA_DEPLOY_SRC="+deployDir,
+				"MONERA_DEPLOY_TRACE="+tracePath,
+			)
+			if output, err := cmd.CombinedOutput(); err == nil {
+				t.Fatalf("deploy unexpectedly survived migration %s failure:\n%s", failedVersion, output)
+			}
+			traceBytes, err := os.ReadFile(tracePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			trace := string(traceBytes)
+			if !strings.Contains(trace, "migration-runner-"+failedVersion+"-started") {
+				t.Fatalf("migration %s was not attempted:\n%s", failedVersion, trace)
+			}
+			if failedVersion == "061" && strings.Contains(trace, "migration-runner-062-started") {
+				t.Fatalf("failed migration 061 continued to 062:\n%s", trace)
+			}
+			for _, forbidden := range []string{"install-server", "restart"} {
+				if strings.Contains(trace, forbidden) {
+					t.Fatalf("failed release continued to %q:\n%s", forbidden, trace)
+				}
+			}
+			if !strings.Contains(trace, "rollback-migrate") {
+				t.Fatalf("failed release did not restore migration tooling:\n%s", trace)
+			}
+		})
+	}
+}
+
 func TestDeployRemoteRejectsNonStandardModes(t *testing.T) {
 	t.Parallel()
 	root := deployScriptRepositoryRoot(t)

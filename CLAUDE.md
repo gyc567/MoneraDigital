@@ -66,7 +66,7 @@ go run ./cmd/migrate -dry-run
 EXPECTED_MIGRATION_CEILING=<version> go run ./cmd/migrate -exact-version <version>
 ```
 
-- Stage/production 只执行本次新增的受控单版本迁移。
+- Stage/production 只执行 artifact 声明的受控迁移序列；序列内每个版本独立 exact 执行。
 - 不要在发布环境使用默认全量 pending 入口，也不要重放历史迁移。
 
 ### Safeheron Address Pool
@@ -351,7 +351,7 @@ APP_ENV                         # production / local / development / test
 
 ### Production
 - **Frontend**: Vercel（main 分支**不自动构建**，手动 `vercel deploy --prod --scope monera-digital`；配置见 `vercel.json` git.deploymentEnabled）
-- **Backend**: `.github/workflows/deploy-backend-prod.yml` 仅允许在 `main` 上手动触发 **standard 一条龙**（与 stage 同路径；GitHub Environment 审批作为人工闸门）。输入 `expected_migration_ceiling` 做受控单版本迁移。
+- **Backend**: `.github/workflows/deploy-backend-prod.yml` 仅允许在 `main` 上手动触发 **standard 一条龙**（与 stage 同路径；GitHub Environment 审批作为人工闸门）。输入 `expected_migration_ceiling` 校验 artifact ceiling，并按 artifact 声明的顺序逐个 exact 执行受控迁移。
 - **生产服务器**: `52.195.194.71`（ec2-user），binary `/home/ec2-user/monera/server`，systemd `monera-digital.service`，端口 8081
 - **部署前置**: GitHub repo Settings → Environments → `production` 须配 required reviewers（workflow 无 confirm input，靠 env protection 兜底）
 - **本地手动运维脚本**（CI 不依赖，仍可用）: `scripts/deploy.sh`（服务器现场编译 + SCP+systemd）、`scripts/deploy-remote.sh`
@@ -376,7 +376,8 @@ APP_ENV                         # production / local / development / test
 - **WalletRegistry 有内存缓存**：修改 DB 中 coin_chains 后需重启后端才能生效
 - **coin_chains.safeheron_coin_key 是 UNIQUE 约束**：测试网和主网 coinKey 不同，seed 数据按 APP_ENV 区分
 - **Vercel Hobby 限制 12 个 Functions**：所有 API 路由必须通过 `api/[...route].ts` 统一处理
-- **发布迁移必须是受控单版本**：使用 `-exact-version` 和一致的 `EXPECTED_MIGRATION_CEILING`，禁止在 Stage/production 重跑历史全量 pending 迁移
+- **发布迁移必须是受控序列**：只运行 artifact 声明的版本；每个版本使用 `-exact-version`
+  和一致的 `EXPECTED_MIGRATION_CEILING`，禁止在 Stage/production 重跑历史全量 pending 迁移
 - **Go 后端端口**：本地 .env 中 `PORT=8081`，Vite dev server 在 5001
 
 ---

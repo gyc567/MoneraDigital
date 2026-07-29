@@ -188,7 +188,8 @@ health_check() {
 
 run_migration() {
     trace "migrate"
-    local actual migration_exit
+    local sequence_output release_version migration_exit
+    local -a release_sequence=()
     # Load the app .env so the migrate binary inherits ADR 0003 variables
     # (MIGRATION_DATABASE_URL, APP_ENV, ...) the same way the systemd server
     # unit does via EnvironmentFile. Without this, monera-migrate reads empty
@@ -215,29 +216,46 @@ run_migration() {
         printf 'MIGRATION_DATABASE_URL=%s\nAPP_ENV=%s\n' \
             "${MIGRATION_DATABASE_URL:-}" "${APP_ENV:-}" > "$MONERA_DEPLOY_FAKE_MIGRATION_ENV_PROBE"
     fi
+    trace "migration-print-sequence"
     if [[ "${MONERA_DEPLOY_FAKE:-0}" == "1" ]]; then
-        trace "migration-print-ceiling"
         [[ "${MONERA_DEPLOY_FAKE_PRINT_CEILING_EXIT_CODE:-0}" == "0" ]] || return 1
-        actual="${MONERA_DEPLOY_FAKE_MIGRATION_CEILING:-$EXPECTED_MIGRATION_CEILING}"
+        sequence_output="${MONERA_DEPLOY_FAKE_MIGRATION_SEQUENCE:-${MONERA_DEPLOY_FAKE_MIGRATION_CEILING:-$EXPECTED_MIGRATION_CEILING}}"
     else
-        actual=$("$APP_DIR/monera-migrate" -print-ceiling -exact-version "$EXPECTED_MIGRATION_CEILING") || return 1
+        sequence_output=$("$APP_DIR/monera-migrate" -print-release-sequence) || return 1
     fi
-    if [[ -n "$EXPECTED_MIGRATION_CEILING" && "$actual" != "$EXPECTED_MIGRATION_CEILING" ]]; then
-        echo "ERROR: migration ceiling $actual does not match $EXPECTED_MIGRATION_CEILING" >&2
+    while IFS= read -r release_version; do
+        [[ -z "$release_version" ]] && continue
+        [[ "$release_version" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || {
+            echo "ERROR: artifact migration sequence contains an invalid version" >&2
+            return 1
+        }
+        release_sequence+=("$release_version")
+    done <<< "$sequence_output"
+    [[ "${#release_sequence[@]}" -gt 0 ]] || {
+        echo "ERROR: artifact migration sequence is empty" >&2
         return 1
-    fi
+    }
+    release_version="${release_sequence[${#release_sequence[@]}-1]}"
+    [[ "$release_version" == "$EXPECTED_MIGRATION_CEILING" ]] || {
+        echo "ERROR: migration ceiling $release_version does not match $EXPECTED_MIGRATION_CEILING" >&2
+        return 1
+    }
 
     trace "migration-runner-started"
-    if [[ "${MONERA_DEPLOY_FAKE:-0}" == "1" ]]; then
-        migration_exit="${MONERA_DEPLOY_FAKE_MIGRATION_EXIT_CODE:-0}"
-        [[ "${MONERA_DEPLOY_FAIL_ACTION:-}" != "migrate" ]] || migration_exit=1
-    elif (cd "$APP_DIR" && EXPECTED_MIGRATION_CEILING="$EXPECTED_MIGRATION_CEILING" ./monera-migrate -exact-version "$EXPECTED_MIGRATION_CEILING"); then
-        migration_exit=0
-    else
-        migration_exit=$?
-    fi
-    [[ "$migration_exit" == "0" ]] && return 0
-    return 1
+    for release_version in "${release_sequence[@]}"; do
+        trace "migration-runner-${release_version}-started"
+        if [[ "${MONERA_DEPLOY_FAKE:-0}" == "1" ]]; then
+            migration_exit="${MONERA_DEPLOY_FAKE_MIGRATION_EXIT_CODE:-0}"
+            [[ "${MONERA_DEPLOY_FAKE_MIGRATION_FAIL_VERSION:-}" != "$release_version" ]] || migration_exit=1
+            [[ "${MONERA_DEPLOY_FAIL_ACTION:-}" != "migrate" ]] || migration_exit=1
+        elif (cd "$APP_DIR" && EXPECTED_MIGRATION_CEILING="$release_version" ./monera-migrate -exact-version "$release_version"); then
+            migration_exit=0
+        else
+            migration_exit=$?
+        fi
+        [[ "$migration_exit" == "0" ]] || return 1
+    done
+    return 0
 }
 
 backup_file() {

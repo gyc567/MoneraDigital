@@ -149,7 +149,8 @@ go run ./cmd/migrate -dry-run
 EXPECTED_MIGRATION_CEILING=<version> go run ./cmd/migrate -exact-version <version>
 ```
 
-- Stage/production 只允许执行本次发布的受控单版本迁移，不得使用默认全量 pending 入口。
+- Stage/production 只允许执行 artifact 声明的受控迁移序列；序列内每个版本必须分别使用
+  `-exact-version` 和匹配的 ceiling，不得使用默认全量 pending 入口。
 - `npm run db:push` / `npm run db:generate` 属于历史前端工具，不是共享生产 schema 的发布方式。
 
 ### 辅助命令
@@ -413,7 +414,8 @@ export function useDebounce<T>(value: T, delay: number): T {
 - **列名**: `snake_case` (`created_at`, `user_id`)
 - **外键**: `tableName_id` 后缀
 - **Schema 所有权**: 生产共享 schema 只由 `internal/migration/migrations/` 中的 Go migration 修改
-- **发布边界**: Stage/production 只执行本次新增的受控单版本迁移，不重放历史全量迁移
+- **发布边界**: Stage/production 只执行 artifact 声明的受控迁移序列；每个版本独立 exact 执行，
+  不重放历史全量迁移
 - **本地测试**: 使用当前环境的 `DATABASE_URL`，不强制 `_test` 数据库命名；测试数据由用例自行隔离和清理
 
 ## Git 工作流

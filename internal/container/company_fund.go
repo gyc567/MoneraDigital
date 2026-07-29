@@ -354,79 +354,17 @@ func finalizeCompanyFundRuntime(c *Container) {
 		return
 	}
 
-	var syncAdapter *companyfund.CompanyFundReconciliationSyncRunAdapter
-	if safeHistoryClient != nil || (airBundle != nil && airBundle.Enabled) {
-		syncAdapter, err = companyfund.NewCompanyFundReconciliationSyncRunAdapter(
-			c.CompanyFundRepository,
-			companyfund.CompanyFundReconciliationSyncRunAdapterConfig{
-				LeaseOwner:    companyFundLeaseOwner("company-fund-reconcile", config.ReconciliationLeaseOwner),
-				LeaseDuration: companyFundDurationOrDefault(config.ReconciliationLeaseDuration, defaultCompanyFundReconciliationLeaseDuration),
-			},
-		)
-		if err != nil {
-			log.Printf("company-fund REST reconciliation disabled: sync-run lease configuration is invalid")
-			syncAdapter = nil
-		}
-	}
-
-	var safeReconciler *companyfund.SafeheronTransactionHistoryReconciler
-	if safeHistoryClient != nil && syncAdapter != nil {
-		var historyIngester companyfund.SafeheronHistoryOwnedProviderEventIngestor = c.CompanyFundOwnedPayloadService
-		if c.SafeheronRoutingMode == fundrouting.ModeCaptureOnly || c.SafeheronRoutingMode == fundrouting.ModeRoutingAuthoritative {
-			routingHistoryIngester, historyErr := fundrouting.NewHistoryInboxIngester(c.DB)
-			if historyErr != nil {
-				log.Printf("company-fund Safeheron routing history inbox disabled: %v", historyErr)
-			} else {
-				historyIngester = routingHistoryIngester
-			}
-		}
-		safeReconciler, err = companyfund.NewSafeheronTransactionHistoryReconciler(
-			safeHistoryClient,
-			historyIngester,
-			syncAdapter,
-			companyfund.SafeheronTransactionHistoryReconcilerConfig{
-				PageSize:          int32(companyFundPositiveIntOrDefault(config.SafeheronHistoryPageSize, defaultCompanyFundSafeheronHistoryPageSize)),
-				MaxPages:          companyFundPositiveIntOrDefault(config.SafeheronHistoryMaxPages, defaultCompanyFundSafeheronHistoryMaxPages),
-				PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
-				PayloadRetention:  config.PayloadRetention,
-			},
-		)
-		if err != nil {
-			log.Printf("company-fund Safeheron REST reconciliation disabled: configuration is invalid")
-			safeReconciler = nil
-		}
-	}
-
-	var airwallexClient *companyfund.AirwallexClient
-	var airwallexReconciler *companyfund.AirwallexFinancialTransactionsReconciler
-	if airBundle != nil && airBundle.Enabled && syncAdapter != nil {
-		airwallexClient, err = newCompanyFundAirwallexClient(config)
-		if err != nil {
-			log.Printf("company-fund Airwallex REST client disabled: incomplete or invalid configuration")
-			airwallexClient = nil
-		}
-		if airwallexClient != nil {
-			airwallexReconciler, err = companyfund.NewAirwallexFinancialTransactionsReconciler(
-				airwallexClient,
-				c.CompanyFundOwnedPayloadService,
-				syncAdapter,
-				companyfund.AirwallexFinancialTransactionsReconcilerConfig{
-					APIVersion:        airwallexConfig.APIVersion,
-					SchemaVersion:     airwallexConfig.SchemaVersion,
-					EventVersion:      airwallexConfig.EventVersion,
-					PageSize:          companyFundPositiveIntOrDefault(config.AirwallexFinancialPageSize, defaultCompanyFundAirwallexFinancialPageSize),
-					MaxPages:          companyFundPositiveIntOrDefault(config.AirwallexFinancialMaxPages, defaultCompanyFundAirwallexFinancialMaxPages),
-					PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
-					PayloadRetention:  config.PayloadRetention,
-				},
-			)
-			if err != nil {
-				log.Printf("company-fund Airwallex REST reconciliation disabled: configuration is invalid")
-				airwallexReconciler = nil
-				airwallexClient = nil
-			}
-		}
-	}
+	reconciliation := newCompanyFundReconciliationRuntime(
+		c,
+		config,
+		safeHistoryClient,
+		airBundle,
+		airwallexConfig,
+	)
+	syncAdapter := reconciliation.syncAdapter
+	safeReconciler := reconciliation.safeheron
+	airwallexClient := reconciliation.airwallexClient
+	airwallexReconciler := reconciliation.airwallex
 
 	runtimeDependencies := companyfund.CompanyFundRuntimeDependencies{
 		ProviderEventWorker: worker,
@@ -553,6 +491,117 @@ func finalizeCompanyFundRuntime(c *Container) {
 	log.Printf("company-fund runtime assembled: worker=%t safeheron_history=%t airwallex_reconciliation=%t airwallex_webhook=%t airwallex_ledger=%t valuation=%t",
 		worker != nil, safeReconciler != nil, airwallexReconciler != nil, c.CompanyFundAirwallexWebhookHandler != nil,
 		runtimeDependencies.LedgerTaskProcessor != nil, valuator != nil)
+}
+
+type companyFundReconciliationRuntime struct {
+	syncAdapter     *companyfund.CompanyFundReconciliationSyncRunAdapter
+	safeheron       *companyfund.SafeheronTransactionHistoryReconciler
+	airwallexClient *companyfund.AirwallexClient
+	airwallex       *companyfund.AirwallexFinancialTransactionsReconciler
+}
+
+func newCompanyFundReconciliationRuntime(
+	c *Container,
+	config companyFundRuntimeConfig,
+	safeHistoryClient safeheron.TransactionHistoryClient,
+	airBundle *companyfund.AirwallexFinancialTransactionsRuntimeBundle,
+	airwallexConfig companyfund.AirwallexFinancialTransactionsRuntimeConfig,
+) companyFundReconciliationRuntime {
+	result := companyFundReconciliationRuntime{}
+	if safeHistoryClient != nil || (airBundle != nil && airBundle.Enabled) {
+		var err error
+		result.syncAdapter, err = companyfund.NewCompanyFundReconciliationSyncRunAdapter(
+			c.CompanyFundRepository,
+			companyfund.CompanyFundReconciliationSyncRunAdapterConfig{
+				LeaseOwner: companyFundLeaseOwner(
+					"company-fund-reconcile",
+					config.ReconciliationLeaseOwner,
+				),
+				LeaseDuration: companyFundDurationOrDefault(
+					config.ReconciliationLeaseDuration,
+					defaultCompanyFundReconciliationLeaseDuration,
+				),
+			},
+		)
+		if err != nil {
+			log.Printf("company-fund REST reconciliation disabled: sync-run lease configuration is invalid")
+			result.syncAdapter = nil
+		}
+	}
+
+	if safeHistoryClient != nil && result.syncAdapter != nil {
+		historyIngester := companyfund.SafeheronHistoryOwnedProviderEventIngestor(
+			c.CompanyFundOwnedPayloadService,
+		)
+		if c.SafeheronRoutingMode == fundrouting.ModeCaptureOnly ||
+			c.SafeheronRoutingMode == fundrouting.ModeRoutingAuthoritative {
+			routingHistoryIngester, err := fundrouting.NewHistoryInboxIngester(c.DB)
+			if err != nil {
+				log.Printf("company-fund Safeheron routing history inbox disabled: %v", err)
+			} else {
+				historyIngester = routingHistoryIngester
+			}
+		}
+		var err error
+		result.safeheron, err = companyfund.NewSafeheronTransactionHistoryReconciler(
+			safeHistoryClient,
+			historyIngester,
+			result.syncAdapter,
+			companyfund.SafeheronTransactionHistoryReconcilerConfig{
+				PageSize: int32(companyFundPositiveIntOrDefault(
+					config.SafeheronHistoryPageSize,
+					defaultCompanyFundSafeheronHistoryPageSize,
+				)),
+				MaxPages: companyFundPositiveIntOrDefault(
+					config.SafeheronHistoryMaxPages,
+					defaultCompanyFundSafeheronHistoryMaxPages,
+				),
+				PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
+				PayloadRetention:  config.PayloadRetention,
+			},
+		)
+		if err != nil {
+			log.Printf("company-fund Safeheron REST reconciliation disabled: configuration is invalid")
+			result.safeheron = nil
+		}
+	}
+
+	if airBundle == nil || !airBundle.Enabled || result.syncAdapter == nil {
+		return result
+	}
+	var err error
+	result.airwallexClient, err = newCompanyFundAirwallexClient(config)
+	if err != nil {
+		log.Printf("company-fund Airwallex REST client disabled: incomplete or invalid configuration")
+		result.airwallexClient = nil
+		return result
+	}
+	result.airwallex, err = companyfund.NewAirwallexFinancialTransactionsReconciler(
+		result.airwallexClient,
+		c.CompanyFundOwnedPayloadService,
+		result.syncAdapter,
+		companyfund.AirwallexFinancialTransactionsReconcilerConfig{
+			APIVersion:    airwallexConfig.APIVersion,
+			SchemaVersion: airwallexConfig.SchemaVersion,
+			EventVersion:  airwallexConfig.EventVersion,
+			PageSize: companyFundPositiveIntOrDefault(
+				config.AirwallexFinancialPageSize,
+				defaultCompanyFundAirwallexFinancialPageSize,
+			),
+			MaxPages: companyFundPositiveIntOrDefault(
+				config.AirwallexFinancialMaxPages,
+				defaultCompanyFundAirwallexFinancialMaxPages,
+			),
+			PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
+			PayloadRetention:  config.PayloadRetention,
+		},
+	)
+	if err != nil {
+		log.Printf("company-fund Airwallex REST reconciliation disabled: configuration is invalid")
+		result.airwallex = nil
+		result.airwallexClient = nil
+	}
+	return result
 }
 
 func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time.Duration) (*companyfund.SafeheronProviderEventNormalizer, safeheron.TransactionHistoryClient) {

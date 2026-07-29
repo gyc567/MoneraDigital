@@ -19,27 +19,27 @@ Accepted — 2026-07-23（grill 共识；对应 GitHub #35）
 
 ## Decision
 
-1. **迁移连接与业务连接分离（配置规则 C）**  
-   - 解析顺序：若设置 `MIGRATION_DATABASE_URL` 则仅用它跑 migrate；否则 fallback 到 `DATABASE_URL`。  
-   - **Stage / production**：必须提供 `MIGRATION_DATABASE_URL`，且必须是 direct/unpooled；禁止依赖业务 pooler URL。  
+1. **迁移连接与业务连接分离（配置规则 C）**
+   - 解析顺序：若设置 `MIGRATION_DATABASE_URL` 则仅用它跑 migrate；否则 fallback 到 `DATABASE_URL`。
+   - **Stage / production**：必须提供 `MIGRATION_DATABASE_URL`，且必须是 direct/unpooled；禁止依赖业务 pooler URL。
    - **local / development / test**：允许仅配置 direct 的 `DATABASE_URL`（无专用变量时 fallback）。
 
-2. **Pooler fail-closed（判定规则 A）**  
-   - 对**最终用于 migrate 的 URL**，若 hostname（忽略大小写）包含 `-pooler`，拒绝启动并非 0 退出。  
+2. **Pooler fail-closed（判定规则 A）**
+   - 对**最终用于 migrate 的 URL**，若 hostname（忽略大小写）包含 `-pooler`，拒绝启动并非 0 退出。
    - 该检测对迁移连接**全环境**生效（含 local：故意使用 Neon pooler 也应被拦）。
 
-3. **Advisory lock 有界等待（默认 30s，硬失败）**  
-   - 默认超时 **30 秒**，可通过环境变量覆盖（建议名 `MIGRATION_ADVISORY_LOCK_TIMEOUT`）。  
-   - 超时 → migrate **失败退出**，不静默自动重试；需要重试则由人工或 CI 重新触发整次发布/迁库。  
+3. **Advisory lock 有界等待（默认 30s，硬失败）**
+   - 默认超时 **30 秒**，可通过环境变量覆盖（建议名 `MIGRATION_ADVISORY_LOCK_TIMEOUT`）。
+   - 超时 → migrate **失败退出**，不静默自动重试；需要重试则由人工或 CI 重新触发整次发布/迁库。
    - 实现可用 try-lock 轮询或等价有界机制；语义是「有界」而非「无限 `pg_advisory_lock`」。
 
-4. **超时后只读 holder 诊断（不做自动杀连接）**  
-   - 超时后尽力查询 `pg_locks` / `pg_stat_activity` 类信息，日志可含：lock key、timeout、holder pid、state、年龄、`application_name`。  
-   - **不**打印完整查询文本（避免业务/敏感 SQL）；**不**自动 terminate。  
+4. **超时后只读 holder 诊断（不做自动杀连接）**
+   - 超时后尽力查询 `pg_locks` / `pg_stat_activity` 类信息，日志可含：lock key、timeout、holder pid、state、年龄、`application_name`。
+   - **不**打印完整查询文本（避免业务/敏感 SQL）；**不**自动 terminate。
    - 诊断不可用时标明 unavailable，仍以锁超时为失败原因。
 
-5. **文档与运维**  
-   - 发布/迁移说明明确：Stage/Prod 配置 Neon **direct** `MIGRATION_DATABASE_URL`；业务保持 pooler `DATABASE_URL`。  
+5. **文档与运维**
+   - 发布/迁移说明明确：Stage/Prod 配置 Neon **direct** `MIGRATION_DATABASE_URL`；业务保持 pooler `DATABASE_URL`。
    - 保留 exact-version / ceiling 既有要求；补充锁超时与 holder 排查指引。
 
 ## Alternatives considered
@@ -66,14 +66,14 @@ Accepted — 2026-07-23（grill 共识；对应 GitHub #35）
 
 ## Consequences
 
-- Stage/Prod 运维必须新增并保管 **direct** `MIGRATION_DATABASE_URL`（与业务 pooler 分离）。  
-- 误用 pooler 跑 migrate 会在启动期失败，而不是卡在锁上。  
-- 并发 migrate 或残留 holder 时，发布在约默认 30s 内红灯，并尽可能给出 holder 线索。  
-- 业务连接池策略不变；CU / 连接数优化不依赖本 ADR。  
+- Stage/Prod 运维必须新增并保管 **direct** `MIGRATION_DATABASE_URL`（与业务 pooler 分离）。
+- 误用 pooler 跑 migrate 会在启动期失败，而不是卡在锁上。
+- 并发 migrate 或残留 holder 时，发布在约默认 30s 内红灯，并尽可能给出 holder 线索。
+- 业务连接池策略不变；CU / 连接数优化不依赖本 ADR。
 - 实现以 GitHub **#35** 为工单载体；本 ADR 为决策记录。
 
 ## Related
 
-- Issue: https://github.com/Monnaire-code/MoneraDigital/issues/35  
-- Ops notes: `docs/security/MIGRATION-NOTES.md`  
-- Adjacent (already shipped): standard deploy path, exact-version ceiling control  
+- Issue: https://github.com/Monnaire-code/MoneraDigital/issues/35
+- Ops notes: `docs/security/MIGRATION-NOTES.md`
+- Adjacent (already shipped): standard deploy path, exact-version ceiling control

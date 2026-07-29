@@ -40,6 +40,48 @@ func TestExactVersionPrintCeilingMatchesSelection(t *testing.T) {
 	}
 }
 
+func TestCurrentArtifactPrintReleaseSequenceIncludesEveryRequiredExactMigration(t *testing.T) {
+	t.Parallel()
+	cmd := exec.Command("go", "run", ".", "-print-release-sequence")
+	cmd.Env = append(os.Environ(), "APP_ENV=production")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("release sequence CLI failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "061\n062" {
+		t.Fatalf("release sequence = %q, want ordered lines 061 and 062", got)
+	}
+}
+
+func TestArtifactReleaseSequenceMustBeContiguousExactAndEndAtCeiling(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name     string
+		sequence []string
+	}{
+		{name: "empty", sequence: nil},
+		{name: "unknown", sequence: []string{"061", "999"}},
+		{name: "not exact deployable", sequence: []string{"049"}},
+		{name: "not contiguous", sequence: []string{"060", "062"}},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := validateArtifactMigrationReleaseSequence(testCase.sequence); err == nil {
+				t.Fatalf("invalid release sequence accepted: %v", testCase.sequence)
+			}
+		})
+	}
+
+	ceiling, err := validateArtifactMigrationReleaseSequence([]string{"061", "062"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ceiling != "062" {
+		t.Fatalf("release sequence ceiling = %q, want 062", ceiling)
+	}
+}
+
 func TestExactVersionRejectsRollbackBeforeOpeningDatabase(t *testing.T) {
 	t.Parallel()
 	cmd := exec.Command("go", "run", ".", "-rollback", "-exact-version", "050")
@@ -189,8 +231,8 @@ func TestDefaultMigrationSelectionRegistersCurrentArtifact(t *testing.T) {
 	if err := registerSelectedMigrations(migrator, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := migrator.Ceiling(); got != artifactMigrationCeiling {
-		t.Fatalf("default migration ceiling = %q, want %q", got, artifactMigrationCeiling)
+	if got := migrator.Ceiling(); got != artifactMigrationCeiling() {
+		t.Fatalf("default migration ceiling = %q, want %q", got, artifactMigrationCeiling())
 	}
 }
 
@@ -232,8 +274,8 @@ func TestArtifactMigrationCeilingControlsRegistrationAndCannotBeRuntimeExpanded(
 	if err := registerMigrationsForArtifact(migration.NewMigrator(nil), "051"); err == nil {
 		t.Fatal("unsupported artifact migration ceiling accepted")
 	}
-	if artifactMigrationCeiling != "062" {
-		t.Fatalf("current tree compiled ceiling = %q", artifactMigrationCeiling)
+	if artifactMigrationCeiling() != "062" {
+		t.Fatalf("current tree compiled ceiling = %q", artifactMigrationCeiling())
 	}
 }
 
