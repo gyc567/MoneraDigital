@@ -1,12 +1,12 @@
 # Airwallex company-fund — Stage 交付与 Phase 2 验收清单
 
-> 状态：基础采集曾在 Stage 验收通过；Phase 2 代码于 2026-07-29 完成本机门禁，
-> 尚待合入 Stage 后执行本清单的受控迁移和运行时验收。
-> 装配 `airwallex_reconciliation=true airwallex_webhook=true`；webhook lookback
-> REST 入账 `seen=5 created=5 facts=5 txns=5`。Console 真实 webhook URL/secret
-> 对齐仍为可选运维项（当前用 stage `.env` secret 自签探测）。
+> 状态：Phase 2 待上线版本 `790fc2b` 已于 2026-07-29 通过本机门禁和 Stage
+> 验收。Stage 装配 `airwallex_reconciliation=true airwallex_webhook=true
+> airwallex_ledger=true`；两次 Sandbox REST 重放均 `seen=42 created=0`，
+> 数据保持 `facts=19 txns=19`。REVERSAL 样本仍没有 exact target evidence，
+> 因此继续 fail closed，不是已支持的自动入账类型。
 >
-> 目标环境：测试环境（stage 分支 → `18.179.50.82` /
+> 目标环境：测试环境（stage 分支 → `13.159.187.219` /
 > `test-mdapi.moneradigital.com`）。
 > 本清单不覆盖 production（#35 仍 OPEN，未经明确授权不得合 main）。
 
@@ -137,8 +137,12 @@ WHERE channel = 'AIRWALLEX';
    - 订阅任意业务事件即可（用于 wake）；入账不依赖 envelope 类型
 
 3. **部署**
-   - 先使用 direct `MIGRATION_DATABASE_URL` 执行：
-     `EXPECTED_MIGRATION_CEILING=062 go run ./cmd/migrate -exact-version 062`
+   - artifact 通过 `monera-migrate -print-release-sequence` 声明本次顺序：
+     `061` → `062`
+   - standard deploy 使用 direct `MIGRATION_DATABASE_URL`，逐个执行：
+     `EXPECTED_MIGRATION_CEILING=<version> monera-migrate -exact-version <version>`
+   - 任一步失败都必须在安装新 server 前停止；已应用版本按 provenance
+     安全跳过
    - 含本功能的 commit 进 `stage` 后走 standard 一条龙
    - 启动 log 应出现类似：
      `company-fund runtime assembled: ... airwallex_reconciliation=true airwallex_webhook=true airwallex_ledger=true ...`
@@ -162,18 +166,28 @@ WHERE channel = 'AIRWALLEX';
 - [x] 相关 Go 单测绿；PR #68 合 stage 并 standard 部署成功
 - [x] 修复前 orphan PENDING 80791–80794 已手工 SKIPPED（window_key 含纳秒 hash，不可重放）
 
-### Phase 2 上 Stage 后必须补齐的证据
+### Phase 2 Stage 证据（2026-07-29）
 
-- [ ] migration dry-run 无越界，并以 direct connection 完成 exact-version `062`
-- [ ] FEE 一级/二级 category code 存在、enabled、层级与父子关系正确
-- [ ] 启动日志显示 ledger task processor 已装配，且无 payload、Token、API key、
+- [x] exact dry-run 显示 `061` / `062` applied；standard deploy 按 `061 → 062`
+      顺序检查并安全跳过，之后才安装并启动 `790fc2b`
+- [x] FEE category 为 `operating-expense / transaction-fee`，均 enabled，
+      level=1/2 且父子关系正确
+- [x] 启动日志显示 ledger task processor 已装配，且无 payload、Token、API key、
       Webhook secret 或 DATABASE_URL
-- [ ] Sandbox CONVERSION 两腿最终 `COMPLETE`，明细两条、默认汇总零条、无 FX gain/loss
-- [ ] 当前 FEE 仅用 `SOURCE_ID_GROUP_ONLY`；明细有组关系、无虚构 parent，默认自动分类正确
-- [ ] 当前 PAYOUT_REVERSAL 在 exact-target evidence 未补齐前保持 fail-closed
-- [ ] 重复 webhook / REST reconciliation / replay 不增加 fact、movement 或分类副作用
-- [ ] 财务手工改类与手工清空后均为 `MANUAL`，维护循环不覆盖
-- [ ] 观察任务 WAITING/LEASED/COMPLETED/DEAD_LETTER 分布与重试间隔，无热循环
+- [x] 3 组 Sandbox CONVERSION 共 6 条，两腿均 `COMPLETE`、默认汇总零条，
+      不生成 FX gain/loss
+- [x] 4 条 FEE 仅用 `SOURCE_ID_GROUP_ONLY`，无虚构 parent；全部自动分类为
+      `operating-expense / transaction-fee / 计入经营收支`
+- [x] 3 条 PAYOUT_REVERSAL 样本只有 source reference、没有 target reference，
+      保持 quarantine/fail-closed
+- [x] 两次 REST reconciliation 均 `seen=42 created=0`，facts/txns 始终
+      `19/19`；19 个 movement key 全部唯一，10 个 task identity 全部唯一
+- [x] 财务手工改类与手工清空后均为 `MANUAL`，自动规则更新 0 行；事务
+      rollback 后 4 条 FEE 均恢复 `AUTO_RULE`
+- [x] 任务共 10 条，全部 `COMPLETED`、最大 attempts=1，无
+      WAITING/LEASED/DEAD_LETTER 或热循环
+- [x] 公网 `/health`、`/api/health` 均 200；Console test-event 签名路径 200、
+      坏签 400，test event 不写入 provider inbox
 - [ ] 回滚时先停 worker；代码回退前评估 migration `062` Down 对新关系/分类审计数据的影响
 
 ## 6. 明确不在本交付内
