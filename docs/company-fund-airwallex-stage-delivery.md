@@ -212,7 +212,8 @@ WHERE channel = 'AIRWALLEX';
 
 - 同时启用多个 Airwallex `CURRENT` 账户
 - 无 exact identity evidence 的 FEE parent / REVERSAL original 映射
-- 动态业务对手方解析与 KYT
+- `DEPOSIT` / `PAYMENT` 等尚无已验证资源契约的动态对手方解析
+- KYT / 合规集成（`PAYOUT` 的 Transfer beneficiary 展示字段已由独立 resolver 支持）
 - CONVERSION 汇兑损益 movement
 - production 切换与 PR #35 合并
 - 把 sandbox runtime JSON 或 webhook secret 提交进仓库

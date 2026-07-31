@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -94,18 +95,21 @@ WITH locked AS (
 SELECT COUNT(*) FROM updated`
 
 type AirwallexLedgerTaskProcessorConfig struct {
-	Owner                 string
-	LeaseDuration         time.Duration
-	RetryDelay            time.Duration
-	FeeClassification     AirwallexFeeClassificationPolicy
-	ReversalPolicyVersion string
-	MaintenanceBatch      int
-	TaskSLA               time.Duration
+	Owner                      string
+	LeaseDuration              time.Duration
+	RetryDelay                 time.Duration
+	FeeClassification          AirwallexFeeClassificationPolicy
+	ReversalPolicyVersion      string
+	MaintenanceBatch           int
+	TaskSLA                    time.Duration
+	PayoutCounterpartyBackfill bool
 }
 
 type AirwallexLedgerTaskProcessor struct {
-	repository *DBRepository
-	config     AirwallexLedgerTaskProcessorConfig
+	repository                         *DBRepository
+	config                             AirwallexLedgerTaskProcessorConfig
+	payoutCounterpartyBackfillMu       sync.Mutex
+	payoutCounterpartyBackfillComplete bool
 }
 
 type airwallexRelationshipTarget struct {
@@ -166,6 +170,27 @@ func (processor *AirwallexLedgerTaskProcessor) Maintain(ctx context.Context) (bo
 	if err != nil {
 		return false, err
 	}
+	counterpartyEvents := 0
+	if processor.config.PayoutCounterpartyBackfill {
+		processor.payoutCounterpartyBackfillMu.Lock()
+		if !processor.payoutCounterpartyBackfillComplete {
+			counterpartyEvents, err = processor.repository.RequeueAirwallexPayoutCounterpartyBackfill(
+				ctx,
+				processor.config.MaintenanceBatch,
+			)
+			if err == nil && counterpartyEvents == 0 {
+				var candidatesRemain bool
+				candidatesRemain, err = processor.repository.HasAirwallexPayoutCounterpartyBackfillCandidates(ctx)
+				if err == nil && !candidatesRemain {
+					processor.payoutCounterpartyBackfillComplete = true
+				}
+			}
+		}
+		processor.payoutCounterpartyBackfillMu.Unlock()
+		if err != nil {
+			return enqueued > 0, err
+		}
+	}
 	synchronized := 0
 	if processor.validReversalPolicy() {
 		var err error
@@ -175,10 +200,10 @@ func (processor *AirwallexLedgerTaskProcessor) Maintain(ctx context.Context) (bo
 			processor.config.MaintenanceBatch,
 		)
 		if err != nil {
-			return enqueued > 0, err
+			return enqueued > 0 || counterpartyEvents > 0, err
 		}
 	}
-	return enqueued > 0 || synchronized > 0, nil
+	return enqueued > 0 || counterpartyEvents > 0 || synchronized > 0, nil
 }
 
 func (processor *AirwallexLedgerTaskProcessor) validReversalPolicy() bool {

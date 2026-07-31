@@ -51,7 +51,8 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 - `已解析`关系可立即生成 movement；精确父交易、原交易或换汇对腿尚未到达时，
   只保存 fact 与 `company_fund_ledger_tasks`，由 PostgreSQL lease/retry 恢复。
 - `source_id` 只保存为 provider fact 和关系证据，**不参与 movement identity**。
-- 动态业务对手方仍不在本期 relationship resolver 范围内。
+- 动态对手方不属于 relationship resolver；`PAYOUT` 由独立的 Transfer
+  beneficiary resolver 补充，其他动态类型仍 fail-closed/留空。
 
 ## 3. Airwallex Financial Transaction 枚举（官方文档）
 
@@ -110,13 +111,23 @@ Sandbox evidence 重新生成配置，不能直接把这份历史清单当作当
 digest，不保存原始 Provider payload。等待任务有 lease、attempt、next-attempt、
 SLA、terminal state 和安全错误码，进程重启可恢复。
 
-### 5.3 动态 counterparty gap
+### 5.3 动态 counterparty
 
-runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`airwallex_runtime_config.go:300-307`）。`ADJUSTMENT` 等内部调整无对手方（或自己）。但 **`PAYOUT` / `DEPOSIT` / `PAYMENT` 的对手方是动态的**（每笔不同收款人/付款人）：
+`ADJUSTMENT` 等内部调整可能没有外部对手方。动态外部对手方按类型独立解析：
 
-- 当前 rule 无 counterparty 字段（stage config rules 未配 counterparty）
-- 动态对手方需 dedicated counterparty resolver（从 transaction field 提取，如 `source_id` / `funding_source_id` / 扩展字段）
-- 涉及 KYT / 合规（对手方筛查）
+- `PAYOUT`：exact runtime rule 命中后，以 Financial Transaction 的
+  `source_id` 调用官方 `GET /api/v1/transfers/{id}`；只提取 beneficiary 的完整
+  `account_number`（无本地账号时使用完整 `iban`）和 `account_name`。不读取或
+  保存本期不展示的其他 beneficiary 银行/个人字段。
+- `source_id` 只用于已确认的 Transfer 资源查询，仍不参与 movement identity。
+- 客户端按数据库中的当前 Airwallex account scope 创建，避免跨账户查询。
+- 网络、5xx、408/409/425/429 等暂时失败进入耐久重试；404、格式错误或缺少完整
+  账号按永久失败处理，避免无限请求。任何失败都不会用空响应覆盖已有有效对手方。
+- 已处理且加密快照仍在 retention 内、完整账号为空的历史 PAYOUT，会被有界、
+  `SKIP LOCKED` 地重新排队并通过同一 upsert 路径补齐；扫描到空批次后本进程停止
+  该发布期回填。重复处理仍只有一条 movement。
+- `DEPOSIT` / `PAYMENT` 等类型尚未取得已验证的对应资源契约，当前不推断对手方。
+- 本次只负责 Provider 对手方展示事实，不新增 KYT / 合规判断。
 
 ## 6. 补全路径（分阶段）
 
@@ -136,10 +147,12 @@ runtime config 的 counterparty resolver 返回 rule 内静态 counterparty（`a
   provider replay、自动规则和 reversal 传播都不覆盖。
 - 受控 schema 版本：migration `062`。
 
-### Phase 3：dedicated counterparty resolver（动态对手方，代码开发）
-- 从 transaction field 提取对手方
-- KYT / 合规集成
-- 覆盖 `PAYOUT` / `DEPOSIT` / `PAYMENT` 动态对手方
+### Phase 3：dedicated counterparty resolver（部分完成）
+
+- [x] `PAYOUT`：Financial Transaction `source_id` → Transfer beneficiary；
+  完整账号/IBAN、账户名；历史 retention 内回填。
+- [ ] `DEPOSIT` / `PAYMENT`：取得 Sandbox/官方资源关联证据后分别实现，禁止猜测。
+- [ ] KYT / 合规集成（独立范围）。
 
 ## 7. evidence-backed 设计原则
 
@@ -168,7 +181,7 @@ Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以�
 | 类型 | sandbox 可触发 | 限制 |
 |------|---------------|------|
 | `ADJUSTMENT` | ✅ 已配 5 币种 | — |
-| `PAYOUT`/SGD | ✅ 已配（1000 SGD 入账）| 用户通过 Console UI 发款；API `payouts/beneficiaries` + `payouts/transfers/{id}` 返回 404（账号无 Payouts 产品权限）|
+| `PAYOUT`/SGD | ✅ 已配（1000 SGD 入账）| 用户通过 Console UI 发款；Financial Transaction `source_id` 可通过官方 `GET /api/v1/transfers/{id}` 查询 Transfer，Sandbox 实测 200，并返回 beneficiary 的完整 `account_number`、`account_name`、`bank_name` |
 | `PAYOUT` 其他币种 | ❌ | 同上 + 无 beneficiary |
 | `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
 | `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |

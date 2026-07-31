@@ -16,6 +16,111 @@ import (
 
 const airwallexPhase2PostgresGate = "RUN_COMPANY_FUND_AIRWALLEX_PHASE2_INTEGRATION"
 
+func TestAirwallexPayoutCounterpartyPostgresIntegration(t *testing.T) {
+	if os.Getenv(airwallexPhase2PostgresGate) != "1" {
+		t.Skip("set RUN_COMPANY_FUND_AIRWALLEX_PHASE2_INTEGRATION=1 to run PostgreSQL Airwallex Phase 2 coverage")
+	}
+	db := newAirwallexPhase2PostgresFixture(t, requiredAirwallexPhase2DatabaseURL(t))
+	ctx := context.Background()
+	source := loadAirwallexPhase2Source(t, db)
+	registry, err := buildAccountRegistrySnapshot([]CompanyFundAccount{{
+		ID:                 source.accountID,
+		Channel:            AccountChannelAirwallex,
+		ProviderAccountKey: source.accountKey,
+		CompanyEntity:      "Monera Ltd",
+		FundAccountName:    "Treasury",
+		AccountType:        "BANK",
+		AccountName:        "USD account",
+		Enabled:            true,
+	}}, nil, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testAirwallexRuntimePayoutConfig()
+	config.Rules[0].ProviderAccountKey = source.accountKey
+	beneficiaryClient := &airwallexTransferBeneficiaryClientStub{
+		beneficiary: AirwallexTransferBeneficiary{
+			AddressOrAccount: "1234567890",
+			Name:             "Ada Recipient",
+		},
+	}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+		config,
+		&airwallexProviderEventRegistryStub{snapshot: registry},
+		&airwallexTransferBeneficiaryFactoryStub{client: beneficiaryClient},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"id":"ft_payout_counterparty_1","amount":-19.75,"fee":0,"net":-19.75,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_1","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	digest := payloadSHA256Hex(payload)
+	eventInput := ProviderEventInput{
+		Channel:                       ChannelAirwallex,
+		ProviderEventID:               "airwallex-payout-counterparty-integration",
+		EventType:                     AirwallexFinancialTransactionSnapshotEventType,
+		ProviderEventVersion:          airwallexTestAPIVersion,
+		ProviderAccountKey:            source.accountKey,
+		SourceKind:                    ProviderEventSourceOwnedEncryptedPayload,
+		SourcePayloadDigest:           digest,
+		OwnedPayloadCiphertext:        []byte("integration-ciphertext"),
+		OwnedPayloadDigest:            digest,
+		OwnedPayloadKeyVersion:        "integration-v1",
+		OwnedPayloadRetentionDuration: time.Hour,
+	}
+	repository := NewDBRepository(db)
+	inserted, err := repository.InsertProviderEvent(ctx, eventInput)
+	if err != nil || !inserted.Inserted {
+		t.Fatalf("insert payout provider event = %#v, %v", inserted, err)
+	}
+	worker := newProviderEventWorkerForTest(
+		t,
+		repository,
+		&providerEventPayloadReaderStub{payload: payload},
+		map[TransactionSource]ProviderEventNormalizer{ChannelAirwallex: bundle.ProviderEvents},
+		time.Now(),
+	)
+	result, err := worker.ProcessNext(ctx)
+	if err != nil || result.Outcome != ProviderEventFinalizeProcessed || result.MovementCount != 1 {
+		t.Fatalf("process payout provider event = %#v, %v", result, err)
+	}
+	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+
+	if _, err := db.ExecContext(ctx, `
+UPDATE company_fund_transactions
+SET to_address_or_account = NULL, payee_name = NULL
+WHERE provider_transaction_id = 'ft_payout_counterparty_1'`); err != nil {
+		t.Fatal(err)
+	}
+	requeued, err := repository.RequeueAirwallexPayoutCounterpartyBackfill(ctx, 10)
+	if err != nil || requeued != 1 {
+		t.Fatalf("RequeueAirwallexPayoutCounterpartyBackfill() = %d, %v", requeued, err)
+	}
+	result, err = worker.ProcessNext(ctx)
+	if err != nil || result.Outcome != ProviderEventFinalizeProcessed || result.MovementCount != 1 {
+		t.Fatalf("process payout backfill = %#v, %v", result, err)
+	}
+	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+
+	replayed, err := repository.InsertProviderEvent(ctx, eventInput)
+	if err != nil || replayed.Inserted || replayed.ID != inserted.ID {
+		t.Fatalf("replay payout provider event = %#v, %v", replayed, err)
+	}
+	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+
+	beneficiaryClient.beneficiary = AirwallexTransferBeneficiary{}
+	if _, err := db.ExecContext(ctx, `
+UPDATE company_fund_provider_events
+SET event_state = 'PENDING', processed_at = NULL, updated_at = NOW()
+WHERE id = $1`, inserted.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err = worker.ProcessNext(ctx)
+	if err != nil || result.Outcome != ProviderEventFinalizeFailed {
+		t.Fatalf("empty beneficiary replay = %#v, %v", result, err)
+	}
+	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+}
+
 // TestAirwallexPhase2FeePostgresIntegration proves the highest durable seam:
 // provider fact + waiting task -> linked movement + automatic finance category.
 // It uses cloned tables in a unique schema and never changes public data.
@@ -987,6 +1092,41 @@ WHERE id = $1`, transactionID).Scan(&actualSource, &actualPolicy); err != nil {
 	if actualSource != source || actualPolicy.String != policyVersion || actualPolicy.Valid != (policyVersion != "") {
 		t.Fatalf("transaction %d classification source=%s policy=%v, want %s/%q",
 			transactionID, actualSource, actualPolicy, source, policyVersion)
+	}
+}
+
+func assertAirwallexPayoutCounterparty(
+	t *testing.T,
+	db *sql.DB,
+	providerTransactionID string,
+	account string,
+	name string,
+	wantCount int,
+) {
+	t.Helper()
+	var actualAccount, actualName sql.NullString
+	var count int
+	if err := db.QueryRow(`
+SELECT MAX(to_address_or_account), MAX(payee_name), COUNT(*)
+FROM company_fund_transactions
+WHERE provider_transaction_id = $1`, providerTransactionID).Scan(
+		&actualAccount,
+		&actualName,
+		&count,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if count != wantCount || !actualAccount.Valid || actualAccount.String != account ||
+		!actualName.Valid || actualName.String != name {
+		t.Fatalf(
+			"payout counterparty account=%v name=%v count=%d, want %q/%q/%d",
+			actualAccount,
+			actualName,
+			count,
+			account,
+			name,
+			wantCount,
+		)
 	}
 }
 

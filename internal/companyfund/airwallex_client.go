@@ -116,6 +116,12 @@ func (c *AirwallexClient) PinnedLoginAsScope() string {
 func (c *AirwallexClient) AirwallexFinancialTransactionsClientForScope(
 	providerAccountKey string,
 ) (AirwallexFinancialTransactionsClient, error) {
+	return c.airwallexClientForScope(providerAccountKey)
+}
+
+func (c *AirwallexClient) airwallexClientForScope(
+	providerAccountKey string,
+) (*AirwallexClient, error) {
 	if c == nil || c.baseURL == nil || c.httpClient == nil || c.now == nil {
 		return nil, fmt.Errorf("airwallex client is not configured")
 	}
