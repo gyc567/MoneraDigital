@@ -9,14 +9,14 @@ import (
 	"sync"
 )
 
-type airwallexTransferCounterpartyResolver struct {
+type airwallexTransferDetailsResolver struct {
 	configured *AirwallexFinancialTransactionsRuntimeResolvers
-	clients    AirwallexTransferBeneficiaryScopedClientFactory
+	clients    AirwallexTransferDetailsScopedClientFactory
 	clientMu   sync.Mutex
-	scoped     map[string]AirwallexTransferBeneficiaryClient
+	scoped     map[string]AirwallexTransferDetailsClient
 }
 
-func (resolver *airwallexTransferCounterpartyResolver) ResolveAirwallexProviderEventCounterparty(
+func (resolver *airwallexTransferDetailsResolver) ResolveAirwallexProviderEventCounterparty(
 	ctx context.Context,
 	input AirwallexProviderEventResolutionInput,
 	mapping AirwallexProviderEventMapping,
@@ -29,8 +29,7 @@ func (resolver *airwallexTransferCounterpartyResolver) ResolveAirwallexProviderE
 	if err != nil {
 		return AirwallexProviderEventCounterpartyResolution{}, err
 	}
-	if configured.Counterparty != nil || configured.CompanyProviderAccountKey != "" ||
-		!rule.transferBeneficiary {
+	if !rule.transferDetails {
 		return configured, nil
 	}
 	if strings.TrimSpace(input.Transaction.SourceReference) == "" {
@@ -42,36 +41,38 @@ func (resolver *airwallexTransferCounterpartyResolver) ResolveAirwallexProviderE
 	if err != nil {
 		return AirwallexProviderEventCounterpartyResolution{}, err
 	}
-	beneficiary, err := client.GetTransferBeneficiary(ctx, input.Transaction.SourceReference)
+	details, err := client.GetTransferDetails(ctx, input.Transaction.SourceReference)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return AirwallexProviderEventCounterpartyResolution{}, err
 		}
-		if airwallexTransferBeneficiaryErrorIsTemporary(err) {
+		if airwallexTransferDetailsErrorIsTemporary(err) {
 			return AirwallexProviderEventCounterpartyResolution{}, fmt.Errorf(
 				"%w: %v",
-				ErrAirwallexTransferBeneficiaryTemporary,
+				ErrAirwallexTransferDetailsTemporary,
 				err,
 			)
 		}
 		return AirwallexProviderEventCounterpartyResolution{}, fmt.Errorf(
 			"%w: %v",
-			ErrAirwallexTransferBeneficiaryUnavailable,
+			ErrAirwallexTransferDetailsUnavailable,
 			err,
 		)
 	}
-	if strings.TrimSpace(beneficiary.AddressOrAccount) == "" {
-		return AirwallexProviderEventCounterpartyResolution{}, ErrAirwallexTransferBeneficiaryUnavailable
+	if configured.Counterparty == nil && configured.CompanyProviderAccountKey == "" {
+		if strings.TrimSpace(details.Beneficiary.AddressOrAccount) == "" {
+			return AirwallexProviderEventCounterpartyResolution{}, ErrAirwallexTransferDetailsUnavailable
+		}
+		configured.Counterparty = &AirwallexCounterparty{
+			AddressOrAccount: details.Beneficiary.AddressOrAccount,
+			Name:             details.Beneficiary.Name,
+		}
 	}
-	return AirwallexProviderEventCounterpartyResolution{
-		Counterparty: &AirwallexCounterparty{
-			AddressOrAccount: beneficiary.AddressOrAccount,
-			Name:             beneficiary.Name,
-		},
-	}, nil
+	configured.Fee = cloneProviderTransactionFeeInput(details.Fee)
+	return configured, nil
 }
 
-func airwallexTransferBeneficiaryErrorIsTemporary(err error) bool {
+func airwallexTransferDetailsErrorIsTemporary(err error) bool {
 	if errors.Is(err, ErrAirwallexNetwork) ||
 		errors.Is(err, ErrAirwallexServerResponse) ||
 		errors.Is(err, ErrAirwallexResponseRead) {
@@ -92,23 +93,23 @@ func airwallexTransferBeneficiaryErrorIsTemporary(err error) bool {
 	}
 }
 
-func (resolver *airwallexTransferCounterpartyResolver) clientForScope(
+func (resolver *airwallexTransferDetailsResolver) clientForScope(
 	providerAccountKey string,
-) (AirwallexTransferBeneficiaryClient, error) {
+) (AirwallexTransferDetailsClient, error) {
 	resolver.clientMu.Lock()
 	defer resolver.clientMu.Unlock()
 	if client := resolver.scoped[providerAccountKey]; client != nil {
 		return client, nil
 	}
-	client, err := resolver.clients.AirwallexTransferBeneficiaryClientForScope(providerAccountKey)
+	client, err := resolver.clients.AirwallexTransferDetailsClientForScope(providerAccountKey)
 	if err != nil {
 		return nil, err
 	}
 	if client == nil {
-		return nil, fmt.Errorf("Airwallex transfer beneficiary client is unavailable")
+		return nil, fmt.Errorf("Airwallex transfer details client is unavailable")
 	}
 	if resolver.scoped == nil {
-		resolver.scoped = make(map[string]AirwallexTransferBeneficiaryClient)
+		resolver.scoped = make(map[string]AirwallexTransferDetailsClient)
 	}
 	resolver.scoped[providerAccountKey] = client
 	return client, nil

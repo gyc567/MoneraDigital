@@ -732,7 +732,7 @@ func newCompanyFundAirwallexRuntimeBundle(
 		log.Printf("company-fund Airwallex runtime disabled: REST client configuration is invalid")
 		return nil, runtimeConfig, nil
 	}
-	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 		runtimeConfig,
 		registry,
 		client,

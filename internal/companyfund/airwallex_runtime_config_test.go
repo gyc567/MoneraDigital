@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 func TestAirwallexFinancialTransactionsRuntimeBundle_DisabledConfigurationIsExplicit(t *testing.T) {
@@ -136,21 +138,30 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_MapsOnlyApprovedExternalSna
 func TestAirwallexFinancialTransactionsRuntimeBundle_ResolvesPayoutBeneficiaryFromTransferAPI(t *testing.T) {
 	registry := &airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)}
 	config := testAirwallexRuntimePayoutConfig()
-	factory := &airwallexTransferBeneficiaryFactoryStub{
-		client: &airwallexTransferBeneficiaryClientStub{
+	feeAmount := decimal.RequireFromString("15.58")
+	feeCurrency := "USD"
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{
 			beneficiary: AirwallexTransferBeneficiary{
 				AddressOrAccount: "1234567890",
 				Name:             "Ada Recipient",
 			},
+			fee: ProviderTransactionFeeInput{
+				Amount:   &feeAmount,
+				Currency: &feeCurrency,
+				DetailsJSON: []byte(
+					`{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`,
+				),
+			},
 		},
 	}
-	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 		config,
 		registry,
 		factory,
 	)
 	if err != nil {
-		t.Fatalf("NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient() error = %v", err)
+		t.Fatalf("NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient() error = %v", err)
 	}
 
 	payload := []byte(`{"id":"ft_payout_1","amount":-19.75,"fee":0,"net":-19.75,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_1","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
@@ -172,6 +183,16 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_ResolvesPayoutBeneficiaryFr
 		*movement.ProviderDisplay.PayeeName != "Ada Recipient" {
 		t.Fatalf("payout counterparty display = %#v", movement.ProviderDisplay)
 	}
+	if movement.ProviderDisplay.Fee.Amount == nil ||
+		!movement.ProviderDisplay.Fee.Amount.Equal(decimal.RequireFromString("15.58")) ||
+		movement.ProviderDisplay.Fee.Currency == nil ||
+		*movement.ProviderDisplay.Fee.Currency != "USD" {
+		t.Fatalf("payout fee display = %#v", movement.ProviderDisplay.Fee)
+	}
+	const wantFeeDetails = `{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`
+	if string(movement.ProviderDisplay.Fee.DetailsJSON) != wantFeeDetails {
+		t.Fatalf("payout fee details = %s, want %s", movement.ProviderDisplay.Fee.DetailsJSON, wantFeeDetails)
+	}
 	if factory.scope != "awx-usd" || factory.client.transferID != "transfer_1" {
 		t.Fatalf("resolver scope=%q transfer=%q, want awx-usd/transfer_1", factory.scope, factory.client.transferID)
 	}
@@ -188,6 +209,63 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_ResolvesPayoutBeneficiaryFr
 	}
 }
 
+func TestAirwallexFinancialTransactionsRuntimeBundle_PreservesManualPayoutCounterpartyWhileEnrichingFee(t *testing.T) {
+	config := testAirwallexRuntimePayoutConfig()
+	config.Rules[0].Counterparty = &AirwallexRuntimeManualCounterparty{
+		EvidenceReference: "finance-approved-payout-counterparty",
+		AddressOrAccount:  "manual-account",
+		Name:              "Manual recipient",
+	}
+	feeAmount := decimal.RequireFromString("15.58")
+	feeCurrency := "USD"
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{
+			beneficiary: AirwallexTransferBeneficiary{
+				AddressOrAccount: "provider-account",
+				Name:             "Provider recipient",
+			},
+			fee: ProviderTransactionFeeInput{
+				Amount:   &feeAmount,
+				Currency: &feeCurrency,
+				DetailsJSON: []byte(
+					`{"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY"}`,
+				),
+			},
+		},
+	}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		config,
+		&airwallexProviderEventRegistryStub{
+			snapshot: testAirwallexProviderEventRegistrySnapshot(t, true),
+		},
+		factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"id":"ft_payout_manual","amount":-1000,"fee":0,"net":-1000,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_manual","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	result, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	)
+	if err != nil || len(result.Movements) != 1 {
+		t.Fatalf("NormalizeProviderEvent() = %#v, %v", result, err)
+	}
+	display := result.Movements[0].ProviderDisplay
+	if display.To.AddressOrAccount == nil || *display.To.AddressOrAccount != "manual-account" ||
+		display.PayeeName == nil || *display.PayeeName != "Manual recipient" {
+		t.Fatalf("manual payout counterparty was overwritten: %#v", display)
+	}
+	if display.Fee.Amount == nil || !display.Fee.Amount.Equal(feeAmount) ||
+		display.Fee.Currency == nil || *display.Fee.Currency != feeCurrency {
+		t.Fatalf("manual payout fee display = %#v", display.Fee)
+	}
+	if factory.calls != 1 || factory.client.transferID != "transfer_manual" {
+		t.Fatalf("Transfer API calls=%d id=%q, want one transfer_manual", factory.calls, factory.client.transferID)
+	}
+}
+
 func TestAirwallexFinancialTransactionsRuntimeBundle_DoesNotFetchBeneficiaryForTerminalPayoutRule(t *testing.T) {
 	config := testAirwallexRuntimePayoutConfig()
 	config.Rules[0].Classification.Action = AirwallexFinancialTransactionActionQuarantine
@@ -198,10 +276,10 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_DoesNotFetchBeneficiaryForT
 	config.Rules[0].Classification.AmountField = ""
 	config.Rules[0].Classification.ExpectedSign = ""
 	config.Rules[0].Classification.OccurredAtField = ""
-	factory := &airwallexTransferBeneficiaryFactoryStub{
-		client: &airwallexTransferBeneficiaryClientStub{},
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{},
 	}
-	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 		config,
 		&airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)},
 		factory,
@@ -222,12 +300,12 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_DoesNotFetchBeneficiaryForT
 	}
 }
 
-func TestAirwallexFinancialTransactionsRuntimeBundle_RetriesOnlyTemporaryBeneficiaryFailures(t *testing.T) {
-	client := &airwallexTransferBeneficiaryClientStub{err: ErrAirwallexNetwork}
-	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+func TestAirwallexFinancialTransactionsRuntimeBundle_RetriesOnlyTemporaryTransferDetailsFailures(t *testing.T) {
+	client := &airwallexTransferDetailsClientStub{err: ErrAirwallexNetwork}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 		testAirwallexRuntimePayoutConfig(),
 		&airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)},
-		&airwallexTransferBeneficiaryFactoryStub{client: client},
+		&airwallexTransferDetailsFactoryStub{client: client},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +315,7 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_RetriesOnlyTemporaryBenefic
 		context.Background(),
 		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
 		payload,
-	); !errors.Is(err, ErrAirwallexTransferBeneficiaryTemporary) ||
+	); !errors.Is(err, ErrAirwallexTransferDetailsTemporary) ||
 		errors.Is(err, ErrProviderEventPermanent) {
 		t.Fatalf("network beneficiary error = %v, want temporary provider failure", err)
 	}
@@ -252,7 +330,7 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_RetriesOnlyTemporaryBenefic
 	}
 }
 
-func TestAirwallexTransferBeneficiaryErrorIsTemporary(t *testing.T) {
+func TestAirwallexTransferDetailsErrorIsTemporary(t *testing.T) {
 	testCases := []struct {
 		name string
 		err  error
@@ -274,8 +352,8 @@ func TestAirwallexTransferBeneficiaryErrorIsTemporary(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			if got := airwallexTransferBeneficiaryErrorIsTemporary(testCase.err); got != testCase.want {
-				t.Fatalf("airwallexTransferBeneficiaryErrorIsTemporary(%v) = %t, want %t",
+			if got := airwallexTransferDetailsErrorIsTemporary(testCase.err); got != testCase.want {
+				t.Fatalf("airwallexTransferDetailsErrorIsTemporary(%v) = %t, want %t",
 					testCase.err, got, testCase.want)
 			}
 		})
@@ -505,33 +583,37 @@ func testAirwallexRuntimePayoutConfig() AirwallexFinancialTransactionsRuntimeCon
 	}
 }
 
-type airwallexTransferBeneficiaryFactoryStub struct {
+type airwallexTransferDetailsFactoryStub struct {
 	scope  string
-	client *airwallexTransferBeneficiaryClientStub
+	client *airwallexTransferDetailsClientStub
 	err    error
 	calls  int
 }
 
-func (stub *airwallexTransferBeneficiaryFactoryStub) AirwallexTransferBeneficiaryClientForScope(
+func (stub *airwallexTransferDetailsFactoryStub) AirwallexTransferDetailsClientForScope(
 	providerAccountKey string,
-) (AirwallexTransferBeneficiaryClient, error) {
+) (AirwallexTransferDetailsClient, error) {
 	stub.scope = providerAccountKey
 	stub.calls++
 	return stub.client, stub.err
 }
 
-type airwallexTransferBeneficiaryClientStub struct {
+type airwallexTransferDetailsClientStub struct {
 	transferID  string
 	beneficiary AirwallexTransferBeneficiary
+	fee         ProviderTransactionFeeInput
 	err         error
 }
 
-func (stub *airwallexTransferBeneficiaryClientStub) GetTransferBeneficiary(
+func (stub *airwallexTransferDetailsClientStub) GetTransferDetails(
 	_ context.Context,
 	transferID string,
-) (AirwallexTransferBeneficiary, error) {
+) (AirwallexTransferDetails, error) {
 	stub.transferID = transferID
-	return stub.beneficiary, stub.err
+	return AirwallexTransferDetails{
+		Beneficiary: stub.beneficiary,
+		Fee:         cloneProviderTransactionFeeInput(stub.fee),
+	}, stub.err
 }
 
 func cloneAirwallexRuntimeConfig(source AirwallexFinancialTransactionsRuntimeConfig) AirwallexFinancialTransactionsRuntimeConfig {

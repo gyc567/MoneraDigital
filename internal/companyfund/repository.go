@@ -1044,7 +1044,7 @@ SET from_address_or_account = CASE WHEN $2 THEN COALESCE($3, from_address_or_acc
 	provider_reported_fee_currency = CASE WHEN $2 THEN COALESCE($16, provider_reported_fee_currency) ELSE COALESCE(provider_reported_fee_currency, $16) END,
 	fee_details = CASE
 		WHEN $2 AND $17::jsonb IS NOT NULL THEN $17::jsonb
-		WHEN fee_details = '{}'::jsonb AND $17::jsonb IS NOT NULL THEN $17::jsonb
+		WHEN $17::jsonb IS NOT NULL THEN $17::jsonb || fee_details
 		ELSE fee_details
 	END,
 	block_height = CASE WHEN $2 THEN COALESCE($18::bigint, block_height) ELSE COALESCE(block_height, $18::bigint) END,

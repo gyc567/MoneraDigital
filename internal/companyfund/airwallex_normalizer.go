@@ -193,6 +193,7 @@ type AirwallexFinancialTransactionNormalizationInput struct {
 	ConfiguredAccount          CompanyFundAccount
 	Counterparty               *AirwallexCounterparty
 	CounterpartyCompanyAccount *CompanyFundAccount
+	ProviderFee                ProviderTransactionFeeInput
 	ConfiguredAccountSide      AirwallexConfiguredAccountSide
 	AssetPolicy                *AccountAssetPolicy
 	Source                     AirwallexFinancialTransactionSourceMetadata
@@ -492,7 +493,15 @@ func (n *AirwallexFinancialTransactionNormalizer) Normalize(input AirwallexFinan
 		return result
 	}
 
-	display, err := buildAirwallexTransactionDisplay(classification, numbers, transaction.currency, configuredAccount, input.Counterparty, resolvedAccounts)
+	display, err := buildAirwallexTransactionDisplay(
+		classification,
+		numbers,
+		transaction.currency,
+		configuredAccount,
+		input.Counterparty,
+		input.ProviderFee,
+		resolvedAccounts,
+	)
 	if err != nil {
 		result.Reason = "AIRWALLEX_DISPLAY_METADATA_INVALID"
 		return result
@@ -1133,7 +1142,15 @@ func airwallexDustPolicy(policy *AccountAssetPolicy) DustPolicy {
 	return policy.Dust
 }
 
-func buildAirwallexTransactionDisplay(classification AirwallexFinancialTransactionClassification, numbers parsedAirwallexFinancialTransactionNumbers, currency string, configured CompanyFundAccount, counterparty *AirwallexCounterparty, resolved resolvedAirwallexMovementAccounts) (ProviderTransactionDisplayInput, error) {
+func buildAirwallexTransactionDisplay(
+	classification AirwallexFinancialTransactionClassification,
+	numbers parsedAirwallexFinancialTransactionNumbers,
+	currency string,
+	configured CompanyFundAccount,
+	counterparty *AirwallexCounterparty,
+	providerFee ProviderTransactionFeeInput,
+	resolved resolvedAirwallexMovementAccounts,
+) (ProviderTransactionDisplayInput, error) {
 	configuredParty := airwallexCompanyAccountDisplay(configured)
 	counterpartyParty, counterpartyName := airwallexCounterpartyDisplay(counterparty)
 	display := ProviderTransactionDisplayInput{}
@@ -1151,6 +1168,10 @@ func buildAirwallexTransactionDisplay(classification AirwallexFinancialTransacti
 		display.To = airwallexCompanyAccountDisplay(resolved.toAccount)
 	default:
 		return ProviderTransactionDisplayInput{}, fmt.Errorf("unsupported Airwallex display direction")
+	}
+	if providerFee.Amount != nil || providerFee.Currency != nil || len(providerFee.DetailsJSON) != 0 {
+		display.Fee = cloneProviderTransactionFeeInput(providerFee)
+		return normalizedAirwallexDisplay(display)
 	}
 	if classification.IncludeFeeDisplay {
 		if numbers.fee == nil || numbers.fee.IsZero() {
@@ -1171,6 +1192,10 @@ func normalizedAirwallexDisplay(display ProviderTransactionDisplayInput) (Provid
 	if err != nil {
 		return ProviderTransactionDisplayInput{}, err
 	}
+	var feeDetails json.RawMessage
+	if normalized.FeeDetailsJSON != nil {
+		feeDetails = json.RawMessage(*normalized.FeeDetailsJSON)
+	}
 	return ProviderTransactionDisplayInput{
 		From: ProviderTransactionPartyDisplayInput{
 			AddressOrAccount: normalized.From.AddressOrAccount,
@@ -1189,8 +1214,9 @@ func normalizedAirwallexDisplay(display ProviderTransactionDisplayInput) (Provid
 		PayerName: normalized.PayerName,
 		PayeeName: normalized.PayeeName,
 		Fee: ProviderTransactionFeeInput{
-			Amount:   normalized.FeeAmount,
-			Currency: normalized.FeeCurrency,
+			Amount:      normalized.FeeAmount,
+			Currency:    normalized.FeeCurrency,
+			DetailsJSON: feeDetails,
 		},
 	}, nil
 }

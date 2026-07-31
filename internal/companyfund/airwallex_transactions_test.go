@@ -198,7 +198,7 @@ func TestAirwallexClient_RejectsUnsafeFinancialTransactionDetailID(t *testing.T)
 	}
 }
 
-func TestAirwallexClient_GetsTransferBeneficiaryForPayoutCounterparty(t *testing.T) {
+func TestAirwallexClient_GetsAllowlistedTransferDetailsForPayout(t *testing.T) {
 	now := time.Date(2026, 7, 31, 3, 0, 0, 0, time.UTC)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -216,6 +216,8 @@ func TestAirwallexClient_GetsTransferBeneficiaryForPayoutCounterparty(t *testing
 			}
 			_, _ = response.Write([]byte(`{
 				"id":"transfer_1",
+				"amount_beneficiary_receives":984.42,
+				"amount_payer_pays":1000,
 				"beneficiary":{
 					"entity_type":"PERSONAL",
 					"bank_details":{
@@ -223,7 +225,11 @@ func TestAirwallexClient_GetsTransferBeneficiaryForPayoutCounterparty(t *testing
 						"account_number":"1234567890",
 						"bank_name":"Example Bank"
 					}
-				}
+				},
+				"fee_amount":15.58,
+				"fee_currency":"USD",
+				"fee_paid_by":"BENEFICIARY",
+				"swift_charge_option":"SHARED"
 			}`))
 		default:
 			t.Errorf("unexpected path %q", request.URL.Path)
@@ -232,13 +238,21 @@ func TestAirwallexClient_GetsTransferBeneficiaryForPayoutCounterparty(t *testing
 	defer server.Close()
 
 	client := newTestAirwallexClient(t, server.URL, server.Client(), func() time.Time { return now }, time.Minute)
-	beneficiary, err := client.GetTransferBeneficiary(context.Background(), "transfer_1")
+	details, err := client.GetTransferDetails(context.Background(), "transfer_1")
 	if err != nil {
-		t.Fatalf("GetTransferBeneficiary() error = %v", err)
+		t.Fatalf("GetTransferDetails() error = %v", err)
 	}
-	if beneficiary.AddressOrAccount != "1234567890" ||
-		beneficiary.Name != "Ada Recipient" {
-		t.Fatalf("beneficiary = %#v", beneficiary)
+	if details.Beneficiary.AddressOrAccount != "1234567890" ||
+		details.Beneficiary.Name != "Ada Recipient" {
+		t.Fatalf("beneficiary = %#v", details.Beneficiary)
+	}
+	if details.Fee.Amount == nil || details.Fee.Amount.String() != "15.58" ||
+		details.Fee.Currency == nil || *details.Fee.Currency != "USD" {
+		t.Fatalf("fee = %#v", details.Fee)
+	}
+	const wantDetails = `{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`
+	if string(details.Fee.DetailsJSON) != wantDetails {
+		t.Fatalf("fee details = %s, want %s", details.Fee.DetailsJSON, wantDetails)
 	}
 }
 
@@ -266,11 +280,111 @@ func TestAirwallexClient_UsesFullIBANWhenTransferHasNoLocalAccountNumber(t *test
 	defer server.Close()
 	client := newTestAirwallexClient(t, server.URL, server.Client(), func() time.Time { return now }, time.Minute)
 
-	beneficiary, err := client.GetTransferBeneficiary(context.Background(), "transfer_iban")
+	details, err := client.GetTransferDetails(context.Background(), "transfer_iban")
 	if err != nil {
-		t.Fatalf("GetTransferBeneficiary() error = %v", err)
+		t.Fatalf("GetTransferDetails() error = %v", err)
 	}
-	if beneficiary.AddressOrAccount != "DE89370400440532013000" {
-		t.Fatalf("beneficiary account = %q, want full IBAN", beneficiary.AddressOrAccount)
+	if details.Beneficiary.AddressOrAccount != "DE89370400440532013000" {
+		t.Fatalf("beneficiary account = %q, want full IBAN", details.Beneficiary.AddressOrAccount)
+	}
+}
+
+func TestAirwallexClient_RejectsAmbiguousTransferFeeDetails(t *testing.T) {
+	now := time.Date(2026, 7, 31, 3, 0, 0, 0, time.UTC)
+	responses := map[string]string{
+		"/api/v1/transfers/unknown_fee_payer": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USD",
+			"fee_paid_by":"SPLIT"
+		}`,
+		"/api/v1/transfers/missing_fee_currency": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/missing_fee_amount": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_currency":"USD",
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/missing_fee_payer": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USD"
+		}`,
+		"/api/v1/transfers/negative_fee": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":-1,
+			"fee_currency":"USD",
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/invalid_fee_currency": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USDX",
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/non_alpha_fee_currency": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"US1",
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/unknown_swift_option": `{
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USD",
+			"fee_paid_by":"PAYER",
+			"swift_charge_option":"BENEFICIARY"
+		}`,
+		"/api/v1/transfers/invalid_payer_amount": `{
+			"amount_payer_pays":"1000",
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USD",
+			"fee_paid_by":"PAYER"
+		}`,
+		"/api/v1/transfers/negative_beneficiary_amount": `{
+			"amount_beneficiary_receives":-1,
+			"beneficiary":{"bank_details":{"account_number":"123"}},
+			"fee_amount":1,
+			"fee_currency":"USD",
+			"fee_paid_by":"PAYER",
+			"swift_charge_option":"PAYER"
+		}`,
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/v1/authentication/login" {
+			_, _ = response.Write([]byte(airwallexTestLoginResponse("transfer-token", now.Add(time.Hour))))
+			return
+		}
+		body, found := responses[request.URL.Path]
+		if !found {
+			http.NotFound(response, request)
+			return
+		}
+		_, _ = response.Write([]byte(body))
+	}))
+	defer server.Close()
+	client := newTestAirwallexClient(t, server.URL, server.Client(), func() time.Time { return now }, time.Minute)
+
+	for _, transferID := range []string{
+		"unknown_fee_payer",
+		"missing_fee_currency",
+		"missing_fee_amount",
+		"missing_fee_payer",
+		"negative_fee",
+		"invalid_fee_currency",
+		"non_alpha_fee_currency",
+		"unknown_swift_option",
+		"invalid_payer_amount",
+		"negative_beneficiary_amount",
+	} {
+		t.Run(transferID, func(t *testing.T) {
+			if _, err := client.GetTransferDetails(context.Background(), transferID); err == nil {
+				t.Fatalf("GetTransferDetails(%q) error = nil, want ambiguous fee details rejected", transferID)
+			}
+		})
 	}
 }
