@@ -121,6 +121,14 @@ type AirwallexTransferBeneficiary struct {
 	Name             string
 }
 
+// AirwallexTransferDetails is the allowlisted Transfer API view needed by the
+// company-fund ledger. It deliberately excludes unrelated beneficiary
+// personal and banking data retained by Airwallex.
+type AirwallexTransferDetails struct {
+	Beneficiary AirwallexTransferBeneficiary
+	Fee         ProviderTransactionFeeInput
+}
+
 // AirwallexWebhookVerifierConfig validates the webhook delivery boundary only;
 // it performs no HTTP handling, parsing, storage, or retry acknowledgement.
 type AirwallexWebhookVerifierConfig struct {

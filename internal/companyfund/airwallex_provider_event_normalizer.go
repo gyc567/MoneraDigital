@@ -97,6 +97,7 @@ type AirwallexProviderEventRelationshipResolver interface {
 type AirwallexProviderEventCounterpartyResolution struct {
 	Counterparty              *AirwallexCounterparty
 	CompanyProviderAccountKey string
+	Fee                       ProviderTransactionFeeInput
 }
 
 type AirwallexProviderEventCounterpartyResolver interface {
@@ -244,6 +245,7 @@ func (normalizer *AirwallexProviderEventNormalizer) NormalizeProviderEvent(
 		ConfiguredAccount:          configuredAccount,
 		Counterparty:               cloneAirwallexProviderEventCounterparty(counterparty.Counterparty),
 		CounterpartyCompanyAccount: counterpartyAccount,
+		ProviderFee:                cloneProviderTransactionFeeInput(counterparty.Fee),
 		ConfiguredAccountSide:      mapping.ConfiguredAccountSide,
 		AssetPolicy:                assetPolicy,
 		Source: AirwallexFinancialTransactionSourceMetadata{
@@ -338,11 +340,27 @@ func cloneAirwallexProviderEventCounterparty(source *AirwallexCounterparty) *Air
 	return &copy
 }
 
+func cloneProviderTransactionFeeInput(source ProviderTransactionFeeInput) ProviderTransactionFeeInput {
+	return ProviderTransactionFeeInput{
+		Amount:      copyTransactionSupplementDecimal(source.Amount),
+		Currency:    copyAirwallexString(source.Currency),
+		DetailsJSON: append([]byte(nil), source.DetailsJSON...),
+	}
+}
+
+func copyAirwallexString(source *string) *string {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
+}
+
 func airwallexProviderEventResolverError(err error, safeReason string) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	if errors.Is(err, ErrAirwallexTransferBeneficiaryTemporary) {
+	if errors.Is(err, ErrAirwallexTransferDetailsTemporary) {
 		return err
 	}
 	return airwallexPermanentNormalizationError(safeReason)

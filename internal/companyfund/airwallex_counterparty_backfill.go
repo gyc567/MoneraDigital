@@ -14,7 +14,13 @@ FROM company_fund_transactions transaction
 	WHERE transaction.channel = 'AIRWALLEX'
 	  AND transaction.movement_kind = 'PRINCIPAL'
 	  AND transaction.transaction_direction = 'OUTFLOW'
-	  AND transaction.to_address_or_account IS NULL
+	  AND (
+	    transaction.to_address_or_account IS NULL
+	    OR NOT (
+	      transaction.fee_details
+	      @> '{"enrichmentSource":"AIRWALLEX_TRANSFER_API"}'::jsonb
+	    )
+	  )
 	  AND fact.channel = 'AIRWALLEX'
 	  AND upper(COALESCE(fact.provider_extras->>'transaction_type', '')) = 'PAYOUT'
 	  AND upper(COALESCE(fact.provider_extras->>'source_type', '')) = 'PAYOUT'

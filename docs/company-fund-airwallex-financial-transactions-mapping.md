@@ -52,7 +52,8 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
   只保存 fact 与 `company_fund_ledger_tasks`，由 PostgreSQL lease/retry 恢复。
 - `source_id` 只保存为 provider fact 和关系证据，**不参与 movement identity**。
 - 动态对手方不属于 relationship resolver；`PAYOUT` 由独立的 Transfer
-  beneficiary resolver 补充，其他动态类型仍 fail-closed/留空。
+  details resolver 补充 beneficiary 与 Provider 手续费展示事实，其他动态类型
+  仍 fail-closed/留空。
 
 ## 3. Airwallex Financial Transaction 枚举（官方文档）
 
@@ -115,21 +116,32 @@ Provider evidence 生成配置，不能直接复制 Sandbox 清单：
 digest，不保存原始 Provider payload。等待任务有 lease、attempt、next-attempt、
 SLA、terminal state 和安全错误码，进程重启可恢复。
 
-### 5.3 动态 counterparty
+### 5.3 动态 counterparty 与 PAYOUT 手续费展示
 
 `ADJUSTMENT` 等内部调整可能没有外部对手方。动态外部对手方按类型独立解析：
 
 - `PAYOUT`：exact runtime rule 命中后，以 Financial Transaction 的
-  `source_id` 调用官方 `GET /api/v1/transfers/{id}`；只提取 beneficiary 的完整
-  `account_number`（无本地账号时使用完整 `iban`）和 `account_name`。不读取或
-  保存本期不展示的其他 beneficiary 银行/个人字段。
+  `source_id` 调用官方 `GET /api/v1/transfers/{id}`；提取 beneficiary 的完整
+  `account_number`（无本地账号时使用完整 `iban`）和 `account_name`，并按
+  [Airwallex Transfer API](https://www.airwallex.com/docs/api/payouts/transfers/api)
+  提取 `fee_amount`、`fee_currency`、`fee_paid_by`、
+  `swift_charge_option`、`amount_payer_pays` 和
+  `amount_beneficiary_receives`。不读取或保存其他 beneficiary 银行/个人字段。
+- `fee_amount` / `fee_currency` 写入流水的 Provider 上报手续费列；承担方、SWIFT
+  费用选项和双方实际金额写入 `fee_details`。`SHARED` 表示 SWIFT 各环节分担，
+  不解释为金额各承担 50%。
+- exact rule 已配置人工对手方时仍查询 Transfer API 补齐手续费，但保留人工对手方
+  展示值；Provider beneficiary 只在未配置对手方时补充，避免覆盖财务维护的数据。
+- Transfer 手续费是现有 `PAYOUT` principal movement 的展示/审计事实。没有独立
+  Financial Transaction `FEE` 事实时，不推导第二条手续费 movement；后续若
+  Provider 返回独立 `FEE`，仍由 FEE exact rule 入账。
 - `source_id` 只用于已确认的 Transfer 资源查询，仍不参与 movement identity。
 - 客户端按数据库中的当前 Airwallex account scope 创建，避免跨账户查询。
 - 网络、5xx、408/409/425/429 等暂时失败进入耐久重试；404、格式错误或缺少完整
   账号按永久失败处理，避免无限请求。任何失败都不会用空响应覆盖已有有效对手方。
-- 已处理且加密快照仍在 retention 内、完整账号为空的历史 PAYOUT，会被有界、
-  `SKIP LOCKED` 地重新排队并通过同一 upsert 路径补齐；扫描到空批次后本进程停止
-  该发布期回填。重复处理仍只有一条 movement。
+- 已处理且加密快照仍在 retention 内、完整账号为空或尚无 Transfer API enrichment
+  marker 的历史 PAYOUT，会被有界、`SKIP LOCKED` 地重新排队并通过同一 upsert
+  路径补齐；扫描到空批次后本进程停止该发布期回填。重复处理仍只有一条 movement。
 - `DEPOSIT` / `PAYMENT` 等类型尚未取得已验证的对应资源契约，当前不推断对手方。
 - 本次只负责 Provider 对手方展示事实，不新增 KYT / 合规判断。
 
@@ -151,10 +163,10 @@ SLA、terminal state 和安全错误码，进程重启可恢复。
   provider replay、自动规则和 reversal 传播都不覆盖。
 - 受控 schema 版本：migration `062`。
 
-### Phase 3：dedicated counterparty resolver（部分完成）
+### Phase 3：dedicated Transfer details resolver（部分完成）
 
 - [x] `PAYOUT`：Financial Transaction `source_id` → Transfer beneficiary；
-  完整账号/IBAN、账户名；历史 retention 内回填。
+  完整账号/IBAN、账户名、Provider 手续费及承担方；历史 retention 内回填。
 - [ ] `DEPOSIT` / `PAYMENT`：取得 Sandbox/官方资源关联证据后分别实现，禁止猜测。
 - [ ] KYT / 合规集成（独立范围）。
 
@@ -180,11 +192,13 @@ event id=1105 经受控重处理成为 PROCESSED，fact id=42 + transaction id=3
 数量为 1。该证据同时确认公司资金账务以 Financial Transactions 状态为准，
 不等待 Transfer 生命周期变为终态。
 
-Airwallex Console 对这笔付款展示 15.58 USD transfer fee，收款人得到 984.42
-USD，但截至验收窗口，Financial Transactions 仅返回上述 `PAYOUT -1000 USD`，
-没有独立 `FEE` item，且该 item 的 `fee=0`、`net=-1000`。因此当前只登记 1000
-USD 的公司余额支出，不根据 Console 展示自行推导第二条手续费流水；若 Provider
-后续产生独立 `FEE` 事实，再由 FEE exact rule 按权威事实入账。
+Transfer API 对这笔付款返回 `fee_amount=15.58 USD`、
+`fee_paid_by=BENEFICIARY`、`swift_charge_option=SHARED`，付款方支付 1000 USD，
+收款方预计收到 984.42 USD。Financial Transactions 仍只有上述
+`PAYOUT -1000 USD`，没有独立 `FEE` item，且该 item 的 `fee=0`、`net=-1000`。
+因此流水登记 1000 USD 的公司余额支出，并在同一条流水展示/审计 15.58 USD
+Transfer 手续费；不自行推导第二条手续费流水。若 Provider 后续产生独立 `FEE`
+事实，再由 FEE exact rule 按权威事实入账。
 
 ## 9. 关联
 
@@ -201,7 +215,7 @@ Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以�
 |------|---------------|------|
 | `ADJUSTMENT` | ✅ 已配 5 币种 | — |
 | `PAYOUT`/SGD | ✅ 已配（1000 SGD 入账）| 用户通过 Console UI 发款；Financial Transaction `source_id` 可通过官方 `GET /api/v1/transfers/{id}` 查询 Transfer，Sandbox 实测 200，并返回 beneficiary 的完整 `account_number`、`account_name`、`bank_name` |
-| `PAYOUT`/USD | ✅ 已配（1000 USD SWIFT 入账）| Financial Transaction 已 `SETTLED` 时 Transfer 仍可为 `PROCESSING`；完整 beneficiary account/name 已通过 Transfer API 精确回填；Console 展示的收款侧 fee 不得在 Provider 未返回独立 `FEE` item 时自行拆账 |
+| `PAYOUT`/USD | ✅ 已配（1000 USD SWIFT 入账）| Financial Transaction 已 `SETTLED` 时 Transfer 仍可为 `PROCESSING`；完整 beneficiary account/name 与 `fee_amount`/`fee_currency`/承担方/双方实际金额通过 Transfer API 精确回填；Provider 未返回独立 `FEE` item 时只作同一 principal 流水的费用展示，不自行拆账 |
 | `PAYOUT` 其他币种 | ❌ | 同上 + 无该币种 exact evidence |
 | `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
 | `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |

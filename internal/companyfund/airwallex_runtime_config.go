@@ -128,7 +128,7 @@ type airwallexFinancialTransactionsRuntimeRule struct {
 	counterpartyCompanyProviderAccountKey string
 	counterparty                          *AirwallexCounterparty
 	relationship                          AirwallexRuntimeRelationshipRule
-	transferBeneficiary                   bool
+	transferDetails                       bool
 }
 
 type airwallexFinancialTransactionsRuntimeRuleKey struct {
@@ -209,16 +209,16 @@ func NewAirwallexFinancialTransactionsScopedRuntimeBundle(
 	return newAirwallexFinancialTransactionsRuntimeBundle(config, registries, loginAsScope, nil)
 }
 
-// NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient
-// adds provider-backed PAYOUT counterparty enrichment without changing the
-// strict, exact runtime mapping contract.
-func NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+// NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient
+// adds provider-backed PAYOUT counterparty and fee enrichment without changing
+// the strict, exact runtime mapping contract.
+func NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 	config AirwallexFinancialTransactionsRuntimeConfig,
 	registries AirwallexRegistrySnapshotProvider,
-	clients AirwallexTransferBeneficiaryScopedClientFactory,
+	clients AirwallexTransferDetailsScopedClientFactory,
 ) (*AirwallexFinancialTransactionsRuntimeBundle, error) {
 	if clients == nil {
-		return nil, fmt.Errorf("Airwallex transfer beneficiary client factory is required")
+		return nil, fmt.Errorf("Airwallex transfer details client factory is required")
 	}
 	return newAirwallexFinancialTransactionsRuntimeBundle(config, registries, "", clients)
 }
@@ -227,7 +227,7 @@ func newAirwallexFinancialTransactionsRuntimeBundle(
 	config AirwallexFinancialTransactionsRuntimeConfig,
 	registries AirwallexRegistrySnapshotProvider,
 	loginAsScope string,
-	transferClients AirwallexTransferBeneficiaryScopedClientFactory,
+	transferClients AirwallexTransferDetailsScopedClientFactory,
 ) (*AirwallexFinancialTransactionsRuntimeBundle, error) {
 	normalized, err := normalizeAirwallexFinancialTransactionsRuntimeConfig(config)
 	if err != nil {
@@ -257,7 +257,7 @@ func newAirwallexFinancialTransactionsRuntimeBundle(
 	}
 	var counterpartyResolver AirwallexProviderEventCounterpartyResolver = resolvers
 	if transferClients != nil {
-		counterpartyResolver = &airwallexTransferCounterpartyResolver{
+		counterpartyResolver = &airwallexTransferDetailsResolver{
 			configured: resolvers,
 			clients:    transferClients,
 		}
@@ -467,7 +467,7 @@ func normalizeAirwallexFinancialTransactionsRuntimeConfig(source AirwallexFinanc
 			counterpartyCompanyProviderAccountKey: rule.CounterpartyCompanyProviderAccountKey,
 			counterparty:                          runtimeCounterpartyToProviderCounterparty(rule.Counterparty),
 			relationship:                          rule.Relationship,
-			transferBeneficiary:                   airwallexRuntimeRuleUsesTransferBeneficiary(classification),
+			transferDetails:                       airwallexRuntimeRuleUsesTransferDetails(classification),
 		}
 	}
 
@@ -810,7 +810,7 @@ func runtimeCounterpartyToProviderCounterparty(source *AirwallexRuntimeManualCou
 	}
 }
 
-func airwallexRuntimeRuleUsesTransferBeneficiary(
+func airwallexRuntimeRuleUsesTransferDetails(
 	classification AirwallexFinancialTransactionClassification,
 ) bool {
 	return classification.Action == AirwallexFinancialTransactionActionApply &&
@@ -826,7 +826,7 @@ func cloneAirwallexFinancialTransactionsRuntimeRule(source airwallexFinancialTra
 		counterpartyCompanyProviderAccountKey: source.counterpartyCompanyProviderAccountKey,
 		counterparty:                          cloneAirwallexProviderEventCounterparty(source.counterparty),
 		relationship:                          source.relationship,
-		transferBeneficiary:                   source.transferBeneficiary,
+		transferDetails:                       source.transferDetails,
 	}
 }
 

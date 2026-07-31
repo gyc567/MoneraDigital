@@ -38,16 +38,25 @@ func TestAirwallexPayoutCounterpartyPostgresIntegration(t *testing.T) {
 	}
 	config := testAirwallexRuntimePayoutConfig()
 	config.Rules[0].ProviderAccountKey = source.accountKey
-	beneficiaryClient := &airwallexTransferBeneficiaryClientStub{
+	feeAmount := decimal.RequireFromString("15.58")
+	feeCurrency := "USD"
+	transferDetailsClient := &airwallexTransferDetailsClientStub{
 		beneficiary: AirwallexTransferBeneficiary{
 			AddressOrAccount: "1234567890",
 			Name:             "Ada Recipient",
 		},
+		fee: ProviderTransactionFeeInput{
+			Amount:   &feeAmount,
+			Currency: &feeCurrency,
+			DetailsJSON: []byte(
+				`{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`,
+			),
+		},
 	}
-	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
 		config,
 		&airwallexProviderEventRegistryStub{snapshot: registry},
-		&airwallexTransferBeneficiaryFactoryStub{client: beneficiaryClient},
+		&airwallexTransferDetailsFactoryStub{client: transferDetailsClient},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +92,28 @@ func TestAirwallexPayoutCounterpartyPostgresIntegration(t *testing.T) {
 	if err != nil || result.Outcome != ProviderEventFinalizeProcessed || result.MovementCount != 1 {
 		t.Fatalf("process payout provider event = %#v, %v", result, err)
 	}
-	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+	assertAirwallexPayoutDetails(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+
+	if _, err := db.ExecContext(ctx, `
+UPDATE company_fund_transactions
+SET provider_reported_fee_amount = NULL,
+	provider_reported_fee_currency = NULL,
+	fee_details = '{"legacy":"keep"}'::jsonb
+WHERE provider_transaction_id = 'ft_payout_counterparty_1'`); err != nil {
+		t.Fatal(err)
+	}
+	requeued, err := repository.RequeueAirwallexPayoutCounterpartyBackfill(ctx, 10)
+	if err != nil || requeued != 1 {
+		t.Fatalf("RequeueAirwallexPayoutCounterpartyBackfill(fee) = %d, %v", requeued, err)
+	}
+	result, err = worker.ProcessNext(ctx)
+	if err != nil || result.Outcome != ProviderEventFinalizeProcessed || result.MovementCount != 1 {
+		t.Fatalf("process payout fee backfill = %#v, %v", result, err)
+	}
+	assertAirwallexPayoutDetails(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+	if candidatesRemain, err := repository.HasAirwallexPayoutCounterpartyBackfillCandidates(ctx); err != nil || candidatesRemain {
+		t.Fatalf("HasAirwallexPayoutCounterpartyBackfillCandidates() = %t, %v, want drained", candidatesRemain, err)
+	}
 
 	if _, err := db.ExecContext(ctx, `
 UPDATE company_fund_transactions
@@ -91,7 +121,7 @@ SET to_address_or_account = NULL, payee_name = NULL
 WHERE provider_transaction_id = 'ft_payout_counterparty_1'`); err != nil {
 		t.Fatal(err)
 	}
-	requeued, err := repository.RequeueAirwallexPayoutCounterpartyBackfill(ctx, 10)
+	requeued, err = repository.RequeueAirwallexPayoutCounterpartyBackfill(ctx, 10)
 	if err != nil || requeued != 1 {
 		t.Fatalf("RequeueAirwallexPayoutCounterpartyBackfill() = %d, %v", requeued, err)
 	}
@@ -99,15 +129,15 @@ WHERE provider_transaction_id = 'ft_payout_counterparty_1'`); err != nil {
 	if err != nil || result.Outcome != ProviderEventFinalizeProcessed || result.MovementCount != 1 {
 		t.Fatalf("process payout backfill = %#v, %v", result, err)
 	}
-	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+	assertAirwallexPayoutDetails(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
 
 	replayed, err := repository.InsertProviderEvent(ctx, eventInput)
 	if err != nil || replayed.Inserted || replayed.ID != inserted.ID {
 		t.Fatalf("replay payout provider event = %#v, %v", replayed, err)
 	}
-	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+	assertAirwallexPayoutDetails(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
 
-	beneficiaryClient.beneficiary = AirwallexTransferBeneficiary{}
+	transferDetailsClient.beneficiary = AirwallexTransferBeneficiary{}
 	if _, err := db.ExecContext(ctx, `
 UPDATE company_fund_provider_events
 SET event_state = 'PENDING', processed_at = NULL, updated_at = NOW()
@@ -118,7 +148,7 @@ WHERE id = $1`, inserted.ID); err != nil {
 	if err != nil || result.Outcome != ProviderEventFinalizeFailed {
 		t.Fatalf("empty beneficiary replay = %#v, %v", result, err)
 	}
-	assertAirwallexPayoutCounterparty(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
+	assertAirwallexPayoutDetails(t, db, "ft_payout_counterparty_1", "1234567890", "Ada Recipient", 1)
 }
 
 // TestAirwallexPhase2FeePostgresIntegration proves the highest durable seam:
@@ -1095,7 +1125,7 @@ WHERE id = $1`, transactionID).Scan(&actualSource, &actualPolicy); err != nil {
 	}
 }
 
-func assertAirwallexPayoutCounterparty(
+func assertAirwallexPayoutDetails(
 	t *testing.T,
 	db *sql.DB,
 	providerTransactionID string,
@@ -1104,28 +1134,43 @@ func assertAirwallexPayoutCounterparty(
 	wantCount int,
 ) {
 	t.Helper()
-	var actualAccount, actualName sql.NullString
+	var actualAccount, actualName, feeCurrency, feePaidBy, swiftChargeOption sql.NullString
+	var feeMatches bool
 	var count int
 	if err := db.QueryRow(`
-SELECT MAX(to_address_or_account), MAX(payee_name), COUNT(*)
+SELECT MAX(to_address_or_account),
+       MAX(payee_name),
+       BOOL_AND(provider_reported_fee_amount = 15.58),
+       MAX(provider_reported_fee_currency),
+       MAX(fee_details->>'feePaidBy'),
+       MAX(fee_details->>'swiftChargeOption'),
+       COUNT(*)
 FROM company_fund_transactions
 WHERE provider_transaction_id = $1`, providerTransactionID).Scan(
 		&actualAccount,
 		&actualName,
+		&feeMatches,
+		&feeCurrency,
+		&feePaidBy,
+		&swiftChargeOption,
 		&count,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if count != wantCount || !actualAccount.Valid || actualAccount.String != account ||
-		!actualName.Valid || actualName.String != name {
+		!actualName.Valid || actualName.String != name || !feeMatches ||
+		!feeCurrency.Valid || feeCurrency.String != "USD" ||
+		!feePaidBy.Valid || feePaidBy.String != "BENEFICIARY" ||
+		!swiftChargeOption.Valid || swiftChargeOption.String != "SHARED" {
 		t.Fatalf(
-			"payout counterparty account=%v name=%v count=%d, want %q/%q/%d",
+			"payout details account=%v name=%v fee=%t/%v payer=%v swift=%v count=%d",
 			actualAccount,
 			actualName,
+			feeMatches,
+			feeCurrency,
+			feePaidBy,
+			swiftChargeOption,
 			count,
-			account,
-			name,
-			wantCount,
 		)
 	}
 }
