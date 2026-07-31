@@ -1,6 +1,6 @@
 # Airwallex Financial Transactions Mapping 覆盖与 Phase 2 契约
 
-> 状态：实现与证据文档（2026-07-29）。本文记录当前代码对 Financial
+> 状态：实现与证据文档（2026-07-31）。本文记录当前代码对 Financial
 > Transactions 的严格映射、Phase 2 关系协调，以及仍必须 fail-closed 的
 > Provider evidence gap。
 
@@ -71,25 +71,29 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 - **Outflow**：`PAYOUT`, `BATCH_PAYOUT`, `CARD_PURCHASE`, `PURCHASE`, `DD_DEBIT`, `DC_DEBIT`, `TRANSFER_OUT`, `CONVERSION_SELL`, `FEE`, `REFUND`, `DISPUTE`, `CHARGE`, `WITHHOLDING_TAX`, `ISSUING_AUTHORISATION_HOLD`, `ISSUING_CAPTURE`, `PREPAYMENT`, `REPAYMENT_DEDUCTION`, ...
 - **Neutral / 双向**：`TRANSFER`, `CONVERSION`, `ADJUSTMENT`（方向依赖上下文）
 
-## 4. 历史 Stage 覆盖快照
+## 4. Stage 覆盖快照
 
-2026-07-28 的 stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`
-（`mapping-sandbox-v1`）曾包含以下简单类型规则；部署 Phase 2 时必须根据当前
-Sandbox evidence 重新生成配置，不能直接把这份历史清单当作当前环境事实：
+截至 2026-07-31，stage `AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG`
+（`mapping-sandbox-v1`）包含以下简单类型规则；其他环境仍必须根据对应环境的
+Provider evidence 生成配置，不能直接复制 Sandbox 清单：
 
 - 5 条 `ADJUSTMENT SETTLED INFLOW`（CNY/EUR/GBP/SGD/USD）— sandbox 2026-07-27 初始余额调整，`evidence_reference: sandbox-2026-07-27-adjustment-settled-*`
 - 1 条 `PAYOUT SETTLED OUTFLOW`（SGD）— 2026-07-28 验收（transfer `P260728-3824YVV`，1000 SGD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、`occurred_at_field=SETTLED_AT`），fact id=26 + transaction id=19 已入账，`evidence_reference: sandbox-2026-07-28-payout-settled-sgd`
+- 1 条 `PAYOUT SETTLED OUTFLOW`（USD）— 2026-07-31 验收（SWIFT transfer
+  `P260731-RATI18U`，1000 USD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、
+  `occurred_at_field=SETTLED_AT`），fact id=42 + transaction id=34 已入账，
+  `evidence_reference: sandbox-2026-07-31-payout-settled-usd-swift`
 
 ## 5. 覆盖矩阵 + gap
 
-### 5.1 简单类型（可加 runtime config rule，当前未覆盖）
+### 5.1 简单类型（通过 runtime config rule 按币种精确覆盖）
 
 这些 `source_type` 的 MovementKind ∈ {`PRINCIPAL`, `ADJUSTMENT`}、Action=`APPLY`，符合 runtime config 约束，只需 evidence-backed rule：
 
 | source_type | 方向 | 公司资金场景 | 优先级 |
 |-------------|------|-------------|--------|
 | `DEPOSIT` | inflow | 收款入账 | 高 |
-| `PAYOUT` | outflow | 付款（1000 SGD 场景）| 高 |
+| `PAYOUT` | outflow | 付款（已验证 1000 SGD、1000 USD SWIFT 场景）| 高 |
 | `PAYMENT_ATTEMPT` | inflow | 收款业务 | 高 |
 | `TRANSFER_IN` | inflow | 内部转入 | 中 |
 | `TRANSFER_OUT` | outflow | 内部转出 | 中 |
@@ -167,6 +171,21 @@ SLA、terminal state 和安全错误码，进程重启可恢复。
 
 **1000 SGD payout（`P260728-3824YVV`）** — 2026-07-28 解决。配 `PAYOUT SGD SETTLED OUTFLOW` rule 后，fact id=26 + transaction id=19 已入账（原 DEAD_LETTER 的 provider event 已在 stage 重处理成功）。issue #72 记录。
 
+**1000 USD SWIFT payout（`P260731-RATI18U`）** — 2026-07-31
+解决。Financial Transaction `ftx_1qAED__GPQ6P_CmaCvcYSA` 已是 `SETTLED`，
+金额字段为 `amount=-1000`、`fee=0`、`net=-1000`，而 Transfer 资源当时仍为
+`PROCESSING`。配精确 `PAYOUT USD SETTLED OUTFLOW` rule 后，原 DEAD_LETTER
+event id=1105 经受控重处理成为 PROCESSED，fact id=42 + transaction id=34
+入账，完整 beneficiary account/name 与 Transfer API 精确一致，重复 movement
+数量为 1。该证据同时确认公司资金账务以 Financial Transactions 状态为准，
+不等待 Transfer 生命周期变为终态。
+
+Airwallex Console 对这笔付款展示 15.58 USD transfer fee，收款人得到 984.42
+USD，但截至验收窗口，Financial Transactions 仅返回上述 `PAYOUT -1000 USD`，
+没有独立 `FEE` item，且该 item 的 `fee=0`、`net=-1000`。因此当前只登记 1000
+USD 的公司余额支出，不根据 Console 展示自行推导第二条手续费流水；若 Provider
+后续产生独立 `FEE` 事实，再由 FEE exact rule 按权威事实入账。
+
 ## 9. 关联
 
 - webhook 验签支持：issue #72
@@ -182,7 +201,8 @@ Phase 1 原计划在 sandbox 触发各 simple type 收集 evidence，实测以�
 |------|---------------|------|
 | `ADJUSTMENT` | ✅ 已配 5 币种 | — |
 | `PAYOUT`/SGD | ✅ 已配（1000 SGD 入账）| 用户通过 Console UI 发款；Financial Transaction `source_id` 可通过官方 `GET /api/v1/transfers/{id}` 查询 Transfer，Sandbox 实测 200，并返回 beneficiary 的完整 `account_number`、`account_name`、`bank_name` |
-| `PAYOUT` 其他币种 | ❌ | 同上 + 无 beneficiary |
+| `PAYOUT`/USD | ✅ 已配（1000 USD SWIFT 入账）| Financial Transaction 已 `SETTLED` 时 Transfer 仍可为 `PROCESSING`；完整 beneficiary account/name 已通过 Transfer API 精确回填；Console 展示的收款侧 fee 不得在 Provider 未返回独立 `FEE` item 时自行拆账 |
+| `PAYOUT` 其他币种 | ❌ | 同上 + 无该币种 exact evidence |
 | `DEPOSIT` / `YIELD` / `WITHHOLDING_TAX` | ❌ | sandbox 不模拟真实业务（汇款/利息/税务）|
 | `TRANSFER` / `TRANSFER_IN` / `TRANSFER_OUT` | ❌ | 单账号，无 linked accounts |
 | `CONVERSION`（Phase 2）| ✅ | `/api/v1/fx/conversions/create`；SELL/BUY 两腿共享 `source_id=conversion_id`，SELL 为负、BUY 为正，币对与两腿币种一致。可配置 `SOURCE_ID_CONVERSION_GROUP`。|
