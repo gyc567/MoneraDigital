@@ -78,10 +78,10 @@ normalize 的核心是 **mapping**：把 Airwallex Financial Transaction（`sour
 Provider evidence 生成配置，不能直接复制 Sandbox 清单：
 
 - 5 条 `ADJUSTMENT SETTLED INFLOW`（CNY/EUR/GBP/SGD/USD）— sandbox 2026-07-27 初始余额调整，`evidence_reference: sandbox-2026-07-27-adjustment-settled-*`
-- 1 条 `PAYOUT SETTLED OUTFLOW`（SGD）— 2026-07-28 验收（transfer `P260728-3824YVV`，1000 SGD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、`occurred_at_field=SETTLED_AT`），fact id=26 + transaction id=19 已入账，`evidence_reference: sandbox-2026-07-28-payout-settled-sgd`
+- 1 条 `PAYOUT SETTLED OUTFLOW`（SGD）— 2026-07-28 验收（transfer `P260728-3824YVV`，1000 SGD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、`occurred_at_field=CREATED_AT`），fact id=26 + transaction id=19 已入账，`evidence_reference: sandbox-2026-07-28-payout-settled-sgd`
 - 1 条 `PAYOUT SETTLED OUTFLOW`（USD）— 2026-07-31 验收（SWIFT transfer
   `P260731-RATI18U`，1000 USD；`amount_field=AMOUNT`、`expected_sign=NEGATIVE`、
-  `occurred_at_field=SETTLED_AT`），fact id=42 + transaction id=34 已入账，
+  `occurred_at_field=CREATED_AT`），fact id=42 + transaction id=34 已入账，
   `evidence_reference: sandbox-2026-07-31-payout-settled-usd-swift`
 
 ## 5. 覆盖矩阵 + gap
