@@ -3,6 +3,7 @@ package companyfund
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -95,6 +96,177 @@ func TestAirwallexLedgerTaskProcessor_KeepsLedgerAvailableWithPendingFinancePoli
 	maintained, err := processor.Maintain(context.Background())
 	if err != nil || maintained {
 		t.Fatalf("pending finance policy Maintain() = %t, %v", maintained, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAirwallexLedgerTaskProcessor_StopsPayoutBackfillOnlyAfterUnlockedEmptyConfirmation(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	processor, err := NewAirwallexLedgerTaskProcessor(NewDBRepository(db), AirwallexLedgerTaskProcessorConfig{
+		Owner:                      "worker-a",
+		LeaseDuration:              time.Minute,
+		RetryDelay:                 time.Minute,
+		PayoutCounterpartyBackfill: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectEmptyFeeBackfill := func() {
+		mock.ExpectQuery(regexp.QuoteMeta(listAirwallexFeesNeedingClassificationSQL)).
+			WithArgs("airwallex-fee-policy-unconfigured-v1", 100).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id",
+				"provider_transaction_fact_id",
+				"provider_account_key",
+				"provider_transaction_id",
+			}))
+	}
+	expectEmptyRequeue := func(candidatesRemain bool) {
+		mock.ExpectQuery(regexp.QuoteMeta(requeueAirwallexPayoutCounterpartyBackfillSQL)).
+			WithArgs(100).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+		mock.ExpectQuery(regexp.QuoteMeta(hasAirwallexPayoutCounterpartyBackfillCandidatesSQL)).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(candidatesRemain))
+	}
+
+	expectEmptyFeeBackfill()
+	expectEmptyRequeue(true)
+	if maintained, err := processor.Maintain(context.Background()); err != nil || maintained ||
+		processor.payoutCounterpartyBackfillComplete {
+		t.Fatalf("locked-candidate Maintain() = %t, %v complete=%t",
+			maintained, err, processor.payoutCounterpartyBackfillComplete)
+	}
+
+	expectEmptyFeeBackfill()
+	expectEmptyRequeue(false)
+	if maintained, err := processor.Maintain(context.Background()); err != nil || maintained ||
+		!processor.payoutCounterpartyBackfillComplete {
+		t.Fatalf("drained Maintain() = %t, %v complete=%t",
+			maintained, err, processor.payoutCounterpartyBackfillComplete)
+	}
+
+	expectEmptyFeeBackfill()
+	if maintained, err := processor.Maintain(context.Background()); err != nil || maintained {
+		t.Fatalf("completed-backfill Maintain() = %t, %v", maintained, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAirwallexLedgerTaskProcessor_KeepsPayoutBackfillOpenAfterDatabaseError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	processor, err := NewAirwallexLedgerTaskProcessor(NewDBRepository(db), AirwallexLedgerTaskProcessorConfig{
+		Owner:                      "worker-a",
+		LeaseDuration:              time.Minute,
+		RetryDelay:                 time.Minute,
+		PayoutCounterpartyBackfill: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(listAirwallexFeesNeedingClassificationSQL)).
+		WithArgs("airwallex-fee-policy-unconfigured-v1", 100).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id",
+			"provider_transaction_fact_id",
+			"provider_account_key",
+			"provider_transaction_id",
+		}))
+	mock.ExpectQuery(regexp.QuoteMeta(requeueAirwallexPayoutCounterpartyBackfillSQL)).
+		WithArgs(100).
+		WillReturnError(sql.ErrConnDone)
+
+	if maintained, err := processor.Maintain(context.Background()); !errors.Is(err, sql.ErrConnDone) || maintained ||
+		processor.payoutCounterpartyBackfillComplete {
+		t.Fatalf("database-error Maintain() = %t, %v complete=%t",
+			maintained, err, processor.payoutCounterpartyBackfillComplete)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAirwallexLedgerTaskProcessor_KeepsPayoutBackfillOpenAfterExistenceCheckError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	processor, err := NewAirwallexLedgerTaskProcessor(NewDBRepository(db), AirwallexLedgerTaskProcessorConfig{
+		Owner:                      "worker-a",
+		LeaseDuration:              time.Minute,
+		RetryDelay:                 time.Minute,
+		PayoutCounterpartyBackfill: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(listAirwallexFeesNeedingClassificationSQL)).
+		WithArgs("airwallex-fee-policy-unconfigured-v1", 100).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id",
+			"provider_transaction_fact_id",
+			"provider_account_key",
+			"provider_transaction_id",
+		}))
+	mock.ExpectQuery(regexp.QuoteMeta(requeueAirwallexPayoutCounterpartyBackfillSQL)).
+		WithArgs(100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(regexp.QuoteMeta(hasAirwallexPayoutCounterpartyBackfillCandidatesSQL)).
+		WillReturnError(sql.ErrConnDone)
+
+	if maintained, err := processor.Maintain(context.Background()); !errors.Is(err, sql.ErrConnDone) || maintained ||
+		processor.payoutCounterpartyBackfillComplete {
+		t.Fatalf("existence-check-error Maintain() = %t, %v complete=%t",
+			maintained, err, processor.payoutCounterpartyBackfillComplete)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAirwallexLedgerTaskProcessor_SkipsExistenceCheckAfterRequeue(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	processor, err := NewAirwallexLedgerTaskProcessor(NewDBRepository(db), AirwallexLedgerTaskProcessorConfig{
+		Owner:                      "worker-a",
+		LeaseDuration:              time.Minute,
+		RetryDelay:                 time.Minute,
+		PayoutCounterpartyBackfill: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(listAirwallexFeesNeedingClassificationSQL)).
+		WithArgs("airwallex-fee-policy-unconfigured-v1", 100).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id",
+			"provider_transaction_fact_id",
+			"provider_account_key",
+			"provider_transaction_id",
+		}))
+	mock.ExpectQuery(regexp.QuoteMeta(requeueAirwallexPayoutCounterpartyBackfillSQL)).
+		WithArgs(100).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(91)))
+
+	if maintained, err := processor.Maintain(context.Background()); err != nil || !maintained ||
+		processor.payoutCounterpartyBackfillComplete {
+		t.Fatalf("requeued Maintain() = %t, %v complete=%t",
+			maintained, err, processor.payoutCounterpartyBackfillComplete)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

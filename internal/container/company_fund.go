@@ -328,7 +328,10 @@ func finalizeCompanyFundRuntime(c *Container) {
 	}
 
 	safeNormalizer, safeHistoryClient := newCompanyFundSafeheronNormalizer(c, config.SafeheronCoinCatalogRefreshInterval)
-	airBundle, airwallexConfig := newCompanyFundAirwallexRuntimeBundle(c.CompanyFundAccountRegistry, config)
+	airBundle, airwallexConfig, configuredAirwallexClient := newCompanyFundAirwallexRuntimeBundle(
+		c.CompanyFundAccountRegistry,
+		config,
+	)
 
 	normalizers := make(map[companyfund.TransactionSource]companyfund.ProviderEventNormalizer, 2)
 	if safeNormalizer != nil {
@@ -370,6 +373,7 @@ func finalizeCompanyFundRuntime(c *Container) {
 		safeHistoryClient,
 		airBundle,
 		airwallexConfig,
+		configuredAirwallexClient,
 	)
 	syncAdapter := reconciliation.syncAdapter
 	safeReconciler := reconciliation.safeheron
@@ -433,7 +437,8 @@ func finalizeCompanyFundRuntime(c *Container) {
 					Level2Code:    config.AirwallexFeeCategoryLevel2Code,
 					PolicyVersion: config.AirwallexFeeClassificationPolicyVersion,
 				},
-				ReversalPolicyVersion: config.AirwallexReversalPolicyVersion,
+				ReversalPolicyVersion:      config.AirwallexReversalPolicyVersion,
+				PayoutCounterpartyBackfill: true,
 				MaintenanceBatch: companyFundPositiveIntOrDefault(
 					config.AirwallexLedgerMaintenanceBatch,
 					defaultCompanyFundAirwallexLedgerMaintenanceBatch,
@@ -551,6 +556,7 @@ func newCompanyFundReconciliationRuntime(
 	safeHistoryClient safeheron.TransactionHistoryClient,
 	airBundle *companyfund.AirwallexFinancialTransactionsRuntimeBundle,
 	airwallexConfig companyfund.AirwallexFinancialTransactionsRuntimeConfig,
+	airwallexClient *companyfund.AirwallexClient,
 ) companyFundReconciliationRuntime {
 	result := companyFundReconciliationRuntime{}
 	if safeHistoryClient != nil || (airBundle != nil && airBundle.Enabled) {
@@ -614,13 +620,11 @@ func newCompanyFundReconciliationRuntime(
 	if airBundle == nil || !airBundle.Enabled || result.syncAdapter == nil {
 		return result
 	}
-	var err error
-	result.airwallexClient, err = newCompanyFundAirwallexClient(config)
-	if err != nil {
-		log.Printf("company-fund Airwallex REST client disabled: incomplete or invalid configuration")
-		result.airwallexClient = nil
+	if airwallexClient == nil {
 		return result
 	}
+	result.airwallexClient = airwallexClient
+	var err error
 	result.airwallex, err = companyfund.NewAirwallexFinancialTransactionsReconciler(
 		result.airwallexClient,
 		c.CompanyFundOwnedPayloadService,
@@ -703,25 +707,41 @@ func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time
 	return normalizer, historyClient
 }
 
-func newCompanyFundAirwallexRuntimeBundle(registry *companyfund.AccountRegistry, config companyFundRuntimeConfig) (*companyfund.AirwallexFinancialTransactionsRuntimeBundle, companyfund.AirwallexFinancialTransactionsRuntimeConfig) {
+func newCompanyFundAirwallexRuntimeBundle(
+	registry *companyfund.AccountRegistry,
+	config companyFundRuntimeConfig,
+) (
+	*companyfund.AirwallexFinancialTransactionsRuntimeBundle,
+	companyfund.AirwallexFinancialTransactionsRuntimeConfig,
+	*companyfund.AirwallexClient,
+) {
 	runtimeConfig, err := companyfund.ParseAirwallexFinancialTransactionsRuntimeConfigJSON([]byte(config.AirwallexRuntimeConfigJSON))
 	if err != nil {
 		log.Printf("company-fund Airwallex runtime disabled: strict mapping configuration is invalid")
-		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}
+		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}, nil
 	}
 	if !runtimeConfig.Enabled {
-		return nil, runtimeConfig
+		return nil, runtimeConfig, nil
 	}
 	if registry == nil {
 		log.Printf("company-fund Airwallex runtime disabled: configured account scope is not eligible")
-		return nil, runtimeConfig
+		return nil, runtimeConfig, nil
 	}
-	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundle(runtimeConfig, registry)
+	client, err := newCompanyFundAirwallexClient(config)
+	if err != nil || client == nil {
+		log.Printf("company-fund Airwallex runtime disabled: REST client configuration is invalid")
+		return nil, runtimeConfig, nil
+	}
+	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundleWithTransferBeneficiaryClient(
+		runtimeConfig,
+		registry,
+		client,
+	)
 	if err != nil {
 		log.Printf("company-fund Airwallex runtime disabled: strict mapping configuration is invalid")
-		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}
+		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}, nil
 	}
-	return bundle, runtimeConfig
+	return bundle, runtimeConfig, client
 }
 
 func newCompanyFundCurrentValuationRuntime(c *Container, config companyFundRuntimeConfig) (*companyfund.CurrentRateCache, *companyfund.CoinGeckoCurrentRateRefresher, *companyfund.CompanyFundCurrentValuator) {

@@ -18,8 +18,9 @@ type AirwallexRegistrySnapshotProvider interface {
 
 // AirwallexProviderEventTransactionContext is the intentionally limited
 // provider context available to mapping/relationship/counterparty resolvers.
-// SourceReference is available only to an evidence-pinned relationship rule;
-// it is never used as movement identity. Raw payload bytes remain excluded.
+// SourceReference is available only to an evidence-pinned relationship or
+// counterparty rule; it is never used as movement identity. Raw payload bytes
+// remain excluded.
 type AirwallexProviderEventTransactionContext struct {
 	FinancialTransactionID string
 	SourceReference        string
@@ -32,7 +33,8 @@ type AirwallexProviderEventTransactionContext struct {
 
 // AirwallexProviderEventResolutionInput contains only configured-account and
 // allowlisted Financial Transactions metadata. It never contains nullable
-// webhook account_id/org_id or a source_id cross-resource identity hint.
+// webhook account_id/org_id; SourceReference remains an explicitly bounded
+// provider lookup value rather than a cross-resource movement identity.
 type AirwallexProviderEventResolutionInput struct {
 	ProviderEventID       string
 	ProviderEventRecordID int64
@@ -338,6 +340,9 @@ func cloneAirwallexProviderEventCounterparty(source *AirwallexCounterparty) *Air
 
 func airwallexProviderEventResolverError(err error, safeReason string) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if errors.Is(err, ErrAirwallexTransferBeneficiaryTemporary) {
 		return err
 	}
 	return airwallexPermanentNormalizationError(safeReason)

@@ -197,3 +197,80 @@ func TestAirwallexClient_RejectsUnsafeFinancialTransactionDetailID(t *testing.T)
 		}
 	}
 }
+
+func TestAirwallexClient_GetsTransferBeneficiaryForPayoutCounterparty(t *testing.T) {
+	now := time.Date(2026, 7, 31, 3, 0, 0, 0, time.UTC)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/authentication/login":
+			_, _ = response.Write([]byte(airwallexTestLoginResponse("transfer-token", now.Add(time.Hour))))
+		case "/api/v1/transfers/transfer_1":
+			if request.Method != http.MethodGet || request.URL.RawQuery != "" {
+				t.Errorf("transfer request = %s %s", request.Method, request.URL.String())
+			}
+			if request.Header.Get("Authorization") != "Bearer transfer-token" {
+				t.Errorf("Authorization = %q", request.Header.Get("Authorization"))
+			}
+			if request.Header.Get("x-api-version") != airwallexTestAPIVersion {
+				t.Errorf("x-api-version = %q, want configured pinned version", request.Header.Get("x-api-version"))
+			}
+			_, _ = response.Write([]byte(`{
+				"id":"transfer_1",
+				"beneficiary":{
+					"entity_type":"PERSONAL",
+					"bank_details":{
+						"account_name":"Ada Recipient",
+						"account_number":"1234567890",
+						"bank_name":"Example Bank"
+					}
+				}
+			}`))
+		default:
+			t.Errorf("unexpected path %q", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestAirwallexClient(t, server.URL, server.Client(), func() time.Time { return now }, time.Minute)
+	beneficiary, err := client.GetTransferBeneficiary(context.Background(), "transfer_1")
+	if err != nil {
+		t.Fatalf("GetTransferBeneficiary() error = %v", err)
+	}
+	if beneficiary.AddressOrAccount != "1234567890" ||
+		beneficiary.Name != "Ada Recipient" {
+		t.Fatalf("beneficiary = %#v", beneficiary)
+	}
+}
+
+func TestAirwallexClient_UsesFullIBANWhenTransferHasNoLocalAccountNumber(t *testing.T) {
+	now := time.Date(2026, 7, 31, 3, 0, 0, 0, time.UTC)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/authentication/login":
+			_, _ = response.Write([]byte(airwallexTestLoginResponse("transfer-token", now.Add(time.Hour))))
+		case "/api/v1/transfers/transfer_iban":
+			_, _ = response.Write([]byte(`{
+				"beneficiary":{
+					"entity_type":"COMPANY",
+					"bank_details":{
+						"account_name":"Example GmbH",
+						"iban":"DE89370400440532013000",
+						"bank_name":"Example Bank"
+					}
+				}
+			}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	client := newTestAirwallexClient(t, server.URL, server.Client(), func() time.Time { return now }, time.Minute)
+
+	beneficiary, err := client.GetTransferBeneficiary(context.Background(), "transfer_iban")
+	if err != nil {
+		t.Fatalf("GetTransferBeneficiary() error = %v", err)
+	}
+	if beneficiary.AddressOrAccount != "DE89370400440532013000" {
+		t.Fatalf("beneficiary account = %q, want full IBAN", beneficiary.AddressOrAccount)
+	}
+}
