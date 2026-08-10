@@ -1,8 +1,11 @@
 package container
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -224,6 +227,11 @@ func TestCompanyFundSafeheronRecognitionRepairWakesValuationAfterRepair(t *testi
 }
 
 func TestCompanyFundSafeheronRecognitionRepairBoundsOneImmediateDrain(t *testing.T) {
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	repairer := &companyFundLoopRecognitionRepairerStub{
@@ -256,8 +264,12 @@ func TestCompanyFundSafeheronRecognitionRepairBoundsOneImmediateDrain(t *testing
 		t.Fatal("repair loop exceeded its configured three-record immediate drain")
 	case <-time.After(100 * time.Millisecond):
 	}
+	loop.Stop()
 	if got := repairer.batch.Load(); got != 1 {
 		t.Fatalf("final repair batch=%d, want remaining one-record budget", got)
+	}
+	if !strings.Contains(logs.String(), "moreWork=true continueImmediate=false") {
+		t.Fatalf("bounded drain did not report its durable backlog accurately:\n%s", logs.String())
 	}
 }
 

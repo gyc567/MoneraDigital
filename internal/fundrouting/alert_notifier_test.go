@@ -70,6 +70,49 @@ func TestRoutingAlertPresentationExplainsPendingTransactionsWithCompleteIdentifi
 	}
 }
 
+func TestRoutingAlertPresentationExplainsWhenLatestStatusCannotBeConfirmed(t *testing.T) {
+	payload := map[string]any{
+		"case_id": 879, "reason_code": "STATUS_NOT_TERMINAL", "direction": "OUTFLOW",
+		"safeheron_tx_key": "tx-key-api-failed", "transaction_status": "SUBMITTED",
+		"last_api_check_outcome": "ERROR", "last_api_error_code": "UPSTREAM_TIMEOUT",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, fields := routingAlertPresentation([]claimedDelivery{{
+		Severity: "WARN", AlertType: "SLA_ESCALATION", Payload: raw,
+	}})
+	if detail := fields["交易01"]; !strings.Contains(
+		detail,
+		"API 核验结果：核验失败，无法确认最新状态（UPSTREAM_TIMEOUT）",
+	) {
+		t.Fatalf("API failure presentation is ambiguous:\n%s", detail)
+	}
+}
+
+func TestRoutingAlertPresentationExplainsUncodedStatusCheckFailure(t *testing.T) {
+	raw, err := json.Marshal(map[string]any{
+		"case_id": 880, "reason_code": "STATUS_NOT_TERMINAL", "direction": "OUTFLOW",
+		"safeheron_tx_key": "tx-key-api-failed-without-code", "transaction_status": "SUBMITTED",
+		"last_api_check_outcome": "ERROR",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, fields := routingAlertPresentation([]claimedDelivery{{
+		Severity: "WARN", AlertType: "SLA_ESCALATION", Payload: raw,
+	}})
+	if detail := fields["交易01"]; !strings.Contains(
+		detail,
+		"API 核验结果：核验失败，无法确认最新状态",
+	) {
+		t.Fatalf("uncoded API failure presentation is ambiguous:\n%s", detail)
+	}
+}
+
 func TestRoutingAlertPresentationAggregatesFiveMinuteLarkBatch(t *testing.T) {
 	first, _ := json.Marshal(map[string]any{
 		"case_id": 1, "reason_code": "STATUS_NOT_TERMINAL", "direction": "OUTFLOW",

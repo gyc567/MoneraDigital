@@ -250,8 +250,8 @@ func newCompanyFundSafeheronAssetRecognitionRepairLoop(
 		}
 		if err == nil && result.Scanned > 0 {
 			log.Printf(
-				"company-fund Safeheron asset recognition repair: result=success scanned=%d repaired=%d unrecognized=%d moreWork=%t",
-				result.Scanned, result.Repaired, result.Unrecognized, continueImmediate,
+				"company-fund Safeheron asset recognition repair: result=success scanned=%d repaired=%d unrecognized=%d moreWork=%t continueImmediate=%t",
+				result.Scanned, result.Repaired, result.Unrecognized, result.MoreWork, continueImmediate,
 			)
 		}
 		if result.Repaired > 0 && onRepaired != nil {

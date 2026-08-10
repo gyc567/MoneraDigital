@@ -146,9 +146,9 @@ func routingAlertCheckOutcome(payload map[string]any) string {
 	outcome := routingAlertString(payload, "last_api_check_outcome")
 	if outcome == "ERROR" {
 		if code := routingAlertString(payload, "last_api_error_code"); code != "" {
-			return "失败（" + code + "）"
+			return "核验失败，无法确认最新状态（" + code + "）"
 		}
-		return "失败"
+		return "核验失败，无法确认最新状态"
 	}
 	if outcome == "OBSERVED" {
 		return "已核验"
