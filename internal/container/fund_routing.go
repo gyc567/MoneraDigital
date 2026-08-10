@@ -127,6 +127,9 @@ func finalizeSafeheronRouting(c *Container) {
 		escalator.SetOnAlertCreated(func() {
 			_ = c.FundRoutingAlertNotifier.Notify()
 		})
+		reconciler.SetOnRecoveryAlertCreated(func() {
+			_ = c.FundRoutingAlertNotifier.Notify()
+		})
 	}
 	runContainerBackgroundTask(ctx, "fund_routing", worker.Run)
 	runContainerBackgroundTask(ctx, "fund_routing_reconciliation", reconciler.Run)

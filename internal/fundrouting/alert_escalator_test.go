@@ -20,7 +20,7 @@ func TestAlertEscalatorNextDueReadsEarliestMissingSLAThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	due := time.Now().Add(time.Hour).Round(time.Microsecond)
-	mock.ExpectQuery("SELECT min\\(routing.created_at \\+ threshold.minimum_age\\)").
+	mock.ExpectQuery("SELECT min\\(\\(CASE WHEN threshold.reason_filter").
 		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(due))
 
 	got, err := escalator.NextDue(context.Background())
@@ -89,6 +89,23 @@ func TestAlertEscalatorSLAThresholdsDifferentiatePendingProviderStatus(t *testin
 	} {
 		if !strings.Contains(sqlText, fragment) {
 			t.Errorf("SLA escalation SQL is missing threshold %q", fragment)
+		}
+	}
+}
+
+func TestAlertEscalatorStartsOpenReasonSLAFromProviderRecovery(t *testing.T) {
+	for name, sqlText := range map[string]string{
+		"next due":   openCaseSLANextDueSQL(),
+		"escalation": openCaseSLAEscalationSQL(),
+	} {
+		for _, fragment := range []string{
+			"alert.alert_type='RECOVERY_SUMMARY'",
+			"alert.transition_key LIKE 'sla:recovered:version:%'",
+			"COALESCE(recovery.started_at,routing.created_at)",
+		} {
+			if !strings.Contains(sqlText, fragment) {
+				t.Errorf("%s SQL is missing recovery SLA anchor %q", name, fragment)
+			}
 		}
 	}
 }

@@ -46,7 +46,8 @@ func NewAlertEscalator(db *sql.DB) (*AlertEscalator, error) {
 		return nil, fmt.Errorf("fund routing alert escalation database is required")
 	}
 	e := &AlertEscalator{db: db, environment: "unknown"}
-	// SLA thresholds are 1h/24h; min idle can be 1m while fully idle backs off to MaxIdle.
+	// Pending-provider SLA thresholds are 1h/6h/24h; other OPEN reasons retain
+	// 1h/24h. Min idle can be 1m while fully idle backs off to MaxIdle.
 	e.runner = newAdaptiveRunner("fund routing OPEN-case SLA escalator", time.Minute, adaptiveschedule.DefaultMaxIdle, e.ProcessOne)
 	e.runner.setNextDue(e.NextDue)
 	return e, nil
@@ -70,15 +71,27 @@ func openCaseSLANextDueSQL() string {
          ('*'::varchar,1,interval '1 hour'),
          ('*'::varchar,2,interval '24 hours')
 )
-SELECT min(routing.created_at + threshold.minimum_age)
+SELECT min((CASE WHEN threshold.reason_filter='STATUS_NOT_TERMINAL'
+             THEN routing.created_at
+             ELSE COALESCE(recovery.started_at,routing.created_at)
+           END) + threshold.minimum_age)
 FROM safeheron_transaction_routing_cases routing
 CROSS JOIN thresholds threshold
 LEFT JOIN safeheron_transaction_routing_status_checks status_check
   ON status_check.safeheron_tx_key=routing.safeheron_tx_key
+LEFT JOIN LATERAL (
+  SELECT max(alert.created_at) AS started_at
+  FROM safeheron_transaction_routing_alerts alert
+  WHERE alert.case_id=routing.id AND alert.alert_type='RECOVERY_SUMMARY'
+    AND alert.transition_key LIKE 'sla:recovered:version:%'
+) recovery ON true
 WHERE routing.decision='OPEN'
   AND ((threshold.reason_filter='STATUS_NOT_TERMINAL' AND routing.reason_code=threshold.reason_filter)
     OR (threshold.reason_filter='*' AND routing.reason_code<>'STATUS_NOT_TERMINAL'))
-  AND routing.created_at + threshold.minimum_age > now()
+  AND (CASE WHEN threshold.reason_filter='STATUS_NOT_TERMINAL'
+         THEN routing.created_at
+         ELSE COALESCE(recovery.started_at,routing.created_at)
+       END) + threshold.minimum_age > now()
   AND (routing.reason_code<>'STATUS_NOT_TERMINAL'
     OR status_check.last_checked_at >= routing.created_at + threshold.minimum_age)
   AND (routing.reason_code<>'STATUS_NOT_TERMINAL'
@@ -122,6 +135,12 @@ func openCaseSLAEscalationSQL() string {
   CROSS JOIN thresholds threshold
   LEFT JOIN safeheron_transaction_routing_status_checks status_check
     ON status_check.safeheron_tx_key=routing.safeheron_tx_key
+  LEFT JOIN LATERAL (
+    SELECT max(alert.created_at) AS started_at
+    FROM safeheron_transaction_routing_alerts alert
+    WHERE alert.case_id=routing.id AND alert.alert_type='RECOVERY_SUMMARY'
+      AND alert.transition_key LIKE 'sla:recovered:version:%'
+  ) recovery ON true
   JOIN LATERAL (
     SELECT linked.provider_status,linked.safeheron_webhook_event_id
     FROM safeheron_transaction_routing_case_sources linked
@@ -135,7 +154,11 @@ func openCaseSLAEscalationSQL() string {
     LIMIT 1
   ) source ON true
   JOIN safeheron_webhook_events webhook ON webhook.id=source.safeheron_webhook_event_id
-  WHERE routing.decision='OPEN' AND routing.created_at <= now()-threshold.minimum_age
+  WHERE routing.decision='OPEN'
+    AND (CASE WHEN threshold.reason_filter='STATUS_NOT_TERMINAL'
+           THEN routing.created_at
+           ELSE COALESCE(recovery.started_at,routing.created_at)
+         END) <= now()-threshold.minimum_age
     AND ((threshold.reason_filter='STATUS_NOT_TERMINAL' AND routing.reason_code=threshold.reason_filter)
       OR (threshold.reason_filter='*' AND routing.reason_code<>'STATUS_NOT_TERMINAL'))
     AND (routing.reason_code<>'STATUS_NOT_TERMINAL'
@@ -153,7 +176,18 @@ func openCaseSLAEscalationSQL() string {
         AND alert.transition_key=CASE WHEN threshold.reason_filter='STATUS_NOT_TERMINAL'
           THEN 'sla:pending:level:' ELSE 'sla:open:level:' END || threshold.level::text
     )
-  ORDER BY routing.created_at, routing.id, threshold.level
+    AND (threshold.reason_filter<>'STATUS_NOT_TERMINAL' OR NOT EXISTS (
+      SELECT 1
+      FROM safeheron_transaction_routing_alerts alert
+      JOIN thresholds emitted
+        ON emitted.reason_filter='STATUS_NOT_TERMINAL'
+       AND emitted.level>threshold.level
+       AND alert.transition_key='sla:pending:level:' || emitted.level::text
+      WHERE alert.case_id=routing.id AND alert.alert_type='SLA_ESCALATION'
+    ))
+  ORDER BY routing.created_at, routing.id,
+           CASE WHEN threshold.reason_filter='STATUS_NOT_TERMINAL' THEN threshold.level END DESC,
+           threshold.level
   LIMIT 1
 )
 INSERT INTO safeheron_transaction_routing_alerts

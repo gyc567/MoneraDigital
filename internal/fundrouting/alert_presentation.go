@@ -36,6 +36,15 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		}
 		return severity, "Safeheron routing " + deliveries[0].AlertType, fields
 	}
+	recoveryStillOpen := false
+	if allRecovery {
+		for _, payload := range payloads {
+			if strings.EqualFold(strings.TrimSpace(routingAlertString(payload, "resolved_decision")), "OPEN") {
+				recoveryStillOpen = true
+				break
+			}
+		}
+	}
 
 	direction := routingBatchDirection(payloads)
 	titleDirection := "交易"
@@ -48,7 +57,9 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		titleDirection = "内部划转"
 	}
 	fields := map[string]string{"交易数量": strconv.Itoa(len(payloads))}
-	if allRecovery {
+	if recoveryStillOpen {
+		fields["恢复说明"] = "此前超时的 Safeheron 交易链上状态已收敛，但路由仍待处理；请按交易明细中的处理原因继续跟进。"
+	} else if allRecovery {
 		fields["恢复说明"] = "此前超时的 Safeheron 交易已进入终态，系统已按最终状态进入后续幂等处理流程。"
 	} else {
 		fields["告警原因"] = "Safeheron 交易超过约定时限后仍尚未进入终态，系统已执行单笔 API 状态核验，结果见交易明细。"
@@ -65,7 +76,9 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		fields[fmt.Sprintf("交易%02d", index+1)] = detail
 	}
 	titleState := "停留超时"
-	if allRecovery {
+	if recoveryStillOpen {
+		titleState = "链上状态已收敛，路由仍待处理"
+	} else if allRecovery {
 		titleState = "状态已收敛"
 	}
 	return severity, fmt.Sprintf("Safeheron %s%s（%d笔）", titleDirection, titleState, len(payloads)), fields

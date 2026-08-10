@@ -118,6 +118,30 @@ func TestRoutingAlertPresentationExplainsRecoveredTransaction(t *testing.T) {
 	}
 }
 
+func TestRoutingAlertPresentationExplainsRecoveredProviderStillNeedsRouting(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{
+		"case_id": 880, "direction": "OUTFLOW", "safeheron_tx_key": "tx-key-open",
+		"transaction_status": "COMPLETED", "resolved_decision": "OPEN",
+		"resolved_reason_code": "OWNERSHIP_UNKNOWN",
+	})
+
+	severity, title, fields := routingAlertPresentation([]claimedDelivery{{
+		Severity: "INFO", AlertType: "RECOVERY_SUMMARY", Payload: raw,
+	}})
+	if severity != "INFO" || title != "Safeheron 出账链上状态已收敛，路由仍待处理（1笔）" {
+		t.Fatalf("open recovery presentation header = %s / %s", severity, title)
+	}
+	if !strings.Contains(fields["恢复说明"], "路由仍待处理") {
+		t.Fatalf("open recovery summary fields = %#v", fields)
+	}
+	detail := fields["交易01"]
+	for _, fragment := range []string{"处理结果：OPEN", "处理原因：OWNERSHIP_UNKNOWN"} {
+		if !strings.Contains(detail, fragment) {
+			t.Errorf("open recovery detail is missing %q:\n%s", fragment, detail)
+		}
+	}
+}
+
 type routingAlertSenderStub struct {
 	sinks   []alert.RoutingSink
 	outcome alert.RoutingDeliveryOutcome

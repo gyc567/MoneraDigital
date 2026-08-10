@@ -15,15 +15,24 @@ import (
 )
 
 type Reconciler struct {
-	db                *sql.DB
-	runner            *adaptiveRunner
-	onProjectionReady func()
+	db                     *sql.DB
+	runner                 *adaptiveRunner
+	onProjectionReady      func()
+	onRecoveryAlertCreated func()
 	// processMu keeps one bounded OPEN-case scan coherent across the repeated
 	// ProcessOne calls made by DrainProcessOne. scanCutoff is captured from the
 	// database clock; unresolved rows move past it so each row is examined at
 	// most once per drain without blocking later rows or forming a hot loop.
 	processMu  sync.Mutex
 	scanCutoff time.Time
+}
+
+// SetOnRecoveryAlertCreated registers a wake emitted only after a provider
+// recovery summary commits durably without creating projection work.
+func (r *Reconciler) SetOnRecoveryAlertCreated(fn func()) {
+	if r != nil {
+		r.onRecoveryAlertCreated = fn
+	}
 }
 
 // SetOnProjectionReady registers a wake emitted only after a reconciled
@@ -142,12 +151,27 @@ LIMIT 1`, r.scanCutoff).Scan(&current.ID, &current.RoutingIdentityKey, &current.
 		CustomerAdmission: AutomaticCustomerAdmission(eventType, envelope.EventDetail),
 	})
 	if decision.Decision == DecisionOpen {
+		recoveryCreated := false
 		_, err = tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_cases
 SET reason_code=$2, updated_at=clock_timestamp() WHERE id=$1 AND decision='OPEN' AND pending_command_id IS NULL`, current.ID, string(decision.Reason))
 		if err != nil {
 			return false, err
 		}
-		return true, tx.Commit()
+		if current.ReasonCode == ReasonStatusNotTerminal && decision.Reason != ReasonStatusNotTerminal {
+			recoveryCreated, err = insertStatusRecoveryAlert(
+				ctx, tx, current, candidate, decision, envelope.EventDetail, current.Version,
+			)
+			if err != nil {
+				return false, err
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			return false, err
+		}
+		if recoveryCreated && r.onRecoveryAlertCreated != nil {
+			r.onRecoveryAlertCreated()
+		}
+		return true, nil
 	}
 	if err = reserveReconciledProjection(ctx, tx, current, candidate, decision, envelope.EventDetail); err != nil {
 		return false, err
@@ -206,20 +230,38 @@ WHERE id=$1 AND version=$9 AND decision='OPEN' AND pending_command_id IS NULL`,
 	if current.ReasonCode != ReasonStatusNotTerminal {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, reconciledRecoveryAlertSQL(),
-		current.ID, current.Version+1, string(decision.Decision), string(decision.Reason),
+	_, err = insertStatusRecoveryAlert(ctx, tx, current, candidate, decision, snapshot, current.Version+1)
+	return err
+}
+
+func insertStatusRecoveryAlert(
+	ctx context.Context,
+	tx *sql.Tx,
+	current openCase,
+	candidate Candidate,
+	decision DecisionResult,
+	snapshot safeheron.TransactionSnapshot,
+	version int,
+) (bool, error) {
+	result, err := tx.ExecContext(ctx, statusRecoveryAlertSQL(),
+		current.ID, version, string(decision.Decision), string(decision.Reason),
 		candidate.SafeheronTxKey, candidate.RawCoinKey, candidate.NetworkFamily,
 		candidate.Direction, candidate.Occurrence.Amount.String(),
 		candidate.Occurrence.NormalizedSource, candidate.Occurrence.NormalizedDestination,
 		strings.ToUpper(strings.TrimSpace(snapshot.TransactionStatus)), strings.TrimSpace(snapshot.TxHash),
 		string(candidate.Occurrence.Occurrence.Input.MovementKind), strings.TrimSpace(snapshot.TransactionSubStatus),
-	); err != nil {
-		return fmt.Errorf("insert reconciled Safeheron routing recovery alert: %w", err)
+	)
+	if err != nil {
+		return false, fmt.Errorf("insert Safeheron provider-status recovery alert: %w", err)
 	}
-	return nil
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect Safeheron provider-status recovery alert: %w", err)
+	}
+	return rows == 1, nil
 }
 
-func reconciledRecoveryAlertSQL() string {
+func statusRecoveryAlertSQL() string {
 	return `INSERT INTO safeheron_transaction_routing_alerts
   (case_id,alert_type,transition_key,severity,payload)
 SELECT $1,'RECOVERY_SUMMARY','sla:recovered:version:' || $2::integer::text,'INFO',

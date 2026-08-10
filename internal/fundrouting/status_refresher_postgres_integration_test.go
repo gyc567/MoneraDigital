@@ -250,3 +250,93 @@ WHERE case_id=$1 AND alert_type='SLA_ESCALATION' AND transition_key='sla:pending
 		t.Fatalf("alert substatus=%q, want canonical API observation", subStatus)
 	}
 }
+
+func TestAlertEscalatorPostgresLateStatusCaseEmitsOnlyCurrentHighestLevel(t *testing.T) {
+	if os.Getenv("RUN_FUND_ROUTING_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set RUN_FUND_ROUTING_POSTGRES_INTEGRATION=1 to run PostgreSQL routing coverage")
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		t.Fatal("DATABASE_URL is required")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cleanupRoutingAlertIntegrationFixtures(t, db)
+	t.Cleanup(func() { cleanupRoutingAlertIntegrationFixtures(t, db) })
+
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%x", time.Now().UnixNano())
+	txKey := "routing-alert-integration-catchup-" + suffix
+	snapshot := routingSnapshot()
+	snapshot.TxKey = txKey
+	snapshot.TxHash = ""
+	snapshot.TransactionStatus = "SUBMITTED"
+	snapshot.TransactionSubStatus = "WAITING_FOR_SIGNATURE"
+	snapshot.CreateTime = time.Now().Add(-25 * time.Hour).UnixMilli()
+	snapshotBody, _ := json.Marshal(snapshot)
+	snapshot.RawPayload = snapshotBody
+	envelope, _ := json.Marshal(map[string]any{
+		"eventType": "TRANSACTION_CREATED", "eventDetail": snapshot,
+	})
+	eventID := "routing-alert-integration-catchup-event-" + suffix
+	digest := fmt.Sprintf("%064x", time.Now().UnixNano())
+	var webhookID int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO safeheron_webhook_events
+  (event_id,event_type,safeheron_tx_key,raw_payload,payload_digest,process_status)
+VALUES ($1,'TRANSACTION_CREATED',$2,$3::jsonb,$4,'PENDING') RETURNING id`,
+		eventID, txKey, envelope, digest,
+	).Scan(&webhookID); err != nil {
+		t.Fatal(err)
+	}
+	results, err := NewRepository(db).RouteVerifiedEvent(ctx, VerifiedEventInput{
+		WebhookEventID: webhookID, EventType: "TRANSACTION_CREATED", PayloadDigest: digest,
+		NetworkFamily: "EVM", Snapshot: snapshot,
+	})
+	if err != nil || len(results) != 1 || results[0].Decision.Reason != ReasonStatusNotTerminal {
+		t.Fatalf("initial route = %#v, %v", results, err)
+	}
+	caseID := results[0].CaseID
+	if _, err := db.ExecContext(ctx, `UPDATE safeheron_transaction_routing_cases
+SET created_at=now()-interval '25 hours' WHERE id=$1`, caseID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO safeheron_transaction_routing_status_checks
+  (safeheron_tx_key,first_seen_at,attempt_count,next_check_at,last_checked_at,last_check_outcome,
+   last_observed_status,last_provider_event_id)
+VALUES ($1,now()-interval '25 hours',8,now()+interval '1 hour',now(),'OBSERVED','SUBMITTED',$2)`,
+		txKey, eventID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	escalator, err := NewAlertEscalator(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worked, err := escalator.ProcessOne(ctx)
+	if err != nil || !worked {
+		t.Fatalf("first ProcessOne() = %v, %v", worked, err)
+	}
+	worked, err = escalator.ProcessOne(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worked {
+		t.Fatal("late catch-up emitted a lower SLA level after the current highest level")
+	}
+
+	var transitionKey, severity string
+	var alertCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*),min(transition_key),min(severity)
+FROM safeheron_transaction_routing_alerts
+WHERE case_id=$1 AND alert_type='SLA_ESCALATION'`, caseID).
+		Scan(&alertCount, &transitionKey, &severity); err != nil {
+		t.Fatal(err)
+	}
+	if alertCount != 1 || transitionKey != "sla:pending:level:3" || severity != "CRITICAL" {
+		t.Fatalf("catch-up alerts=%d transition=%q severity=%q, want one level-3 CRITICAL", alertCount, transitionKey, severity)
+	}
+}

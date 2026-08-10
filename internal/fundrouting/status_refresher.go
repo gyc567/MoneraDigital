@@ -17,7 +17,6 @@ import (
 const (
 	defaultRoutingStatusInitialDelay = 5 * time.Minute
 	defaultRoutingStatusLease        = time.Minute
-	defaultRoutingStatusMaxBatch     = 100
 )
 
 var defaultRoutingStatusSchedule = []time.Duration{
