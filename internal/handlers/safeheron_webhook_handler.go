@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -110,7 +110,17 @@ func (h *SafeheronWebhookHandler) SetDepositWorkerWake(wake func()) {
 // A positive candidate bridge failure is left for the collector and still
 // acknowledges the provider's delivery.
 func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
+	startedAt := time.Now()
 	if h == nil || h.Verifier == nil || h.Recorder == nil {
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogError,
+			"safeheron webhook failed",
+			"failed",
+			http.StatusServiceUnavailable,
+			startedAt,
+			"stage", "initialization",
+			"reason", "handler_unavailable",
+		)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "WEBHOOK_UNAVAILABLE",
 			"message": "Safeheron webhook handler not initialised",
@@ -118,9 +128,9 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 		return
 	}
 
+	clientIP := c.ClientIP()
 	// D-42: IP whitelist — reject before reading body or running RSA verify
 	if len(h.AllowedIPs) > 0 {
-		clientIP := c.ClientIP()
 		allowed := false
 		for _, ip := range h.AllowedIPs {
 			if ip == clientIP {
@@ -129,14 +139,19 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 			}
 		}
 		if !allowed {
-			log.Printf("safeheron webhook rejected: IP %s not in allowlist", clientIP)
+			emitSafeheronWebhookLog(
+				safeheronWebhookLogWarn,
+				"safeheron webhook rejected",
+				"rejected",
+				http.StatusForbidden,
+				startedAt,
+				"reason", "ip_not_allowed",
+				"sourceIP", clientIP,
+			)
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
 	}
-
-	clientIP := c.ClientIP()
-	log.Printf("[webhook] received ip=%s", clientIP)
 
 	// Plan D-12: http.MaxBytesReader caps body at 1MB AND surfaces an explicit
 	// *http.MaxBytesError on overflow — unlike io.LimitReader which silently
@@ -146,44 +161,93 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			log.Printf("[webhook] REJECT ip=%s body exceeds %d bytes", clientIP, MaxWebhookBodyBytes)
+			emitSafeheronWebhookLog(
+				safeheronWebhookLogWarn,
+				"safeheron webhook rejected",
+				"rejected",
+				http.StatusRequestEntityTooLarge,
+				startedAt,
+				"reason", "body_too_large",
+				"sourceIP", clientIP,
+				"maxBodyBytes", MaxWebhookBodyBytes,
+			)
 			c.AbortWithStatus(http.StatusRequestEntityTooLarge)
 			return
 		}
-		log.Printf("[webhook] REJECT ip=%s read body error: %v", clientIP, err)
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogWarn,
+			"safeheron webhook rejected",
+			"rejected",
+			http.StatusBadRequest,
+			startedAt,
+			"reason", "body_read_failed",
+			"sourceIP", clientIP,
+		)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	if len(body) == 0 {
-		log.Printf("[webhook] REJECT ip=%s empty body", clientIP)
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogWarn,
+			"safeheron webhook rejected",
+			"rejected",
+			http.StatusBadRequest,
+			startedAt,
+			"reason", "empty_body",
+			"sourceIP", clientIP,
+		)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("[webhook] verifying ip=%s bytes=%d", clientIP, len(body))
 	evt, err := h.Verifier.WebhookConvert(body)
 	if err != nil {
 		sum := sha256.Sum256(body)
-		log.Printf("[webhook] REJECT ip=%s verify failed bodyHash=%s", clientIP, hex.EncodeToString(sum[:8]))
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogWarn,
+			"safeheron webhook rejected",
+			"rejected",
+			http.StatusUnauthorized,
+			startedAt,
+			"reason", "verification_failed",
+			"sourceIP", clientIP,
+			"bodyHash", hex.EncodeToString(sum[:8]),
+		)
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
 	if evt.EventDetail.TxKey == "" {
-		log.Printf("[webhook] REJECT ip=%s eventType=%s missing txKey", clientIP, evt.EventType)
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogWarn,
+			"safeheron webhook rejected",
+			"rejected",
+			http.StatusBadRequest,
+			startedAt,
+			"reason", "missing_tx_key",
+			"sourceIP", clientIP,
+			"eventType", evt.EventType,
+		)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("[webhook] OK ip=%s eventType=%s txKey=%s status=%s bodyLen=%d",
-		clientIP, evt.EventType, evt.EventDetail.TxKey, evt.EventDetail.TransactionStatus, len(evt.RawBody))
 
 	// Use the raw decrypted plaintext as the stored payload so that fields
 	// not captured by safeheron.EventDetail (e.g. AML_KYT_ALERT's amlList,
 	// amlScreeningTriggeredState) are preserved for the async worker.
 	decryptedPayload := evt.RawBody
 	if len(decryptedPayload) == 0 {
-		log.Printf("[webhook] REJECT ip=%s empty RawBody after verify", clientIP)
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogError,
+			"safeheron webhook failed",
+			"failed",
+			http.StatusInternalServerError,
+			startedAt,
+			"stage", "decryption",
+			"reason", "empty_decrypted_payload",
+			"eventType", evt.EventType,
+			"txKey", evt.EventDetail.TxKey,
+		)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -212,7 +276,19 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 	if err != nil {
 		// A DB outage is the only reasonable cause; let Safeheron retry by
 		// returning 5xx (does not match the ack body, deliberately).
-		log.Printf("[webhook] ERROR ip=%s insert failed eventId=%s", clientIP, eventID)
+		emitSafeheronWebhookLog(
+			safeheronWebhookLogError,
+			"safeheron webhook failed",
+			"failed",
+			http.StatusInternalServerError,
+			startedAt,
+			"stage", "event_persistence",
+			"reason", "insert_failed",
+			"eventType", evt.EventType,
+			"txKey", evt.EventDetail.TxKey,
+			"providerStatus", evt.EventDetail.TransactionStatus,
+			"eventIdHash", safeheronWebhookHashSummary(eventID),
+		)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -221,13 +297,26 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 	if h.depositWorkerWake != nil {
 		h.depositWorkerWake()
 	}
+	companyFundEligibility := "not_configured"
+	bridgeResult := "not_applicable"
 	if h.companyFundEligibility != nil {
 		source, sourceErr := h.lookupCompanyFundSafeheronSource(c.Request.Context(), eventID, payloadDigest)
 		if sourceErr != nil {
 			// The eligibility decision cannot be durably tied to the persisted raw
 			// event. Return 5xx so Safeheron's webhook retry policy repairs it.
-			log.Printf("[webhook] ERROR ip=%s company-fund eligibility source eventIdHash=%s payloadDigest=%s",
-				clientIP, safeheronWebhookHashSummary(eventID), safeheronWebhookHashSummary(payloadDigest))
+			emitSafeheronWebhookLog(
+				safeheronWebhookLogError,
+				"safeheron webhook failed",
+				"failed",
+				http.StatusInternalServerError,
+				startedAt,
+				"stage", "company_fund_eligibility_source",
+				"reason", "source_lookup_failed",
+				"eventType", evt.EventType,
+				"txKey", evt.EventDetail.TxKey,
+				"eventIdHash", safeheronWebhookHashSummary(eventID),
+				"payloadDigestHash", safeheronWebhookHashSummary(payloadDigest),
+			)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
@@ -240,27 +329,55 @@ func (h *SafeheronWebhookHandler) Receive(c *gin.Context) {
 		if eligibilityErr != nil {
 			// A negative marker is part of the acknowledged delivery contract. Do
 			// not acknowledge an event whose exclusion could not be made durable.
-			log.Printf("[webhook] ERROR ip=%s company-fund eligibility marker eventIdHash=%s payloadDigest=%s",
-				clientIP, safeheronWebhookHashSummary(eventID), safeheronWebhookHashSummary(payloadDigest))
+			emitSafeheronWebhookLog(
+				safeheronWebhookLogError,
+				"safeheron webhook failed",
+				"failed",
+				http.StatusInternalServerError,
+				startedAt,
+				"stage", "company_fund_eligibility_marker",
+				"reason", "marker_persistence_failed",
+				"eventType", evt.EventType,
+				"txKey", evt.EventDetail.TxKey,
+				"eventIdHash", safeheronWebhookHashSummary(eventID),
+				"payloadDigestHash", safeheronWebhookHashSummary(payloadDigest),
+			)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		if decision.Candidate {
+			companyFundEligibility = "candidate"
+			bridgeResult = "ok"
 			if err := h.bridgeCompanyFundProviderEvent(c.Request.Context(), eventID, evt.EventType, payloadDigest, source); err != nil {
 				// The raw event is already durable. Do not expose bridge internals or raw
 				// content in logs; the anti-join collector will repair this delivery.
-				log.Printf("[webhook] DEFER ip=%s company-fund bridge eventIdHash=%s payloadDigest=%s",
-					clientIP, safeheronWebhookHashSummary(eventID), safeheronWebhookHashSummary(payloadDigest))
+				bridgeResult = "deferred"
 			}
+		} else {
+			companyFundEligibility = "excluded"
 		}
 	}
+	result := "stored"
 	if !inserted {
-		log.Printf("[webhook] DUPLICATE ip=%s eventType=%s txKey=%s eventId=%s — ack SUCCESS",
-			clientIP, evt.EventType, evt.EventDetail.TxKey, eventID)
-	} else {
-		log.Printf("[webhook] STORED ip=%s eventType=%s txKey=%s eventId=%s",
-			clientIP, evt.EventType, evt.EventDetail.TxKey, eventID)
+		result = "duplicate"
 	}
+	level := safeheronWebhookLogInfo
+	if bridgeResult == "deferred" {
+		level = safeheronWebhookLogWarn
+	}
+	emitSafeheronWebhookLog(
+		level,
+		"safeheron webhook processed",
+		result,
+		http.StatusOK,
+		startedAt,
+		"eventType", evt.EventType,
+		"txKey", evt.EventDetail.TxKey,
+		"providerStatus", evt.EventDetail.TransactionStatus,
+		"eventIdHash", safeheronWebhookHashSummary(eventID),
+		"companyFundEligibility", companyFundEligibility,
+		"bridgeResult", bridgeResult,
+	)
 
 	c.Header("Content-Type", "application/json")
 	c.String(http.StatusOK, SafeheronAckBody)
