@@ -44,6 +44,24 @@ func TestCompanyFundRuntimeConfigReadsAccountLifecycleAdaptiveBoundary(t *testin
 	}
 }
 
+func TestCompanyFundRuntimeConfigReadsSafeheronCatalogRecoveryBoundary(t *testing.T) {
+	viper.Set("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL", "45s")
+	viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL", "2m")
+	viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE", "37")
+	t.Cleanup(func() {
+		viper.Set("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL", nil)
+		viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL", nil)
+		viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE", nil)
+	})
+
+	config := companyFundRuntimeConfigFromViper()
+	if config.SafeheronCoinCatalogColdRetryInterval != 45*time.Second ||
+		config.SafeheronAssetRepairInterval != 2*time.Minute ||
+		config.SafeheronAssetRepairBatchSize != 37 {
+		t.Fatalf("Safeheron catalog recovery config = %#v", config)
+	}
+}
+
 type companyFundEventWriterStub struct{}
 
 type companyFundRegistryLoaderStub struct{}
@@ -60,6 +78,12 @@ func (companyFundEventWriterStub) InsertProviderEvent(context.Context, companyfu
 }
 
 type companyFundHistoryClientStub struct{}
+
+func (companyFundHistoryClientStub) ListCoin(context.Context) ([]safeheron.Coin, error) {
+	return []safeheron.Coin{{
+		CoinKey: "USDT_ERC20", Symbol: "USDT", BlockChain: "ETHEREUM", BlockchainType: "EVM",
+	}}, nil
+}
 
 func TestCompanyFundCurrentRateDefaultsMatchDemoRefreshBudget(t *testing.T) {
 	require.Equal(t, 5*time.Minute, defaultCompanyFundCurrentRateRefreshInterval)
@@ -331,6 +355,8 @@ func TestNewContainer_FinalizesSafeheronRuntimeAfterAllOptionsRegardlessOrder(t 
 			defer cont.Close()
 
 			require.NotNil(t, cont.CompanyFundSafeheronNormalizer)
+			require.NotNil(t, cont.CompanyFundSafeheronCoinCatalog)
+			require.NotNil(t, cont.CompanyFundSafeheronAssetRepairer)
 			require.NotNil(t, cont.CompanyFundSafeheronReconciler)
 			require.NotNil(t, cont.CompanyFundProviderEventWorker)
 			require.NotNil(t, cont.CompanyFundRuntime)

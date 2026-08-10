@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 	"sync"
@@ -14,7 +15,10 @@ import (
 	"monera-digital/internal/safeheron"
 )
 
-const defaultSafeheronCoinCatalogRefreshInterval = 6 * time.Hour
+const (
+	defaultSafeheronCoinCatalogRefreshInterval   = 6 * time.Hour
+	defaultSafeheronCoinCatalogColdRetryInterval = time.Minute
+)
 
 // ErrSafeheronCoinNotFound is returned when an exact coin-key lookup misses.
 var ErrSafeheronCoinNotFound = errors.New("safeheron coin not found")
@@ -44,7 +48,8 @@ type SafeheronCoinLookup interface {
 
 // SafeheronCoinCatalogConfig controls the periodic complete refresh cadence.
 type SafeheronCoinCatalogConfig struct {
-	RefreshInterval time.Duration
+	RefreshInterval   time.Duration
+	ColdRetryInterval time.Duration
 }
 
 type safeheronCoinCatalogSnapshot struct {
@@ -54,9 +59,10 @@ type safeheronCoinCatalogSnapshot struct {
 
 // SafeheronCoinCatalog publishes only complete, validated provider snapshots.
 type SafeheronCoinCatalog struct {
-	client   SafeheronCoinLister
-	interval time.Duration
-	snapshot atomic.Pointer[safeheronCoinCatalogSnapshot]
+	client            SafeheronCoinLister
+	interval          time.Duration
+	coldRetryInterval time.Duration
+	snapshot          atomic.Pointer[safeheronCoinCatalogSnapshot]
 
 	refreshMu sync.Mutex
 	runMu     sync.Mutex
@@ -76,7 +82,18 @@ func NewSafeheronCoinCatalog(client SafeheronCoinLister, config SafeheronCoinCat
 	if interval <= 0 {
 		return nil, fmt.Errorf("Safeheron coin catalog refresh interval must be positive")
 	}
-	return &SafeheronCoinCatalog{client: client, interval: interval}, nil
+	coldRetryInterval := config.ColdRetryInterval
+	if coldRetryInterval == 0 {
+		coldRetryInterval = defaultSafeheronCoinCatalogColdRetryInterval
+	}
+	if coldRetryInterval <= 0 {
+		return nil, fmt.Errorf("Safeheron coin catalog cold retry interval must be positive")
+	}
+	return &SafeheronCoinCatalog{
+		client:            client,
+		interval:          interval,
+		coldRetryInterval: coldRetryInterval,
+	}, nil
 }
 
 func (c *SafeheronCoinCatalog) RefreshInterval() time.Duration {
@@ -108,6 +125,9 @@ func (c *SafeheronCoinCatalog) Refresh(ctx context.Context) error {
 }
 
 func buildSafeheronCoinCatalogSnapshot(coins []safeheron.Coin) (*safeheronCoinCatalogSnapshot, error) {
+	if len(coins) == 0 {
+		return nil, fmt.Errorf("Safeheron coin catalog is empty")
+	}
 	byKey := make(map[string]safeheron.Coin, len(coins))
 	ordered := make([]safeheron.Coin, 0, len(coins))
 	for _, coin := range coins {
@@ -187,14 +207,46 @@ func (c *SafeheronCoinCatalog) run(ctx context.Context, done chan struct{}, inte
 		Name:    "company-fund-safeheron-coin-catalog",
 		MinIdle: interval,
 		MaxIdle: adaptiveschedule.MaxIdleAtLeast(interval),
+		OnCycle: func(_ adaptiveschedule.CycleOutcome, err error, elapsed time.Duration) {
+			loaded, coinCount := c.snapshotState()
+			if err != nil {
+				log.Printf(
+					"company-fund Safeheron coin catalog refresh: result=failed loaded=%t coinCount=%d elapsed=%s",
+					loaded, coinCount, elapsed.Round(time.Millisecond),
+				)
+				return
+			}
+			log.Printf(
+				"company-fund Safeheron coin catalog refresh: result=success loaded=%t coinCount=%d elapsed=%s",
+				loaded, coinCount, elapsed.Round(time.Millisecond),
+			)
+		},
 	}, func(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
 		err := c.Refresh(ctx)
-		return adaptiveschedule.CycleOutcome{}, err
+		outcome := adaptiveschedule.CycleOutcome{}
+		if err != nil {
+			loaded, _ := c.snapshotState()
+			if !loaded {
+				outcome.NextDue = time.Now().Add(c.coldRetryInterval)
+			}
+		}
+		return outcome, err
 	})
 	if err != nil {
 		return
 	}
 	loop.Run(ctx)
+}
+
+func (c *SafeheronCoinCatalog) snapshotState() (bool, int) {
+	if c == nil {
+		return false, 0
+	}
+	snapshot := c.snapshot.Load()
+	if snapshot == nil {
+		return false, 0
+	}
+	return true, len(snapshot.ordered)
 }
 
 func (c *SafeheronCoinCatalog) Stop() {

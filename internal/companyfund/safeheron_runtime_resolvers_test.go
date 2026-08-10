@@ -172,3 +172,28 @@ func TestRegistrySafeheronTransactionMappingResolver_CatalogHitAndPolicylessFall
 		t.Fatalf("policyless fallback mapping = %#v, %v", fallback, err)
 	}
 }
+
+func TestRegistrySafeheronTransactionMappingResolver_ColdCatalogMissIsRetryable(t *testing.T) {
+	registry, err := buildAccountRegistrySnapshot([]CompanyFundAccount{
+		{ID: 41, Channel: AccountChannelSafeheron, ProviderAccountKey: "safe-evm", NormalizedAddress: "0xabc", NetworkFamily: "EVM", Enabled: true},
+	}, nil, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewSafeheronCoinCatalog(&fakeSafeheronCoinLister{}, SafeheronCoinCatalogConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := NewRegistrySafeheronTransactionMappingResolver(safeheronRegistrySnapshotProviderStub{snapshot: registry}, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = resolver.ResolveSafeheronTransactionMapping(context.Background(), safeheron.TransactionSnapshot{
+		CoinKey: "USDT_ERC20", SourceAccountKey: "safe-evm", SourceAddress: "0xABC",
+	})
+	var coldMiss *SafeheronCoinCatalogColdMissError
+	if !errors.As(err, &coldMiss) || coldMiss.CoinKey != "USDT_ERC20" {
+		t.Fatalf("cold catalog mapping error = %v, want typed retryable miss", err)
+	}
+}

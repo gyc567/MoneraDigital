@@ -34,6 +34,8 @@ const (
 	defaultCompanyFundSafeheronHistoryMaxPages        = 100
 	defaultCompanyFundSafeheronCollectorInterval      = time.Minute
 	defaultCompanyFundSafeheronCollectorBatchSize     = 100
+	defaultCompanyFundSafeheronAssetRepairInterval    = time.Minute
+	defaultCompanyFundSafeheronAssetRepairBatchSize   = 100
 	defaultCompanyFundAirwallexFinancialPageSize      = 100
 	defaultCompanyFundAirwallexFinancialMaxPages      = 100
 	defaultCompanyFundAirwallexLedgerLeaseDuration    = time.Minute
@@ -49,6 +51,7 @@ const (
 	defaultCompanyFundCurrentValuationSweepBatch      = 100
 	maxCompanyFundPayloadKeyVersionBytes              = 64
 	maxCompanyFundSafeheronCollectorBatchSize         = 500
+	maxCompanyFundSafeheronAssetRepairBatchSize       = 100
 	maxCompanyFundCurrentValuationSweepBatch          = 1000
 )
 
@@ -95,11 +98,14 @@ type companyFundRuntimeConfig struct {
 	ReconciliationRetryMax        time.Duration
 	ReconciliationFinalizeTimeout time.Duration
 
-	SafeheronHistoryPageSize            int
-	SafeheronHistoryMaxPages            int
-	SafeheronCollectorInterval          time.Duration
-	SafeheronCollectorBatchSize         int
-	SafeheronCoinCatalogRefreshInterval time.Duration
+	SafeheronHistoryPageSize              int
+	SafeheronHistoryMaxPages              int
+	SafeheronCollectorInterval            time.Duration
+	SafeheronCollectorBatchSize           int
+	SafeheronCoinCatalogRefreshInterval   time.Duration
+	SafeheronCoinCatalogColdRetryInterval time.Duration
+	SafeheronAssetRepairInterval          time.Duration
+	SafeheronAssetRepairBatchSize         int
 
 	AirwallexBaseURL                        string
 	AirwallexClientID                       string
@@ -182,6 +188,9 @@ func companyFundRuntimeConfigFromViper() companyFundRuntimeConfig {
 		SafeheronCollectorInterval:              viper.GetDuration("COMPANY_FUND_SAFEHERON_COLLECTOR_INTERVAL"),
 		SafeheronCollectorBatchSize:             viper.GetInt("COMPANY_FUND_SAFEHERON_COLLECTOR_BATCH_SIZE"),
 		SafeheronCoinCatalogRefreshInterval:     viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_REFRESH_INTERVAL"),
+		SafeheronCoinCatalogColdRetryInterval:   viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL"),
+		SafeheronAssetRepairInterval:            viper.GetDuration("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL"),
+		SafeheronAssetRepairBatchSize:           viper.GetInt("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE"),
 		AirwallexBaseURL:                        viper.GetString("AIRWALLEX_BASE_URL"),
 		AirwallexClientID:                       viper.GetString("AIRWALLEX_CLIENT_ID"),
 		AirwallexAPIKey:                         viper.GetString("AIRWALLEX_API_KEY"),
@@ -327,7 +336,22 @@ func finalizeCompanyFundRuntime(c *Container) {
 		c.CompanyFundCurrentValuator = valuator
 	}
 
-	safeNormalizer, safeHistoryClient := newCompanyFundSafeheronNormalizer(c, config.SafeheronCoinCatalogRefreshInterval)
+	safeNormalizer, safeHistoryClient := newCompanyFundSafeheronNormalizer(
+		c,
+		config.SafeheronCoinCatalogRefreshInterval,
+		config.SafeheronCoinCatalogColdRetryInterval,
+	)
+	if c.CompanyFundSafeheronCoinCatalog != nil {
+		repairer, repairErr := companyfund.NewSafeheronAssetRecognitionRepairer(
+			c.CompanyFundRepository,
+			c.CompanyFundSafeheronCoinCatalog,
+		)
+		if repairErr != nil {
+			log.Printf("company-fund Safeheron asset recognition repair disabled: configuration is invalid")
+		} else {
+			c.CompanyFundSafeheronAssetRepairer = repairer
+		}
+	}
 	airBundle, airwallexConfig, configuredAirwallexClient := newCompanyFundAirwallexRuntimeBundle(
 		c.CompanyFundAccountRegistry,
 		config,
@@ -653,7 +677,11 @@ func newCompanyFundReconciliationRuntime(
 	return result
 }
 
-func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time.Duration) (*companyfund.SafeheronProviderEventNormalizer, safeheron.TransactionHistoryClient) {
+func newCompanyFundSafeheronNormalizer(
+	c *Container,
+	catalogRefreshInterval time.Duration,
+	catalogColdRetryInterval time.Duration,
+) (*companyfund.SafeheronProviderEventNormalizer, safeheron.TransactionHistoryClient) {
 	if c == nil || c.SafeheronClient == nil || c.CompanyFundAccountRegistry == nil {
 		return nil, nil
 	}
@@ -665,7 +693,10 @@ func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time
 	var err error
 	var catalog *companyfund.SafeheronCoinCatalog
 	if coinClient, available := c.SafeheronClient.(safeheron.CoinClient); available {
-		catalog, err = companyfund.NewSafeheronCoinCatalog(coinClient, companyfund.SafeheronCoinCatalogConfig{RefreshInterval: catalogRefreshInterval})
+		catalog, err = companyfund.NewSafeheronCoinCatalog(coinClient, companyfund.SafeheronCoinCatalogConfig{
+			RefreshInterval:   catalogRefreshInterval,
+			ColdRetryInterval: catalogColdRetryInterval,
+		})
 		if err != nil {
 			log.Printf("company-fund Safeheron coin catalog disabled: configuration is invalid")
 			catalog = nil
@@ -675,7 +706,7 @@ func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time
 				refreshContext = context.Background()
 			}
 			if refreshErr := catalog.Refresh(refreshContext); refreshErr != nil {
-				log.Printf("company-fund Safeheron coin catalog cold start failed; policyless fallback remains enabled: %v", refreshErr)
+				log.Printf("company-fund Safeheron coin catalog cold start failed; provider events will retry until the catalog loads")
 			}
 			c.CompanyFundSafeheronCoinCatalog = catalog
 		}

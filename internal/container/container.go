@@ -320,6 +320,7 @@ type Container struct {
 	CompanyFundRuntime                 *companyfund.CompanyFundRuntime
 	CompanyFundSafeheronNormalizer     *companyfund.SafeheronProviderEventNormalizer
 	CompanyFundSafeheronCoinCatalog    *companyfund.SafeheronCoinCatalog
+	CompanyFundSafeheronAssetRepairer  *companyfund.SafeheronAssetRecognitionRepairer
 	CompanyFundSafeheronReconciler     *companyfund.SafeheronTransactionHistoryReconciler
 	CompanyFundSafeheronCollector      *companyfund.SafeheronProviderEventCollector
 	CompanyFundAirwallexRuntimeBundle  *companyfund.AirwallexFinancialTransactionsRuntimeBundle
@@ -331,15 +332,16 @@ type Container struct {
 	CompanyFundCurrentValuator         *companyfund.CompanyFundCurrentValuator
 	CompanyFundFinanceHandler          *handlers.CompanyFundFinanceHandler
 
-	companyFundRuntimeConfig    companyFundRuntimeConfig
-	companyFundRuntimeContext   context.Context
-	companyFundRuntimePending   bool
-	companyFundRuntimeFinalized bool
-	companyFundAuxCancel        context.CancelFunc
-	companyFundAuxDone          chan struct{}
-	companyFundRateRefreshLoop  *adaptiveschedule.Loop
-	companyFundValuationLoop    *adaptiveschedule.Loop
-	safeheronRuntimeContext     context.Context
+	companyFundRuntimeConfig            companyFundRuntimeConfig
+	companyFundRuntimeContext           context.Context
+	companyFundRuntimePending           bool
+	companyFundRuntimeFinalized         bool
+	companyFundAuxCancel                context.CancelFunc
+	companyFundAuxDone                  chan struct{}
+	companyFundRateRefreshLoop          *adaptiveschedule.Loop
+	companyFundValuationLoop            *adaptiveschedule.Loop
+	companyFundSafeheronAssetRepairLoop *adaptiveschedule.Loop
+	safeheronRuntimeContext             context.Context
 
 	// 服务
 	AuthService       *services.AuthService

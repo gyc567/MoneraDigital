@@ -90,6 +90,32 @@ func TestRegistrySafeheronWebhookCandidateEvaluator_RequiresMappedCompanyAddress
 	})
 }
 
+func TestRegistrySafeheronWebhookCandidateEvaluator_ColdCatalogMissIsRetryable(t *testing.T) {
+	base := testSafeheronNormalizationInput(t)
+	catalog, err := NewSafeheronCoinCatalog(&fakeSafeheronCoinLister{}, SafeheronCoinCatalogConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluator, err := NewRegistrySafeheronWebhookCandidateEvaluator(
+		safeheronRegistrySnapshotProviderStub{snapshot: base.Registry},
+		catalog,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := testSafeheronWebhookEligibilityPayload(t, safeheronTransactionStatusChangedEventType, base.Snapshot)
+
+	_, err = evaluator.EvaluateSafeheronWebhookCandidate(
+		context.Background(),
+		safeheronTransactionStatusChangedEventType,
+		raw,
+	)
+	var coldMiss *SafeheronCoinCatalogColdMissError
+	if !errors.As(err, &coldMiss) || coldMiss.CoinKey != base.Snapshot.CoinKey {
+		t.Fatalf("cold catalog eligibility error = %v, want typed retryable miss", err)
+	}
+}
+
 func TestSafeheronWebhookEligibilityService_PersistsOnlyNegativeMarker(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	evaluator := &safeheronWebhookCandidateEvaluatorStub{evaluation: SafeheronWebhookCandidateEvaluation{

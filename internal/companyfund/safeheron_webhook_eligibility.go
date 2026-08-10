@@ -278,7 +278,8 @@ func (service *SafeheronWebhookEligibilityService) AssessAndRecord(
 // delivery against one current immutable account-registry snapshot. It resolves
 // the exact Safeheron coin key through the provider catalog when available (or
 // configured policy fallback), then independently proves that a source or
-// destination belongs to an enabled company account on that network.
+// destination belongs to an enabled company account on that network. A cold
+// catalog is retryable and must never create a durable negative marker.
 type RegistrySafeheronWebhookCandidateEvaluator struct {
 	registries SafeheronRegistrySnapshotProvider
 	coins      SafeheronCoinLookup
@@ -339,6 +340,8 @@ func (evaluator *RegistrySafeheronWebhookCandidateEvaluator) EvaluateSafeheronWe
 	if evaluator.coins != nil {
 		if coin, lookupErr := evaluator.coins.Lookup(snapshot.CoinKey); lookupErr == nil {
 			networkFamily = normalizeNetworkFamily(coin.BlockchainType)
+		} else if coldMiss := new(SafeheronCoinCatalogColdMissError); errors.As(lookupErr, &coldMiss) {
+			return SafeheronWebhookCandidateEvaluation{}, lookupErr
 		} else if !errors.Is(lookupErr, ErrSafeheronCoinNotFound) {
 			return SafeheronWebhookCandidateEvaluation{}, lookupErr
 		}

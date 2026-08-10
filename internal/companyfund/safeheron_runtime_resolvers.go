@@ -42,9 +42,10 @@ func (resolver *RegistrySafeheronHistoryAccountContextResolver) ResolveSafeheron
 }
 
 // RegistrySafeheronTransactionMappingResolver resolves exact Safeheron coin
-// keys from the provider coin catalog when available, with enabled account
-// asset policies as the legacy fallback. Symbols and ticker-like substrings
-// are never consulted. Ambiguous network/asset mappings fail closed.
+// keys from the provider coin catalog when available. A catalog that has never
+// loaded is retryable; only a miss in a complete loaded snapshot may use the
+// policyless unknown-asset fallback. Symbols and ticker-like substrings are
+// never consulted. Ambiguous network/asset mappings fail closed.
 type RegistrySafeheronTransactionMappingResolver struct {
 	registries SafeheronRegistrySnapshotProvider
 	coins      SafeheronCoinLookup
@@ -101,6 +102,10 @@ func (resolver *RegistrySafeheronTransactionMappingResolver) resolveCatalogSafeh
 	snapshot safeheron.TransactionSnapshot,
 ) (SafeheronTransactionMapping, error) {
 	coin, lookupErr := resolver.coins.Lookup(snapshot.CoinKey)
+	var coldMiss *SafeheronCoinCatalogColdMissError
+	if errors.As(lookupErr, &coldMiss) {
+		return SafeheronTransactionMapping{}, lookupErr
+	}
 	networkFamily := ""
 	if lookupErr == nil {
 		networkFamily = normalizeNetworkFamily(coin.BlockchainType)
@@ -142,6 +147,9 @@ func (resolver *RegistrySafeheronTransactionMappingResolver) resolveCatalogSafeh
 		return result, nil
 	}
 	feeCoin, feeErr := resolver.coins.Lookup(feeCoinKey)
+	if errors.As(feeErr, &coldMiss) {
+		return SafeheronTransactionMapping{}, feeErr
+	}
 	fee := SafeheronAssetMapping{CoinKey: feeCoinKey, Unrecognized: feeErr != nil}
 	if feeErr == nil {
 		feeNetwork := normalizeNetworkFamily(feeCoin.BlockchainType)

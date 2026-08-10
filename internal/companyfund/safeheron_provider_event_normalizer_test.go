@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"monera-digital/internal/safeheron"
 )
@@ -192,6 +193,49 @@ func TestSafeheronProviderEventNormalizer_RetriesAccountConfigurationLag(t *test
 	)
 	if !errors.Is(err, configurationError) || errors.Is(err, ErrProviderEventPermanent) || result.Ignored {
 		t.Fatalf("NormalizeProviderEvent() = %#v, %v; want retriable configuration error", result, err)
+	}
+}
+
+func TestSafeheronProviderEventNormalizer_RetriesColdCoinCatalogMiss(t *testing.T) {
+	input := testSafeheronNormalizationInput(t)
+	coldMiss := &SafeheronCoinCatalogColdMissError{CoinKey: input.Snapshot.CoinKey}
+	resolver := &safeheronTransactionMappingResolverStub{err: coldMiss}
+	normalizer := newSafeheronProviderEventNormalizerForTest(t, resolver, input.Registry)
+
+	result, err := normalizer.NormalizeProviderEvent(
+		context.Background(),
+		testSafeheronProviderEventLease("TRANSACTION_STATUS_CHANGED"),
+		testSafeheronTransactionStatusPayload(t, input.Snapshot),
+	)
+	var gotColdMiss *SafeheronCoinCatalogColdMissError
+	if !errors.As(err, &gotColdMiss) || errors.Is(err, ErrProviderEventPermanent) || result.Ignored {
+		t.Fatalf("NormalizeProviderEvent() = %#v, %v; want retriable cold catalog miss", result, err)
+	}
+}
+
+func TestProviderEventWorker_RetriesSafeheronEventWhileCoinCatalogIsCold(t *testing.T) {
+	input := testSafeheronNormalizationInput(t)
+	resolver := &safeheronTransactionMappingResolverStub{
+		err: &SafeheronCoinCatalogColdMissError{CoinKey: input.Snapshot.CoinKey},
+	}
+	normalizer := newSafeheronProviderEventNormalizerForTest(t, resolver, input.Registry)
+	lease := testSafeheronProviderEventLease("TRANSACTION_STATUS_CHANGED")
+	lease.AttemptCount = 1
+	repository := &providerEventWorkerRepositoryStub{lease: &lease}
+	worker := newProviderEventWorkerForTest(
+		t,
+		repository,
+		&providerEventPayloadReaderStub{payload: testSafeheronTransactionStatusPayload(t, input.Snapshot)},
+		map[TransactionSource]ProviderEventNormalizer{ChannelSafeheron: normalizer},
+		time.Date(2026, time.August, 10, 8, 0, 0, 0, time.UTC),
+	)
+
+	result, err := worker.ProcessNext(t.Context())
+	if err != nil || result.Outcome != ProviderEventFinalizeRetry || result.MovementCount != 0 {
+		t.Fatalf("ProcessNext() = %#v, %v; want durable retry", result, err)
+	}
+	if len(repository.finalizations) != 1 || repository.finalizations[0].outcome != ProviderEventFinalizeRetry || repository.finalizations[0].retryAt == nil {
+		t.Fatalf("finalizations = %#v, want one scheduled retry", repository.finalizations)
 	}
 }
 
