@@ -2,6 +2,7 @@ package fundrouting
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,34 +78,55 @@ func TestAlertEscalatorReturnsIdleWhenNoThresholdIsDue(t *testing.T) {
 	}
 }
 
-func TestAlertEscalatorSLAThresholdsIncludeAllOpenCasesRegardlessOfReason(t *testing.T) {
-	// Contract: quieting STATUS_NOT_TERMINAL immediate OPEN alerts must not
-	// exclude those cases from age-based SLA_ESCALATION (1h ERROR / 24h CRITICAL).
-	sqlText := `WITH thresholds(level,minimum_age,severity) AS (
-  VALUES (1,interval '1 hour','ERROR'::varchar),
-         (2,interval '24 hours','CRITICAL'::varchar)
-), candidate AS (
-  SELECT routing.id AS case_id, routing.reason_code, threshold.level, threshold.severity
-  FROM safeheron_transaction_routing_cases routing
-  CROSS JOIN thresholds threshold
-  WHERE routing.decision='OPEN' AND routing.created_at <= now()-threshold.minimum_age
-    AND NOT EXISTS (
-      SELECT 1 FROM safeheron_transaction_routing_alerts alert
-      WHERE alert.case_id=routing.id AND alert.alert_type='SLA_ESCALATION'
-        AND alert.transition_key='sla:level:' || threshold.level::text
-    )
-  ORDER BY routing.created_at, routing.id, threshold.level
-  LIMIT 1
-)
-INSERT INTO safeheron_transaction_routing_alerts
-  (case_id,alert_type,transition_key,severity,payload)
-SELECT case_id,'SLA_ESCALATION','sla:level:' || level::text,severity,
-       jsonb_build_object('level',level,'reason_code',reason_code)
-FROM candidate
-ON CONFLICT (case_id,alert_type,transition_key) DO NOTHING
-RETURNING id`
-	// Keep the production ProcessOne SQL and this contract string aligned.
-	if got := openCaseSLAEscalationSQL(); got != sqlText {
-		t.Fatalf("SLA escalator SQL drifted from quiet-alert contract:\n got: %s\nwant: %s", got, sqlText)
+func TestAlertEscalatorSLAThresholdsDifferentiatePendingProviderStatus(t *testing.T) {
+	sqlText := openCaseSLAEscalationSQL()
+	for _, fragment := range []string{
+		"('STATUS_NOT_TERMINAL'::varchar,1,interval '1 hour','WARN'::varchar)",
+		"('STATUS_NOT_TERMINAL'::varchar,2,interval '6 hours','ERROR'::varchar)",
+		"('STATUS_NOT_TERMINAL'::varchar,3,interval '24 hours','CRITICAL'::varchar)",
+		"('*'::varchar,1,interval '1 hour','ERROR'::varchar)",
+		"('*'::varchar,2,interval '24 hours','CRITICAL'::varchar)",
+	} {
+		if !strings.Contains(sqlText, fragment) {
+			t.Errorf("SLA escalation SQL is missing threshold %q", fragment)
+		}
+	}
+}
+
+func TestAlertEscalatorRequiresFreshStatusCheckAndBuildsActionablePayload(t *testing.T) {
+	sqlText := openCaseSLAEscalationSQL()
+	for _, fragment := range []string{
+		"status_check.last_checked_at >= routing.created_at + threshold.minimum_age",
+		"status_check.last_check_outcome='ERROR'",
+		"linked_webhook.event_id=status_check.last_provider_event_id",
+		"status_check.last_observed_status NOT IN ('COMPLETED','FAILED','CANCELLED','REJECTED')",
+		"'environment',environment",
+		"'case_id',case_id",
+		"'safeheron_tx_key',safeheron_tx_key",
+		"'raw_coin_key',raw_coin_key",
+		"'network_family',network_family",
+		"'amount',amount::text",
+		"'source_address',source_address",
+		"'destination_address',destination_address",
+		"'transaction_status',provider_status",
+		"'transaction_sub_status',transaction_sub_status",
+		"'tx_hash',tx_hash",
+		"'effective_event_time',effective_event_time",
+		"'stuck_seconds',stuck_seconds",
+		"'last_source_event_type',last_source_event_type",
+		"'last_source_received_at',last_source_received_at",
+		"'last_api_checked_at',last_api_checked_at",
+		"'last_api_check_outcome',last_api_check_outcome",
+		"'last_api_error_code',last_api_error_code",
+	} {
+		if !strings.Contains(sqlText, fragment) {
+			t.Errorf("SLA escalation SQL is missing actionable field/gate %q", fragment)
+		}
+	}
+	if strings.Contains(sqlText, "status_check.safeheron_tx_key IS NULL") {
+		t.Fatal("STATUS_NOT_TERMINAL escalation must not bypass the provider lookup when no check exists")
+	}
+	if strings.Contains(openCaseSLANextDueSQL(), "status_check.safeheron_tx_key IS NULL") {
+		t.Fatal("STATUS_NOT_TERMINAL scheduling must wait for a durable provider check")
 	}
 }

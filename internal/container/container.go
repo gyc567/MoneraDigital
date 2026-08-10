@@ -306,6 +306,7 @@ type Container struct {
 	FundRoutingReconciler       *fundrouting.Reconciler
 	FundRoutingAlertNotifier    *fundrouting.AlertNotifier
 	FundRoutingAlertEscalator   *fundrouting.AlertEscalator
+	FundRoutingStatusRefresher  *fundrouting.StatusRefresher
 
 	// Company-fund runtime. These dependencies intentionally remain independent
 	// of the customer wallet pool and its Redis/cache lifecycle. The runtime is

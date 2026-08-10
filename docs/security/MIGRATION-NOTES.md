@@ -171,7 +171,7 @@ go run ./cmd/migrate -exact-version 050
 
 For a manual release, repeat with matching values for every version printed by
 the artifact's `monera-migrate -print-release-sequence`, in that exact order.
-The current artifact prints only `063`, whose required predecessor is `062`.
+The current artifact prints only `064`, whose required predecessor is `063`.
 Exact mode has these
 invariants:
 

@@ -5,6 +5,9 @@ import (
 	"log"
 
 	"monera-digital/internal/fundrouting"
+	"monera-digital/internal/safeheron"
+
+	"github.com/spf13/viper"
 )
 
 func finalizeSafeheronRouting(c *Container) {
@@ -37,7 +40,30 @@ func finalizeSafeheronRouting(c *Container) {
 	if escalationErr != nil {
 		panic(escalationErr)
 	}
+	escalator.SetEnvironment(viper.GetString("APP_ENV"))
 	c.FundRoutingAlertEscalator = escalator
+	if historyClient, available := c.SafeheronClient.(safeheron.TransactionHistoryClient); available {
+		statusStore, storeErr := fundrouting.NewPostgresRoutingStatusCheckStore(c.DB)
+		if storeErr != nil {
+			panic(storeErr)
+		}
+		historyIngester, historyErr := fundrouting.NewHistoryInboxIngester(c.DB)
+		if historyErr != nil {
+			panic(historyErr)
+		}
+		statusRefresher, statusErr := fundrouting.NewStatusRefresher(
+			statusStore,
+			historyClient,
+			historyIngester,
+			fundrouting.StatusRefresherConfig{},
+		)
+		if statusErr != nil {
+			panic(statusErr)
+		}
+		c.FundRoutingStatusRefresher = statusRefresher
+	} else {
+		log.Printf("Safeheron routing provider-status fallback disabled: transaction history lookup unavailable")
+	}
 	ctx := c.safeheronRuntimeContext
 	if ctx == nil {
 		ctx = context.Background()
@@ -70,6 +96,10 @@ func finalizeSafeheronRouting(c *Container) {
 	// reconciler after the source commit so the case does not wait for MaxIdle.
 	worker.SetOnWorked(func() {
 		_ = reconciler.Notify()
+		_ = escalator.Notify()
+		if c.FundRoutingStatusRefresher != nil {
+			_ = c.FundRoutingStatusRefresher.Notify()
+		}
 		if c.FundRoutingProjectionWorker != nil {
 			_ = c.FundRoutingProjectionWorker.Notify()
 		}
@@ -77,11 +107,22 @@ func finalizeSafeheronRouting(c *Container) {
 			_ = c.FundRoutingAlertNotifier.Notify()
 		}
 	})
-	if c.FundRoutingProjectionWorker != nil {
-		reconciler.SetOnProjectionReady(func() {
-			_ = c.FundRoutingProjectionWorker.Notify()
+	if c.FundRoutingStatusRefresher != nil {
+		c.FundRoutingStatusRefresher.SetOnSnapshotStored(func() {
+			_ = worker.Notify()
+		})
+		c.FundRoutingStatusRefresher.SetOnCheckCompleted(func() {
+			_ = escalator.Notify()
 		})
 	}
+	reconciler.SetOnProjectionReady(func() {
+		if c.FundRoutingProjectionWorker != nil {
+			_ = c.FundRoutingProjectionWorker.Notify()
+		}
+		if c.FundRoutingAlertNotifier != nil {
+			_ = c.FundRoutingAlertNotifier.Notify()
+		}
+	})
 	if c.FundRoutingAlertNotifier != nil {
 		escalator.SetOnAlertCreated(func() {
 			_ = c.FundRoutingAlertNotifier.Notify()
@@ -90,6 +131,9 @@ func finalizeSafeheronRouting(c *Container) {
 	runContainerBackgroundTask(ctx, "fund_routing", worker.Run)
 	runContainerBackgroundTask(ctx, "fund_routing_reconciliation", reconciler.Run)
 	runContainerBackgroundTask(ctx, "fund_routing_sla_escalation", escalator.Run)
+	if c.FundRoutingStatusRefresher != nil {
+		runContainerBackgroundTask(ctx, "fund_routing_status_refresh", c.FundRoutingStatusRefresher.Run)
+	}
 	metricsMonitor, metricsErr := fundrouting.NewMetricsMonitor(c.DB)
 	if metricsErr != nil {
 		panic(metricsErr)
