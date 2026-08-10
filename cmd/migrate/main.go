@@ -34,7 +34,7 @@ import (
 
 var version = "dev"
 
-var artifactMigrationReleaseSequence = []string{"063"}
+var artifactMigrationReleaseSequence = []string{"064"}
 
 type migrationDescriptor struct {
 	version          string
@@ -81,6 +81,9 @@ var migrationRegistry = []migrationDescriptor{
 		return &migrations.AddAirwallexAccountLifecycle{
 			LegacyMappingJSON: os.Getenv("AIRWALLEX_LEGACY_LIFECYCLE_MAPPING_JSON"),
 		}
+	}},
+	{version: "064", predecessor: "063", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddSafeheronRoutingStatusChecks{}
 	}},
 }
 

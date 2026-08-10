@@ -171,6 +171,36 @@ func TestSafeheronCoinCatalogRefreshFailureRetainsLastGood(t *testing.T) {
 	}
 }
 
+func TestSafeheronCoinCatalogRejectsEmptyRefreshWithoutPublishingIncompleteSnapshot(t *testing.T) {
+	client := &fakeSafeheronCoinLister{}
+	catalog, err := NewSafeheronCoinCatalog(client, SafeheronCoinCatalogConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := catalog.Refresh(t.Context()); err == nil {
+		t.Fatal("cold empty Refresh() error = nil, want incomplete catalog rejection")
+	}
+	_, lookupErr := catalog.Lookup("USDT_ERC20")
+	var coldMiss *SafeheronCoinCatalogColdMissError
+	if !errors.As(lookupErr, &coldMiss) {
+		t.Fatalf("Lookup() after cold empty refresh error = %v, want typed cold miss", lookupErr)
+	}
+
+	client.set([]safeheron.Coin{{CoinKey: "USDT_ERC20", Symbol: "USDT"}}, nil)
+	if err := catalog.Refresh(t.Context()); err != nil {
+		t.Fatalf("valid Refresh() error = %v", err)
+	}
+	client.set(nil, nil)
+	if err := catalog.Refresh(t.Context()); err == nil {
+		t.Fatal("warm empty Refresh() error = nil, want incomplete catalog rejection")
+	}
+	coin, lookupErr := catalog.Lookup("USDT_ERC20")
+	if lookupErr != nil || coin.Symbol != "USDT" {
+		t.Fatalf("last-good Lookup() = %#v, %v", coin, lookupErr)
+	}
+}
+
 func TestSafeheronCoinCatalogStartStopAreIdempotentAndCancelable(t *testing.T) {
 	started := make(chan struct{}, 2)
 	client := &fakeSafeheronCoinLister{listFn: func(ctx context.Context) ([]safeheron.Coin, error) {
@@ -194,6 +224,42 @@ func TestSafeheronCoinCatalogStartStopAreIdempotentAndCancelable(t *testing.T) {
 	catalog.Stop()
 	if got := client.calls.Load(); got != 1 {
 		t.Fatalf("ListCoin() calls = %d, want one loop call", got)
+	}
+}
+
+func TestSafeheronCoinCatalogColdStartFailureRetriesBeforeSteadyRefresh(t *testing.T) {
+	loaded := make(chan struct{}, 1)
+	client := &fakeSafeheronCoinLister{listFn: func(context.Context) ([]safeheron.Coin, error) {
+		if len(loaded) == 0 {
+			loaded <- struct{}{}
+			return nil, errors.New("API key is temporarily unavailable")
+		}
+		return []safeheron.Coin{{CoinKey: "USDT_ERC20", Symbol: "USDT", BlockchainType: "EVM"}}, nil
+	}}
+	catalog, err := NewSafeheronCoinCatalog(client, SafeheronCoinCatalogConfig{
+		RefreshInterval:   time.Hour,
+		ColdRetryInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	catalog.Start(t.Context())
+	t.Cleanup(catalog.Stop)
+	deadline := time.Now().Add(time.Second)
+	var (
+		coin      safeheron.Coin
+		lookupErr error
+	)
+	for time.Now().Before(deadline) {
+		coin, lookupErr = catalog.Lookup("USDT_ERC20")
+		if lookupErr == nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if client.calls.Load() < 2 || lookupErr != nil || coin.Symbol != "USDT" {
+		t.Fatalf("cold retry calls=%d lookup=%#v, %v", client.calls.Load(), coin, lookupErr)
 	}
 }
 
@@ -233,6 +299,9 @@ func TestNewSafeheronCoinCatalogValidatesConfiguration(t *testing.T) {
 	if _, err := NewSafeheronCoinCatalog(&fakeSafeheronCoinLister{}, SafeheronCoinCatalogConfig{RefreshInterval: -time.Second}); err == nil {
 		t.Fatal("negative interval error = nil")
 	}
+	if _, err := NewSafeheronCoinCatalog(&fakeSafeheronCoinLister{}, SafeheronCoinCatalogConfig{ColdRetryInterval: -time.Second}); err == nil {
+		t.Fatal("negative cold retry interval error = nil")
+	}
 }
 
 func TestSafeheronCoinCatalogDefensiveNilAndUnconfiguredBehavior(t *testing.T) {
@@ -269,7 +338,7 @@ func TestSafeheronCoinCatalogAcceptsNilRefreshAndStartContexts(t *testing.T) {
 		case started <- struct{}{}:
 		default:
 		}
-		return []safeheron.Coin{}, nil
+		return []safeheron.Coin{{CoinKey: "ETH", Symbol: "ETH"}}, nil
 	}}
 	catalog, err := NewSafeheronCoinCatalog(client, SafeheronCoinCatalogConfig{RefreshInterval: time.Millisecond})
 	if err != nil {
@@ -279,8 +348,8 @@ func TestSafeheronCoinCatalogAcceptsNilRefreshAndStartContexts(t *testing.T) {
 		t.Fatalf("Refresh(nil) error = %v", err)
 	}
 	<-started
-	if _, err := catalog.Lookup("ETH"); !errors.Is(err, ErrSafeheronCoinNotFound) {
-		t.Fatalf("empty loaded catalog Lookup() error = %v", err)
+	if _, err := catalog.Lookup("ETH"); err != nil {
+		t.Fatalf("loaded catalog Lookup() error = %v", err)
 	}
 	catalog.Start(nil)
 	select {

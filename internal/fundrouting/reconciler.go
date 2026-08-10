@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,15 +15,24 @@ import (
 )
 
 type Reconciler struct {
-	db                *sql.DB
-	runner            *adaptiveRunner
-	onProjectionReady func()
+	db                     *sql.DB
+	runner                 *adaptiveRunner
+	onProjectionReady      func()
+	onRecoveryAlertCreated func()
 	// processMu keeps one bounded OPEN-case scan coherent across the repeated
 	// ProcessOne calls made by DrainProcessOne. scanCutoff is captured from the
 	// database clock; unresolved rows move past it so each row is examined at
 	// most once per drain without blocking later rows or forming a hot loop.
 	processMu  sync.Mutex
 	scanCutoff time.Time
+}
+
+// SetOnRecoveryAlertCreated registers a wake emitted only after a provider
+// recovery summary commits durably without creating projection work.
+func (r *Reconciler) SetOnRecoveryAlertCreated(fn func()) {
+	if r != nil {
+		r.onRecoveryAlertCreated = fn
+	}
 }
 
 // SetOnProjectionReady registers a wake emitted only after a reconciled
@@ -49,6 +59,7 @@ type openCase struct {
 	RoutingIdentityKey string
 	NetworkFamily      string
 	Version            int
+	ReasonCode         ReasonCode
 	EventType          string
 	RawPayload         []byte
 }
@@ -83,7 +94,7 @@ func (r *Reconciler) ProcessOne(ctx context.Context) (_ bool, err error) {
 	}
 	var current openCase
 	err = tx.QueryRowContext(ctx, `
-SELECT routing.id, routing.routing_identity_key, routing.network_family, routing.version,
+SELECT routing.id, routing.routing_identity_key, routing.network_family, routing.version, routing.reason_code,
        webhook.event_type, webhook.raw_payload
 FROM safeheron_transaction_routing_cases routing
 JOIN LATERAL (
@@ -98,7 +109,8 @@ WHERE routing.decision='OPEN' AND routing.pending_command_id IS NULL
   AND routing.updated_at < $1
 ORDER BY routing.updated_at, routing.id
 FOR UPDATE OF routing SKIP LOCKED
-LIMIT 1`, r.scanCutoff).Scan(&current.ID, &current.RoutingIdentityKey, &current.NetworkFamily, &current.Version, &current.EventType, &current.RawPayload)
+LIMIT 1`, r.scanCutoff).Scan(&current.ID, &current.RoutingIdentityKey, &current.NetworkFamily,
+		&current.Version, &current.ReasonCode, &current.EventType, &current.RawPayload)
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = tx.Rollback()
 		r.scanCutoff = time.Time{}
@@ -139,14 +151,29 @@ LIMIT 1`, r.scanCutoff).Scan(&current.ID, &current.RoutingIdentityKey, &current.
 		CustomerAdmission: AutomaticCustomerAdmission(eventType, envelope.EventDetail),
 	})
 	if decision.Decision == DecisionOpen {
+		recoveryCreated := false
 		_, err = tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_cases
 SET reason_code=$2, updated_at=clock_timestamp() WHERE id=$1 AND decision='OPEN' AND pending_command_id IS NULL`, current.ID, string(decision.Reason))
 		if err != nil {
 			return false, err
 		}
-		return true, tx.Commit()
+		if current.ReasonCode == ReasonStatusNotTerminal && decision.Reason != ReasonStatusNotTerminal {
+			recoveryCreated, err = insertStatusRecoveryAlert(
+				ctx, tx, current, candidate, decision, envelope.EventDetail, current.Version,
+			)
+			if err != nil {
+				return false, err
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			return false, err
+		}
+		if recoveryCreated && r.onRecoveryAlertCreated != nil {
+			r.onRecoveryAlertCreated()
+		}
+		return true, nil
 	}
-	if err = reserveReconciledProjection(ctx, tx, current, candidate, decision); err != nil {
+	if err = reserveReconciledProjection(ctx, tx, current, candidate, decision, envelope.EventDetail); err != nil {
 		return false, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -158,7 +185,14 @@ SET reason_code=$2, updated_at=clock_timestamp() WHERE id=$1 AND decision='OPEN'
 	return true, nil
 }
 
-func reserveReconciledProjection(ctx context.Context, tx *sql.Tx, current openCase, candidate Candidate, decision DecisionResult) error {
+func reserveReconciledProjection(
+	ctx context.Context,
+	tx *sql.Tx,
+	current openCase,
+	candidate Candidate,
+	decision DecisionResult,
+	snapshot safeheron.TransactionSnapshot,
+) error {
 	var commandID int64
 	if err := tx.QueryRowContext(ctx, `
 INSERT INTO safeheron_transaction_routing_case_commands
@@ -193,7 +227,90 @@ WHERE id=$1 AND version=$9 AND decision='OPEN' AND pending_command_id IS NULL`,
 	if err != nil || rows != 1 {
 		return fmt.Errorf("reserve reconciled routing projection affected %d rows", rows)
 	}
-	return nil
+	if current.ReasonCode != ReasonStatusNotTerminal {
+		return nil
+	}
+	_, err = insertStatusRecoveryAlert(ctx, tx, current, candidate, decision, snapshot, current.Version+1)
+	return err
+}
+
+func insertStatusRecoveryAlert(
+	ctx context.Context,
+	tx *sql.Tx,
+	current openCase,
+	candidate Candidate,
+	decision DecisionResult,
+	snapshot safeheron.TransactionSnapshot,
+	version int,
+) (bool, error) {
+	result, err := tx.ExecContext(ctx, statusRecoveryAlertSQL(),
+		current.ID, version, string(decision.Decision), string(decision.Reason),
+		candidate.SafeheronTxKey, candidate.RawCoinKey, candidate.NetworkFamily,
+		candidate.Direction, candidate.Occurrence.Amount.String(),
+		candidate.Occurrence.NormalizedSource, candidate.Occurrence.NormalizedDestination,
+		strings.ToUpper(strings.TrimSpace(snapshot.TransactionStatus)), strings.TrimSpace(snapshot.TxHash),
+		string(candidate.Occurrence.Occurrence.Input.MovementKind), strings.TrimSpace(snapshot.TransactionSubStatus),
+	)
+	if err != nil {
+		return false, fmt.Errorf("insert Safeheron provider-status recovery alert: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect Safeheron provider-status recovery alert: %w", err)
+	}
+	return rows == 1, nil
+}
+
+func statusRecoveryAlertSQL() string {
+	return `INSERT INTO safeheron_transaction_routing_alerts
+  (case_id,alert_type,transition_key,severity,payload)
+SELECT $1,'RECOVERY_SUMMARY','sla:recovered:version:' || $2::integer::text,'INFO',
+       jsonb_strip_nulls(jsonb_build_object(
+         'environment',COALESCE((
+           SELECT prior.payload->>'environment'
+           FROM safeheron_transaction_routing_alerts prior
+           WHERE prior.case_id=$1 AND prior.alert_type='SLA_ESCALATION'
+           ORDER BY prior.created_at DESC,prior.id DESC LIMIT 1
+         ),'unknown'),
+         'case_id',$1::bigint,
+         'resolved_decision',$3::text,
+         'resolved_reason_code',$4::text,
+         'safeheron_tx_key',$5::text,
+         'raw_coin_key',$6::text,
+         'network_family',$7::text,
+         'direction',$8::text,
+         'amount',$9::text,
+         'source_address',$10::text,
+         'destination_address',$11::text,
+         'transaction_status',$12::text,
+         'tx_hash',NULLIF($13::text,''),
+         'movement_kind',$14::text,
+         'transaction_sub_status',NULLIF($15::text,''),
+         'effective_event_time',routing.effective_event_time,
+         'stuck_seconds',floor(extract(epoch FROM now()-routing.created_at))::bigint,
+         'last_source_event_type',webhook.event_type,
+         'last_source_received_at',webhook.received_at,
+         'last_api_checked_at',status_check.last_checked_at,
+         'last_api_check_outcome',status_check.last_check_outcome,
+         'last_api_error_code',status_check.last_error_code,
+         'resolved_at',now()
+       ))
+FROM safeheron_transaction_routing_cases routing
+JOIN LATERAL (
+  SELECT linked.safeheron_webhook_event_id
+  FROM safeheron_transaction_routing_case_sources linked
+  WHERE linked.case_id=routing.id
+  ORDER BY linked.provider_status_rank DESC,linked.id DESC LIMIT 1
+) source ON true
+JOIN safeheron_webhook_events webhook ON webhook.id=source.safeheron_webhook_event_id
+LEFT JOIN safeheron_transaction_routing_status_checks status_check
+  ON status_check.safeheron_tx_key=routing.safeheron_tx_key
+WHERE routing.id=$1 AND EXISTS (
+  SELECT 1 FROM safeheron_transaction_routing_alerts prior
+  WHERE prior.case_id=$1 AND prior.alert_type='SLA_ESCALATION'
+    AND prior.payload->>'reason_code'='STATUS_NOT_TERMINAL'
+)
+ON CONFLICT (case_id,alert_type,transition_key) DO NOTHING`
 }
 
 func findCandidate(candidates []Candidate, identity string) (Candidate, bool) {

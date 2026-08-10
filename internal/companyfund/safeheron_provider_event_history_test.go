@@ -93,6 +93,28 @@ func TestSafeheronProviderEventNormalizer_HistoryRejectsInvalidOwnedContextAndPa
 	}
 }
 
+func TestSafeheronProviderEventNormalizer_HistoryRetriesColdCoinCatalogMiss(t *testing.T) {
+	input := testSafeheronNormalizationInput(t)
+	coldMiss := &SafeheronCoinCatalogColdMissError{CoinKey: input.Snapshot.CoinKey}
+	resolver := &safeheronTransactionMappingResolverStub{err: coldMiss}
+	normalizer := newSafeheronProviderEventNormalizerWithHistoryForTest(
+		t,
+		resolver,
+		input.Registry,
+		&safeheronHistoryAccountContextResolverStub{account: SafeheronHistoryAccountContext{ProviderAccountKey: "safe-vault-main"}},
+	)
+
+	result, err := normalizer.NormalizeProviderEvent(
+		context.Background(),
+		testSafeheronHistoryProviderEventLease("safe-vault-main"),
+		testSafeheronHistorySnapshotPayload(t, input.Snapshot),
+	)
+	var gotColdMiss *SafeheronCoinCatalogColdMissError
+	if !errors.As(err, &gotColdMiss) || errors.Is(err, ErrProviderEventPermanent) || result.Ignored {
+		t.Fatalf("history NormalizeProviderEvent() = %#v, %v; want retriable cold catalog miss", result, err)
+	}
+}
+
 func newSafeheronProviderEventNormalizerWithHistoryForTest(
 	t *testing.T,
 	resolver SafeheronTransactionMappingResolver,

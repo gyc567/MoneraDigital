@@ -408,6 +408,138 @@ VALUES ($1,'TRANSACTION_STATUS_CHANGED',$2,$3::jsonb,$4,'PENDING') RETURNING id`
 	}
 }
 
+func TestReconcilerPostgresReportsProviderRecoveryWhenRoutingRemainsOpen(t *testing.T) {
+	if os.Getenv("RUN_FUND_ROUTING_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set RUN_FUND_ROUTING_POSTGRES_INTEGRATION=1 to run PostgreSQL routing coverage")
+	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		t.Fatal("DATABASE_URL is required")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%x", time.Now().UnixNano())
+	txKey := "routing-provider-recovery-" + suffix
+	repository := NewRepository(db)
+	var caseID int64
+	var webhookIDs []int64
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_alert_delivery_attempts WHERE delivery_id IN (
+          SELECT delivery.id FROM safeheron_transaction_routing_alert_deliveries delivery
+          JOIN safeheron_transaction_routing_alerts alert ON alert.id=delivery.alert_id WHERE alert.case_id=$1)`, caseID)
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_alert_deliveries WHERE alert_id IN (
+          SELECT id FROM safeheron_transaction_routing_alerts WHERE case_id=$1)`, caseID)
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_alerts WHERE case_id=$1`, caseID)
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_case_sources WHERE case_id=$1`, caseID)
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_status_checks WHERE safeheron_tx_key=$1`, txKey)
+		_, _ = db.Exec(`DELETE FROM safeheron_transaction_routing_cases WHERE id=$1`, caseID)
+		for _, webhookID := range webhookIDs {
+			_, _ = db.Exec(`DELETE FROM company_fund_safeheron_raw_event_exclusions WHERE safeheron_webhook_event_id=$1`, webhookID)
+			_, _ = db.Exec(`DELETE FROM safeheron_webhook_events WHERE id=$1`, webhookID)
+		}
+	})
+
+	insertAndRoute := func(eventID, eventType, digest string, snapshot safeheron.TransactionSnapshot) RouteResult {
+		t.Helper()
+		payload, marshalErr := json.Marshal(map[string]any{"eventType": eventType, "eventDetail": snapshot})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		var webhookID int64
+		if insertErr := db.QueryRowContext(ctx, `INSERT INTO safeheron_webhook_events
+  (event_id,event_type,safeheron_tx_key,raw_payload,payload_digest,process_status)
+VALUES ($1,$2,$3,$4::jsonb,$5,'PENDING') RETURNING id`, eventID, eventType, txKey, payload, digest).
+			Scan(&webhookID); insertErr != nil {
+			t.Fatal(insertErr)
+		}
+		webhookIDs = append(webhookIDs, webhookID)
+		results, routeErr := repository.RouteVerifiedEvent(ctx, VerifiedEventInput{
+			WebhookEventID: webhookID, EventType: eventType, PayloadDigest: digest,
+			NetworkFamily: "EVM", Snapshot: snapshot,
+		})
+		if routeErr != nil || len(results) != 1 {
+			t.Fatalf("route results=%#v err=%v", results, routeErr)
+		}
+		return results[0]
+	}
+
+	initial := routingSnapshot()
+	initial.TxKey = txKey
+	initial.TxHash = ""
+	initial.SourceAddress = fmt.Sprintf("0x%040x", time.Now().UnixNano())
+	initial.DestinationAddress = fmt.Sprintf("0x%040x", time.Now().UnixNano()+1)
+	initial.TransactionStatus = "SUBMITTED"
+	initial.CreateTime = time.Now().Add(-2 * time.Hour).UnixMilli()
+	initialResult := insertAndRoute(
+		"routing-provider-recovery-initial-"+suffix,
+		"TRANSACTION_CREATED",
+		fmt.Sprintf("%064x", time.Now().UnixNano()),
+		initial,
+	)
+	caseID = initialResult.CaseID
+	if initialResult.Decision.Decision != DecisionOpen || initialResult.Decision.Reason != ReasonStatusNotTerminal {
+		t.Fatalf("initial route=%#v, want STATUS_NOT_TERMINAL OPEN", initialResult)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO safeheron_transaction_routing_alerts
+  (case_id,alert_type,transition_key,severity,payload)
+VALUES ($1,'SLA_ESCALATION','sla:pending:level:1','WARN',
+        jsonb_build_object('level',1,'reason_code','STATUS_NOT_TERMINAL'))`, caseID); err != nil {
+		t.Fatal(err)
+	}
+
+	terminal := initial
+	terminal.TxHash = "0x" + suffix
+	terminal.TransactionStatus = "COMPLETED"
+	terminal.TransactionSubStatus = "CONFIRMED"
+	terminalEventID := "routing-provider-recovery-terminal-" + suffix
+	terminalResult := insertAndRoute(
+		terminalEventID,
+		"TRANSACTION_STATUS_CHANGED",
+		fmt.Sprintf("%064x", time.Now().UnixNano()+1),
+		terminal,
+	)
+	if terminalResult.CaseID != caseID || terminalResult.Decision.Decision != DecisionOpen || terminalResult.Decision.Reason != ReasonOwnershipUnknown {
+		t.Fatalf("terminal route=%#v, want existing OWNERSHIP_UNKNOWN OPEN", terminalResult)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO safeheron_transaction_routing_status_checks
+  (safeheron_tx_key,first_seen_at,attempt_count,next_check_at,last_checked_at,last_check_outcome,
+   last_observed_status,last_provider_event_id,completed_at)
+VALUES ($1,now()-interval '2 hours',4,NULL,now(),'OBSERVED','COMPLETED',$2,now())`,
+		txKey, terminalEventID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	reconciler, err := NewReconciler(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worked, err := reconciler.ProcessOne(ctx)
+	if err != nil || !worked {
+		t.Fatalf("ProcessOne() = %v, %v", worked, err)
+	}
+
+	var decision, reason, resolvedDecision, resolvedReason string
+	if err := db.QueryRowContext(ctx, `SELECT decision,reason_code FROM safeheron_transaction_routing_cases WHERE id=$1`, caseID).
+		Scan(&decision, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT payload->>'resolved_decision',payload->>'resolved_reason_code'
+FROM safeheron_transaction_routing_alerts
+WHERE case_id=$1 AND alert_type='RECOVERY_SUMMARY'`, caseID).
+		Scan(&resolvedDecision, &resolvedReason); err != nil {
+		t.Fatal(err)
+	}
+	if decision != "OPEN" || reason != "OWNERSHIP_UNKNOWN" || resolvedDecision != "OPEN" || resolvedReason != "OWNERSHIP_UNKNOWN" {
+		t.Fatalf("case=%s/%s recovery=%s/%s", decision, reason, resolvedDecision, resolvedReason)
+	}
+}
+
 func TestReconcilerPostgresDrainsPastUnresolvedCaseToTerminalCase(t *testing.T) {
 	if os.Getenv("RUN_FUND_ROUTING_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set RUN_FUND_ROUTING_POSTGRES_INTEGRATION=1 to run PostgreSQL routing coverage")

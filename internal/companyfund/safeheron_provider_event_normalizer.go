@@ -110,6 +110,10 @@ func (normalizer *SafeheronProviderEventNormalizer) normalizeTransactionStatusEv
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return ProviderEventNormalizationResult{}, err
 		}
+		var coldMiss *SafeheronCoinCatalogColdMissError
+		if errors.As(err, &coldMiss) {
+			return ProviderEventNormalizationResult{}, err
+		}
 		var configurationError *SafeheronAccountContextConfigurationError
 		if errors.As(err, &configurationError) {
 			return ProviderEventNormalizationResult{}, err

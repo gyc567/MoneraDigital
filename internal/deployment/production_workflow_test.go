@@ -81,7 +81,7 @@ func TestProductionWorkflowDefaultsToCurrentArtifactMigrationCeiling(t *testing.
 		t.Fatalf("read production workflow: %v", err)
 	}
 	workflow := string(content)
-	if !strings.Contains(workflow, `default: "063"`) {
-		t.Fatal("production workflow must default to the current artifact migration ceiling 063")
+	if !strings.Contains(workflow, `default: "064"`) {
+		t.Fatal("production workflow must default to the current artifact migration ceiling 064")
 	}
 }
