@@ -32,11 +32,12 @@ type companyFundLoopValuationSweeperStub struct {
 }
 
 type companyFundLoopRecognitionRepairerStub struct {
-	calls  atomic.Int64
-	batch  atomic.Int64
-	notify chan struct{}
-	result companyfund.SafeheronAssetRecognitionRepairResult
-	err    error
+	calls   atomic.Int64
+	batch   atomic.Int64
+	notify  chan struct{}
+	result  companyfund.SafeheronAssetRecognitionRepairResult
+	results []companyfund.SafeheronAssetRecognitionRepairResult
+	err     error
 }
 
 type companyFundLoopRecognitionStoreStub struct {
@@ -74,11 +75,14 @@ func (stub *companyFundLoopRecognitionRepairerStub) Sweep(
 	_ context.Context,
 	batchSize int,
 ) (companyfund.SafeheronAssetRecognitionRepairResult, error) {
-	stub.calls.Add(1)
+	call := stub.calls.Add(1)
 	stub.batch.Store(int64(batchSize))
 	select {
 	case stub.notify <- struct{}{}:
 	default:
+	}
+	if index := int(call - 1); index < len(stub.results) {
+		return stub.results[index], stub.err
 	}
 	return stub.result, stub.err
 }
@@ -198,7 +202,7 @@ func TestCompanyFundSafeheronRecognitionRepairWakesValuationAfterRepair(t *testi
 		},
 	}
 	valuationWake := make(chan struct{}, 1)
-	loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(repairer, time.Hour, 37, func() {
+	loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(repairer, time.Hour, 37, 100, func() {
 		valuationWake <- struct{}{}
 	})
 	loop.Start(ctx)
@@ -219,6 +223,44 @@ func TestCompanyFundSafeheronRecognitionRepairWakesValuationAfterRepair(t *testi
 	}
 }
 
+func TestCompanyFundSafeheronRecognitionRepairBoundsOneImmediateDrain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	repairer := &companyFundLoopRecognitionRepairerStub{
+		notify: make(chan struct{}, 4),
+		results: []companyfund.SafeheronAssetRecognitionRepairResult{
+			{Scanned: 2, Repaired: 2, MoreWork: true},
+			{Scanned: 1, Repaired: 1, MoreWork: true},
+			{Scanned: 1, Repaired: 1, MoreWork: true},
+		},
+	}
+	loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(
+		repairer,
+		5*time.Second,
+		2,
+		3,
+		nil,
+	)
+	loop.Start(ctx)
+	defer loop.Stop()
+
+	for call := 1; call <= 2; call++ {
+		select {
+		case <-repairer.notify:
+		case <-time.After(time.Second):
+			t.Fatalf("repair drain stopped after %d calls, want two", call-1)
+		}
+	}
+	select {
+	case <-repairer.notify:
+		t.Fatal("repair loop exceeded its configured three-record immediate drain")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if got := repairer.batch.Load(); got != 1 {
+		t.Fatalf("final repair batch=%d, want remaining one-record budget", got)
+	}
+}
+
 func TestCompanyFundSafeheronRecognitionRepairLoopContainsFailures(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
@@ -235,7 +277,7 @@ func TestCompanyFundSafeheronRecognitionRepairLoopContainsFailures(t *testing.T)
 				result: companyfund.SafeheronAssetRecognitionRepairResult{Scanned: 1},
 				err:    testCase.err,
 			}
-			loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(repairer, time.Hour, 1, nil)
+			loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(repairer, time.Hour, 1, 100, nil)
 			loop.Start(ctx)
 			defer loop.Stop()
 			select {
@@ -249,9 +291,19 @@ func TestCompanyFundSafeheronRecognitionRepairLoopContainsFailures(t *testing.T)
 		&companyFundLoopRecognitionRepairerStub{},
 		-time.Second,
 		1,
+		100,
 		nil,
 	); loop != nil {
 		t.Fatal("invalid repair interval created a loop")
+	}
+	if loop := newCompanyFundSafeheronAssetRecognitionRepairLoop(
+		&companyFundLoopRecognitionRepairerStub{},
+		time.Second,
+		1,
+		0,
+		nil,
+	); loop != nil {
+		t.Fatal("invalid repair drain limit created a loop")
 	}
 }
 

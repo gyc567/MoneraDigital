@@ -117,6 +117,10 @@ func startCompanyFundAuxiliaryLoops(
 		config.SafeheronAssetRepairBatchSize,
 		defaultCompanyFundSafeheronAssetRepairBatchSize,
 	)
+	assetRepairDrainLimit := companyFundPositiveIntOrDefault(
+		config.SafeheronAssetRepairDrainLimit,
+		defaultCompanyFundSafeheronAssetRepairDrainLimit,
+	)
 	if collector != nil && (collectorIntervalErr != nil || collectorBatch < 1 || collectorBatch > maxCompanyFundSafeheronCollectorBatchSize) {
 		log.Printf("company-fund Safeheron raw-event collector disabled: interval or batch configuration is invalid")
 		collector = nil
@@ -130,7 +134,9 @@ func startCompanyFundAuxiliaryLoops(
 		valuator = nil
 	}
 	assetRepairer := c.CompanyFundSafeheronAssetRepairer
-	if assetRepairer != nil && (assetRepairIntervalErr != nil || assetRepairBatch < 1 || assetRepairBatch > maxCompanyFundSafeheronAssetRepairBatchSize) {
+	if assetRepairer != nil && (assetRepairIntervalErr != nil ||
+		assetRepairBatch < 1 || assetRepairBatch > maxCompanyFundSafeheronAssetRepairBatchSize ||
+		assetRepairDrainLimit < 1 || assetRepairDrainLimit > maxCompanyFundSafeheronAssetRepairDrainLimit) {
 		log.Printf("company-fund Safeheron asset recognition repair disabled: interval or batch configuration is invalid")
 		assetRepairer = nil
 	}
@@ -165,6 +171,7 @@ func startCompanyFundAuxiliaryLoops(
 			assetRepairer,
 			assetRepairInterval,
 			assetRepairBatch,
+			assetRepairDrainLimit,
 			func() {
 				if valuationLoop != nil {
 					_ = valuationLoop.Notify()
@@ -210,14 +217,21 @@ func newCompanyFundSafeheronAssetRecognitionRepairLoop(
 	repairer companyFundSafeheronAssetRecognitionSweeper,
 	minIdle time.Duration,
 	batchSize int,
+	drainLimit int,
 	onRepaired func(),
 ) *adaptiveschedule.Loop {
+	if drainLimit <= 0 {
+		log.Printf("company-fund Safeheron asset recognition repair disabled: drain limit is invalid")
+		return nil
+	}
+	remaining := drainLimit
 	loop, err := adaptiveschedule.New(adaptiveschedule.Config{
 		Name:    "company-fund-safeheron-asset-recognition-repair",
 		MinIdle: minIdle,
 		MaxIdle: companyFundAdaptiveMaxIdle(minIdle),
 	}, func(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
-		result, err := repairer.Sweep(ctx, batchSize)
+		cycleBatchSize := min(batchSize, remaining)
+		result, err := repairer.Sweep(ctx, cycleBatchSize)
 		if err != nil && ctx.Err() == nil {
 			var coldMiss *companyfund.SafeheronCoinCatalogColdMissError
 			kind := "repair_failed"
@@ -226,10 +240,18 @@ func newCompanyFundSafeheronAssetRecognitionRepairLoop(
 			}
 			log.Printf("company-fund Safeheron asset recognition repair: result=deferred kind=%s scanned=%d repaired=%d", kind, result.Scanned, result.Repaired)
 		}
+		continueImmediate := false
+		if err == nil && result.MoreWork && result.Scanned > 0 {
+			remaining -= min(result.Scanned, remaining)
+			continueImmediate = remaining > 0
+		}
+		if !continueImmediate {
+			remaining = drainLimit
+		}
 		if err == nil && result.Scanned > 0 {
 			log.Printf(
 				"company-fund Safeheron asset recognition repair: result=success scanned=%d repaired=%d unrecognized=%d moreWork=%t",
-				result.Scanned, result.Repaired, result.Unrecognized, result.MoreWork,
+				result.Scanned, result.Repaired, result.Unrecognized, continueImmediate,
 			)
 		}
 		if result.Repaired > 0 && onRepaired != nil {
@@ -237,7 +259,7 @@ func newCompanyFundSafeheronAssetRecognitionRepairLoop(
 		}
 		return adaptiveschedule.CycleOutcome{
 			Worked:   result.Repaired > 0,
-			MoreWork: result.MoreWork,
+			MoreWork: continueImmediate,
 		}, err
 	})
 	if err != nil {

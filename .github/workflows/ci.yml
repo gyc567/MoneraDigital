@@ -22,6 +22,20 @@ jobs:
     name: build, vet, test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: monera_digital_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d monera_digital_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -36,6 +50,11 @@ jobs:
           cache: true
       - run: go build ./...
       - run: go vet ./...
+      - name: routing alert PostgreSQL queue behavior
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
+          RUN_FUND_ROUTING_QUEUE_POSTGRES_INTEGRATION: "1"
+        run: go test -race -count=1 ./internal/fundrouting -run '^TestRoutingAlertQueuePostgres'
       - name: go test (green gate; baseline tech-debt excluded)
         run: |
           # Packages excluded from the green gate until their pre-existing
@@ -44,5 +63,5 @@ jobs:
           #   tests              — auth integration suite requires a live Postgres
           # Remove an exclusion line the moment that package goes green, so CI
           # widens its coverage automatically.
-          pkgs=$(go list ./... | grep -vE 'internal/scheduler$|/tests$')
-          go test -race -count=1 $pkgs
+          mapfile -t pkgs < <(go list ./... | grep -vE 'internal/scheduler$|/tests$')
+          go test -race -count=1 "${pkgs[@]}"

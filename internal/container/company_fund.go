@@ -36,6 +36,7 @@ const (
 	defaultCompanyFundSafeheronCollectorBatchSize     = 100
 	defaultCompanyFundSafeheronAssetRepairInterval    = time.Minute
 	defaultCompanyFundSafeheronAssetRepairBatchSize   = 100
+	defaultCompanyFundSafeheronAssetRepairDrainLimit  = 100
 	defaultCompanyFundAirwallexFinancialPageSize      = 100
 	defaultCompanyFundAirwallexFinancialMaxPages      = 100
 	defaultCompanyFundAirwallexLedgerLeaseDuration    = time.Minute
@@ -52,6 +53,7 @@ const (
 	maxCompanyFundPayloadKeyVersionBytes              = 64
 	maxCompanyFundSafeheronCollectorBatchSize         = 500
 	maxCompanyFundSafeheronAssetRepairBatchSize       = 100
+	maxCompanyFundSafeheronAssetRepairDrainLimit      = 10_000
 	maxCompanyFundCurrentValuationSweepBatch          = 1000
 )
 
@@ -106,6 +108,7 @@ type companyFundRuntimeConfig struct {
 	SafeheronCoinCatalogColdRetryInterval time.Duration
 	SafeheronAssetRepairInterval          time.Duration
 	SafeheronAssetRepairBatchSize         int
+	SafeheronAssetRepairDrainLimit        int
 
 	AirwallexBaseURL                        string
 	AirwallexClientID                       string
@@ -191,6 +194,7 @@ func companyFundRuntimeConfigFromViper() companyFundRuntimeConfig {
 		SafeheronCoinCatalogColdRetryInterval:   viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL"),
 		SafeheronAssetRepairInterval:            viper.GetDuration("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL"),
 		SafeheronAssetRepairBatchSize:           viper.GetInt("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE"),
+		SafeheronAssetRepairDrainLimit:          viper.GetInt("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_DRAIN_LIMIT"),
 		AirwallexBaseURL:                        viper.GetString("AIRWALLEX_BASE_URL"),
 		AirwallexClientID:                       viper.GetString("AIRWALLEX_CLIENT_ID"),
 		AirwallexAPIKey:                         viper.GetString("AIRWALLEX_API_KEY"),

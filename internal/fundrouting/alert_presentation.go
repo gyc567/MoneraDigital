@@ -47,14 +47,9 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 	}
 
 	direction := routingBatchDirection(payloads)
-	titleDirection := "交易"
-	switch direction {
-	case "OUTFLOW":
-		titleDirection = "出账"
-	case "INFLOW":
-		titleDirection = "入账"
-	case "INTERNAL_TRANSFER":
-		titleDirection = "内部划转"
+	titleDirection, knownDirection := knownRoutingDirectionLabel(direction)
+	if !knownDirection {
+		titleDirection = "交易"
 	}
 	fields := map[string]string{"交易数量": strconv.Itoa(len(payloads))}
 	if recoveryStillOpen {
@@ -196,15 +191,22 @@ func routingBatchDirection(payloads []map[string]any) string {
 }
 
 func routingDirectionLabel(value string) string {
+	if label, ok := knownRoutingDirectionLabel(value); ok {
+		return label
+	}
+	return value
+}
+
+func knownRoutingDirectionLabel(value string) (string, bool) {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
 	case "OUTFLOW":
-		return "出账"
+		return "出账", true
 	case "INFLOW":
-		return "入账"
+		return "入账", true
 	case "INTERNAL_TRANSFER":
-		return "内部划转"
+		return "内部划转", true
 	default:
-		return value
+		return "", false
 	}
 }
 

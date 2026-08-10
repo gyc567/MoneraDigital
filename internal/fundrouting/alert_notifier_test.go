@@ -3,6 +3,7 @@ package fundrouting
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,34 @@ func TestRoutingAlertPresentationAggregatesFiveMinuteLarkBatch(t *testing.T) {
 	})
 	if severity != "ERROR" || title != "Safeheron 出账停留超时（2笔）" || fields["交易数量"] != "2" || fields["交易01"] == "" || fields["交易02"] == "" {
 		t.Fatalf("aggregate presentation = %s / %s / %#v", severity, title, fields)
+	}
+}
+
+func TestRoutingAlertPresentationUsesOneDirectionVocabularyForTitleAndDetail(t *testing.T) {
+	for _, testCase := range []struct {
+		direction string
+		label     string
+	}{
+		{direction: "OUTFLOW", label: "出账"},
+		{direction: "INFLOW", label: "入账"},
+		{direction: "INTERNAL_TRANSFER", label: "内部划转"},
+	} {
+		t.Run(testCase.direction, func(t *testing.T) {
+			raw, err := json.Marshal(map[string]any{
+				"case_id": 1, "direction": testCase.direction,
+				"safeheron_tx_key": "tx-direction", "transaction_status": "SUBMITTED",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, title, fields := routingAlertPresentation([]claimedDelivery{{
+				Severity: "WARN", AlertType: "SLA_ESCALATION", Payload: raw,
+			}})
+			if !strings.Contains(title, "Safeheron "+testCase.label+"停留超时") ||
+				!strings.Contains(fields["交易01"], "方向："+testCase.label) {
+				t.Fatalf("direction vocabulary diverged: title=%q detail=%q", title, fields["交易01"])
+			}
+		})
 	}
 }
 
@@ -251,6 +280,162 @@ func TestLarkBatchCombinesSeverityLevelsWithinTheSameAlertWindow(t *testing.T) {
 	if !strings.Contains(sqlText, "octet_length(alert.payload::text)") {
 		t.Fatal("Lark aggregation must enforce a serialized payload budget")
 	}
+}
+
+func TestRoutingAlertQueueClaimsOneBoundedLarkWindowInStableOrder(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	queue, err := newPostgresRoutingAlertQueue(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workerID := "routing-worker"
+	fingerprint := strings.Repeat("a", 64)
+	due := time.Date(2026, 8, 10, 4, 30, 0, 0, time.UTC)
+	createdAt := time.Date(2026, 8, 10, 4, 26, 3, 0, time.UTC)
+	windowStart := time.Date(2026, 8, 10, 4, 25, 0, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT delivery.id,delivery.sink_kind,delivery.recipient_fingerprint,")).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "sink_kind", "recipient_fingerprint", "status", "automatic_attempt_count",
+			"next_attempt_at", "alert_type", "severity", "created_at", "manual_replay",
+		}).AddRow(10, "LARK", fingerprint, "PENDING", 0, due, "SLA_ESCALATION", "WARN", createdAt, false))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT delivery.id,octet_length(alert.payload::text)")).
+		WithArgs(fingerprint, due, "SLA_ESCALATION", windowStart, windowStart.Add(routingLarkBatchWindow), "PENDING", 2).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "payload_bytes"}).AddRow(10, 256).AddRow(11, 512))
+	expectAutomaticRoutingAlertClaim(mock, workerID, 10, 110, 210, fingerprint, createdAt)
+	expectAutomaticRoutingAlertClaim(mock, workerID, 11, 111, 211, fingerprint, createdAt)
+	mock.ExpectCommit()
+
+	batch, err := queue.Claim(context.Background(), workerID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch) != 2 || batch[0].ID != 10 || batch[1].ID != 11 {
+		t.Fatalf("claimed batch=%#v, want stable delivery order [10, 11]", batch)
+	}
+	if batch[0].AttemptID != 210 || batch[1].AttemptID != 211 ||
+		batch[0].AutomaticAttemptCount != 1 || batch[1].AutomaticAttemptCount != 1 {
+		t.Fatalf("automatic attempts were not leased consistently: %#v", batch)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRoutingAlertQueueClaimsManualReplayWithoutConsumingAutomaticAttempt(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	queue, err := newPostgresRoutingAlertQueue(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workerID := "routing-worker"
+	fingerprint := strings.Repeat("b", 64)
+	createdAt := time.Date(2026, 8, 10, 4, 26, 3, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT delivery.id,delivery.sink_kind,delivery.recipient_fingerprint,")).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "sink_kind", "recipient_fingerprint", "status", "automatic_attempt_count",
+			"next_attempt_at", "alert_type", "severity", "created_at", "manual_replay",
+		}).AddRow(12, "EMAIL", fingerprint, "PENDING", 2, nil, "SLA_ESCALATION", "ERROR", createdAt, true))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE safeheron_transaction_routing_alert_deliveries")).
+		WithArgs(int64(12), workerID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id,attempt_number\nFROM safeheron_transaction_routing_alert_delivery_attempts")).
+		WithArgs(int64(12)).WillReturnRows(sqlmock.NewRows([]string{"id", "attempt_number"}).AddRow(212, 3))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT automatic_attempt_count\nFROM safeheron_transaction_routing_alert_deliveries")).
+		WithArgs(int64(12)).WillReturnRows(sqlmock.NewRows([]string{"automatic_attempt_count"}).AddRow(2))
+	expectRoutingAlertClaimPayload(mock, workerID, 12, 112, "EMAIL", fingerprint, "ERROR", createdAt)
+	mock.ExpectCommit()
+
+	batch, err := queue.Claim(context.Background(), workerID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch) != 1 || batch[0].AttemptID != 212 || batch[0].Attempt != 3 ||
+		batch[0].AutomaticAttemptCount != 2 {
+		t.Fatalf("manual replay claim=%#v", batch)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRoutingAlertQueueRejectsAClaimWhenTheLeaseUpdateLosesTheRow(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	queue, err := newPostgresRoutingAlertQueue(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createdAt := time.Date(2026, 8, 10, 4, 26, 3, 0, time.UTC)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT delivery.id,delivery.sink_kind,delivery.recipient_fingerprint,")).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "sink_kind", "recipient_fingerprint", "status", "automatic_attempt_count",
+			"next_attempt_at", "alert_type", "severity", "created_at", "manual_replay",
+		}).AddRow(13, "EMAIL", strings.Repeat("c", 64), "PENDING", 0, nil, "SLA_ESCALATION", "WARN", createdAt, false))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE safeheron_transaction_routing_alert_deliveries")).
+		WithArgs(int64(13), "routing-worker").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	if _, err := queue.Claim(context.Background(), "routing-worker", 1); err == nil ||
+		!strings.Contains(err.Error(), "could not be leased") {
+		t.Fatalf("Claim() error=%v, want lost lease rejection", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func expectAutomaticRoutingAlertClaim(
+	mock sqlmock.Sqlmock,
+	workerID string,
+	deliveryID int64,
+	alertID int64,
+	attemptID int64,
+	fingerprint string,
+	createdAt time.Time,
+) {
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE safeheron_transaction_routing_alert_deliveries")).
+		WithArgs(deliveryID, workerID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id,attempt_number\nFROM safeheron_transaction_routing_alert_delivery_attempts")).
+		WithArgs(deliveryID).WillReturnRows(sqlmock.NewRows([]string{"id", "attempt_number"}))
+	mock.ExpectQuery(regexp.QuoteMeta("UPDATE safeheron_transaction_routing_alert_deliveries\nSET automatic_attempt_count=automatic_attempt_count+1")).
+		WithArgs(deliveryID).WillReturnRows(sqlmock.NewRows([]string{"automatic_attempt_count"}).AddRow(1))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO safeheron_transaction_routing_alert_delivery_attempts")).
+		WithArgs(deliveryID).WillReturnRows(sqlmock.NewRows([]string{"id", "attempt_number"}).AddRow(attemptID, 1))
+	expectRoutingAlertClaimPayload(mock, workerID, deliveryID, alertID, "LARK", fingerprint, "WARN", createdAt)
+}
+
+func expectRoutingAlertClaimPayload(
+	mock sqlmock.Sqlmock,
+	workerID string,
+	deliveryID int64,
+	alertID int64,
+	sinkKind string,
+	fingerprint string,
+	severity string,
+	createdAt time.Time,
+) {
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT delivery.alert_id,alert.case_id,")).
+		WithArgs(deliveryID, workerID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"alert_id", "case_id", "sink_kind", "recipient_fingerprint",
+			"severity", "alert_type", "payload", "created_at",
+		}).AddRow(alertID, alertID+1000, sinkKind, fingerprint, severity, "SLA_ESCALATION", []byte(`{"case_id":1}`), createdAt))
 }
 
 func (s routingAlertSenderStub) RoutingSinks() []alert.RoutingSink { return s.sinks }

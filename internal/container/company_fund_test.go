@@ -48,16 +48,19 @@ func TestCompanyFundRuntimeConfigReadsSafeheronCatalogRecoveryBoundary(t *testin
 	viper.Set("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL", "45s")
 	viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL", "2m")
 	viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE", "37")
+	viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_DRAIN_LIMIT", "73")
 	t.Cleanup(func() {
 		viper.Set("COMPANY_FUND_SAFEHERON_COIN_CATALOG_COLD_RETRY_INTERVAL", nil)
 		viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_INTERVAL", nil)
 		viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_BATCH_SIZE", nil)
+		viper.Set("COMPANY_FUND_SAFEHERON_ASSET_REPAIR_DRAIN_LIMIT", nil)
 	})
 
 	config := companyFundRuntimeConfigFromViper()
 	if config.SafeheronCoinCatalogColdRetryInterval != 45*time.Second ||
 		config.SafeheronAssetRepairInterval != 2*time.Minute ||
-		config.SafeheronAssetRepairBatchSize != 37 {
+		config.SafeheronAssetRepairBatchSize != 37 ||
+		config.SafeheronAssetRepairDrainLimit != 73 {
 		t.Fatalf("Safeheron catalog recovery config = %#v", config)
 	}
 }
