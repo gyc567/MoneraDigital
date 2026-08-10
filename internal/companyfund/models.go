@@ -37,11 +37,8 @@ func (s TransactionSource) Valid() bool {
 	return s == TransactionSourceSafeheron || s == TransactionSourceAirwallex || s == TransactionSourceManual
 }
 
-// Channel is retained as a compatibility alias for TransactionSource while
-// provider, risk, valuation, and transaction call sites migrate terminology.
-// New account-facing code must use AccountChannel instead.
-type Channel = TransactionSource
-
+// ChannelSafeheron/Airwallex/Manual are value aliases for the corresponding
+// TransactionSource values, kept for provider and movement call-site naming.
 const (
 	ChannelSafeheron = TransactionSourceSafeheron
 	ChannelAirwallex = TransactionSourceAirwallex
@@ -152,7 +149,7 @@ type AssetIdentity struct {
 // provider's own stable movement/line ID is preferred by adapters; this tuple
 // handles normal and batch records that do not have one.
 type MovementIdentityInput struct {
-	Channel          Channel
+	Channel          TransactionSource
 	ProviderParentID string
 	MovementKind     MovementKind
 	Asset            AssetIdentity
@@ -177,16 +174,19 @@ type MovementIdentity struct {
 // provider parsing so invalid fee/reversal/conversion structures can be
 // quarantined before storage.
 type MovementRelation struct {
-	MovementKind          MovementKind
-	TransferMode          TransferMode
-	Direction             Direction
-	HasFromAccount        bool
-	HasToAccount          bool
-	ParentMovementKey     string
-	ReversalOfMovementKey string
-	ConversionGroupKey    string
-	ConversionLeg         ConversionLeg
-	ConversionGroupState  ConversionGroupState
+	MovementKind              MovementKind
+	TransferMode              TransferMode
+	Direction                 Direction
+	HasFromAccount            bool
+	HasToAccount              bool
+	ParentMovementKey         string
+	ReversalOfMovementKey     string
+	RelationshipReferenceType RelationshipReferenceType
+	RelationshipReferenceKey  string
+	RelationshipGroupKey      string
+	ConversionGroupKey        string
+	ConversionLeg             ConversionLeg
+	ConversionGroupState      ConversionGroupState
 }
 
 // LifecycleStatus is provider-owned status text normalized to uppercase.
@@ -229,7 +229,7 @@ type LifecycleDecision struct {
 // Channel through LifecyclePolicyFor rather than applying one provider's rules
 // to the other provider's statuses.
 type LifecyclePolicy interface {
-	Channel() Channel
+	Channel() TransactionSource
 	Transition(current, incoming LifecycleStatus) LifecycleDecision
 }
 
@@ -294,24 +294,27 @@ type MovementState struct {
 // normalizers before it is persisted. Direction carries any economic sign;
 // Amount and all USD fields remain non-negative magnitudes.
 type CompanyFundMovement struct {
-	Identity              MovementIdentity
-	Channel               Channel
-	MovementKind          MovementKind
-	TransferMode          TransferMode
-	Direction             Direction
-	Amount                decimal.Decimal
-	Asset                 AssetIdentity
-	FromAccountID         *int64
-	ToAccountID           *int64
-	ParentMovementKey     string
-	ReversalOfMovementKey string
-	ConversionGroupKey    string
-	ConversionLeg         ConversionLeg
-	ConversionGroupState  ConversionGroupState
-	ProviderReportedUSD   *decimal.Decimal
-	USDValuation          USDValuationResult
-	Provider              ProviderOwnedFields
-	Manual                ManualFields
+	Identity                  MovementIdentity
+	Channel                   TransactionSource
+	MovementKind              MovementKind
+	TransferMode              TransferMode
+	Direction                 Direction
+	Amount                    decimal.Decimal
+	Asset                     AssetIdentity
+	FromAccountID             *int64
+	ToAccountID               *int64
+	ParentMovementKey         string
+	ReversalOfMovementKey     string
+	RelationshipReferenceType RelationshipReferenceType
+	RelationshipReferenceKey  string
+	RelationshipGroupKey      string
+	ConversionGroupKey        string
+	ConversionLeg             ConversionLeg
+	ConversionGroupState      ConversionGroupState
+	ProviderReportedUSD       *decimal.Decimal
+	USDValuation              USDValuationResult
+	Provider                  ProviderOwnedFields
+	Manual                    ManualFields
 }
 
 // AccountAssetPolicy carries the applied provider/chain/contract mapping and
@@ -382,7 +385,7 @@ const (
 // RiskInput contains provider results as pointers because absent/unknown and
 // false must remain distinguishable in the ledger.
 type RiskInput struct {
-	Channel             Channel
+	Channel             TransactionSource
 	Direction           Direction
 	Amount              decimal.Decimal
 	Asset               AssetIdentity
@@ -515,7 +518,7 @@ const (
 // timestamps are caller-provided; the domain never invents a wall-clock time because
 // the selected valuation must be reproducible in audit and revaluation jobs.
 type USDValuationInput struct {
-	Channel                 Channel
+	Channel                 TransactionSource
 	MovementKind            MovementKind
 	Currency                string
 	UnrecognizedAsset       bool
@@ -621,7 +624,7 @@ type AccountSnapshot struct {
 
 type CompanyFundProviderEvent struct {
 	ID                      int64
-	Channel                 Channel
+	Channel                 TransactionSource
 	ProviderEventID         string
 	EventType               string
 	ProviderAccountKey      string
@@ -632,9 +635,10 @@ type CompanyFundProviderEvent struct {
 
 type ProviderTransactionFact struct {
 	ID                        int64
-	Channel                   Channel
+	Channel                   TransactionSource
 	ProviderAccountKey        string
 	ProviderTransactionID     string
+	ProviderSourceReference   string
 	ProviderGroupID           string
 	FactIdentityKey           string
 	FactVersion               int
@@ -659,7 +663,7 @@ type ProviderTransactionFact struct {
 
 type SyncRun struct {
 	ID          int64
-	Channel     Channel
+	Channel     TransactionSource
 	WindowStart time.Time
 	WindowEnd   time.Time
 	Status      string

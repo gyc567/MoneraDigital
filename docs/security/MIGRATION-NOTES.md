@@ -83,16 +83,61 @@ re-apply a similar reset, the operator must:
 3. Run by hand via `psql` with rotated credentials.
 4. Never add it to the `registerMigrations` list.
 
-### 2.5 Advisory lock to prevent concurrent runs
+### 2.5 Migration connection URL (direct vs pooler)
 
-`internal/migration/migrator.go::Migrate()` and `Rollback()` now
-acquire a session-level `pg_advisory_lock(8675309)` before any DDL or
+**Business** traffic may use a Neon **pooled** `DATABASE_URL`.
+
+**Migrations** must use a **direct / unpooled** connection so session-level
+advisory locks attach to a real backend session (see ADR 0003 / issue #35).
+
+Resolution order for the migrate binary:
+
+1. If `MIGRATION_DATABASE_URL` is set, use it.
+2. Otherwise fall back to `DATABASE_URL` (intended for local direct URLs only).
+3. **Stage / production** must set `MIGRATION_DATABASE_URL` to a direct URL.
+4. Reject any migration URL whose hostname contains `-pooler` (case-insensitive).
+
+> **Entrypoint contract:** `cmd/migrate` is the only sanctioned entrypoint for
+> production migrate/rollback. Pooler rejection and the stage/production
+> dedicated-URL requirement are enforced there (ADR 0003 rule A / config C).
+> The library-level `NewMigrator` itself does not re-check the DSN — any
+> alternate entrypoint (script, worker) must call `ResolveMigrationDSN` before
+> opening a connection, or it silently bypasses those guards.
+>
+> **DSN form:** `MIGRATION_DATABASE_URL` / `DATABASE_URL` must be a
+> `postgresql://` (or `postgres://`) URL. The libpq keyword/value form
+> (`host=... sslmode=...`) is not accepted by the resolver. Neon's default
+> connection string is already the URL form, so this only matters if an
+> operator hand-translates a DSN.
+
+```bash
+# Stage/production (illustrative)
+MIGRATION_DATABASE_URL="postgresql://...@ep-xxx....neon.tech/neondb?sslmode=require" \
+EXPECTED_MIGRATION_CEILING=060 \
+./monera-migrate -exact-version 060
+
+# Do NOT point migrations at ep-xxx-pooler....neon.tech
+```
+
+### 2.6 Advisory lock to prevent concurrent runs
+
+`internal/migration/migrator.go::Migrate()` and `Rollback()` acquire a
+session-level advisory lock (key `8675309`) before any DDL or
 `migrations` row insert, and release it via `defer`. Two concurrent
-invocations (e.g., a deploy step racing a local ops run) now serialise
-cleanly instead of interleaving DDL with row inserts.
+invocations (e.g., a deploy step racing a local ops run) serialise
+instead of interleaving DDL with row inserts.
 
-The lock is automatically released when the process exits. To look up
-a stuck run: `SELECT * FROM pg_locks WHERE locktype = 'advisory';`
+**Bounded wait (ADR 0003):** lock acquisition must not block forever.
+Default timeout is **30s** (`MIGRATION_ADVISORY_LOCK_TIMEOUT` may override).
+On timeout the migrate process fails closed. Logs may include lock key and
+read-only holder diagnostics (pid / state / age / application_name) without
+credentials. Operators—not the migrator—decide whether to terminate a holder.
+
+Manual lookup if needed:
+
+```sql
+SELECT * FROM pg_locks WHERE locktype = 'advisory';
+```
 
 ## 3. How to verify production state
 
@@ -124,8 +169,11 @@ DATABASE_URL="..." \
 go run ./cmd/migrate -exact-version 050
 ```
 
-Repeat with matching values for each approved successor through `059`. Exact
-mode has these invariants:
+For a manual release, repeat with matching values for every version printed by
+the artifact's `monera-migrate -print-release-sequence`, in that exact order.
+The current artifact prints only `063`, whose required predecessor is `062`.
+Exact mode has these
+invariants:
 
 - Only the requested migration is registered and eligible to run.
 - `EXPECTED_MIGRATION_CEILING` must equal `-exact-version`.
@@ -134,6 +182,14 @@ mode has these invariants:
   are rejected.
 - Omitting `-exact-version` preserves the existing all-pending behavior for a
   fresh database or an environment with a fully reconciled Go migration history.
+
+The release artifact declares its ordered migration sequence through
+`monera-migrate -print-release-sequence`. The standard deploy path verifies that
+the final sequence entry equals `expected_migration_ceiling`, then invokes every
+entry separately with matching `-exact-version` and
+`EXPECTED_MIGRATION_CEILING`. A failure stops the sequence before the new server
+is installed. Already-applied entries are skipped through normal migration
+provenance, so a partially completed release can safely resume.
 
 Do not make a sparse legacy history look continuous by inserting synthetic
 provenance rows. A migration row claims that exact migration ran; hand-applied
@@ -157,14 +213,21 @@ local dev can use it but prod stays explicit.
 
 1. Create `internal/migration/migrations/0NN_description.go`. Follow the
    existing patterns (transactional step functions if multi-statement).
-2. Use idempotent DDL (`IF NOT EXISTS` / `pg_enum` precheck) so re-runs
-   are safe.
-3. Add `migrations.<StructName>{}` to the `registerMigrations` list in
-   `cmd/migrate/main.go`.
-4. Add the struct + version to the `migrations` array in
-   `internal/migration/migrations/migrations_test.go::TestMigrationOrder`.
-5. Run `go test ./internal/migration/migrations/` — the order test will
-   fail if you used a duplicate or out-of-order version.
+2. Non-controlled migrations use idempotent DDL (`IF NOT EXISTS` / `pg_enum`
+   precheck) so re-runs are safe. A `ControlledMigration` may deliberately use
+   strict, non-idempotent DDL when all statements and the provenance insert run
+   in the same transaction: pre-existing partial objects are then treated as
+   schema drift and fail closed instead of being silently accepted. Document
+   that exception in the migration and cover its atomic runner contract.
+3. Add a descriptor to `migrationRegistry` in `cmd/migrate/main.go`. For a
+   controlled production migration, declare its predecessor and exact-deploy
+   eligibility.
+4. When the migration belongs to the current release, append its version to
+   `artifactMigrationReleaseSequence`. The sequence validator rejects unknown,
+   non-exact, or non-contiguous entries and derives the artifact ceiling from
+   its last entry.
+5. Run `go test ./cmd/migrate ./internal/migration/migrations/` — the public
+   runner manifest test will fail for duplicate or out-of-order versions.
 6. Run `bash scripts/check-secrets.sh` — the migration-runner-integrity
    block will fail if you forgot step 3 or accidentally put a `.sql`
    in the directory.

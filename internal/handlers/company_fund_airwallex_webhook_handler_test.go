@@ -26,11 +26,19 @@ func (s airwallexWebhookIngestorStub) Ingest(ctx context.Context, input companyf
 }
 
 type airwallexWebhookVerifierStub struct {
-	verify func(timestamp, signature string, rawBody []byte) error
+	verify          func(timestamp, signature string, rawBody []byte) error
+	testEventVerify func(timestamp, signature string, rawBody []byte, clientSecretKey string) error
 }
 
 func (s airwallexWebhookVerifierStub) Verify(timestamp, signature string, rawBody []byte) error {
 	return s.verify(timestamp, signature, rawBody)
+}
+
+func (s airwallexWebhookVerifierStub) VerifyTestEvent(timestamp, signature string, rawBody []byte, clientSecretKey string) error {
+	if s.testEventVerify != nil {
+		return s.testEventVerify(timestamp, signature, rawBody, clientSecretKey)
+	}
+	return companyfund.ErrAirwallexWebhookInvalidSignature
 }
 
 func newTestCompanyFundAirwallexWebhookHandler(t *testing.T, verifier AirwallexWebhookSignatureVerifier, ingestor AirwallexWebhookPayloadIngestor) *CompanyFundAirwallexWebhookHandler {
@@ -209,5 +217,75 @@ func TestCompanyFundAirwallexWebhookHandler_FailsClosedWhenSingleAccountScopeIsN
 	response := runCompanyFundAirwallexWebhook(handler, []byte(`{"id":"evt_scope","name":"deposit.created"}`), "missing", "missing")
 	if response.Code != http.StatusServiceUnavailable || verifyCalls != 0 || ingestCalls != 0 {
 		t.Fatalf("scope-gated response=%d verify=%d ingest=%d, want 503/0/0", response.Code, verifyCalls, ingestCalls)
+	}
+}
+
+func runCompanyFundAirwallexWebhookWithTestEvent(handler *CompanyFundAirwallexWebhookHandler, body []byte, timestamp, signature, clientSecretKey string) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	response := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(response)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/webhooks/airwallex", bytes.NewReader(body))
+	ctx.Request.Header.Set("x-timestamp", timestamp)
+	ctx.Request.Header.Set("x-signature", signature)
+	if clientSecretKey != "" {
+		ctx.Request.Header.Set("client-secret-key", clientSecretKey)
+	}
+	handler.Receive(ctx)
+	return response
+}
+
+func airwallexWebhookTestEventSignature(clientSecretKey, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(clientSecretKey))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Console "Send test event" must verify against the per-delivery
+// client-secret-key and acknowledge without touching the encrypted inbox —
+// the synthetic payload carries a dummy account_id that must never be
+// attributed to a company account.
+func TestCompanyFundAirwallexWebhookHandler_TestEventAcksWithoutIngest(t *testing.T) {
+	now := time.Date(2026, 7, 10, 3, 0, 0, 0, time.UTC)
+	timestamp := "1783652400000"
+	body := []byte(`{"id":"evt_test","name":"payout.transfer.paid","account_id":"acct_dummy","org_id":"org_1","data":{}}`)
+	clientSecretKey := "BhaWQyMDI2"
+	ingested := false
+	woke := false
+	handler := newTestCompanyFundAirwallexWebhookHandlerWithWake(t,
+		newTestAirwallexWebhookVerifier(t, now),
+		airwallexWebhookIngestorStub{ingest: func(context.Context, companyfund.OwnedProviderPayloadInput) (companyfund.ProviderEventInsertResult, error) {
+			ingested = true
+			return companyfund.ProviderEventInsertResult{}, nil
+		}},
+		func() { woke = true },
+	)
+	sig := airwallexWebhookTestEventSignature(clientSecretKey, timestamp, body)
+	response := runCompanyFundAirwallexWebhookWithTestEvent(handler, body, timestamp, sig, clientSecretKey)
+	if response.Code != http.StatusOK {
+		t.Fatalf("test event status = %d, want 200", response.Code)
+	}
+	if ingested {
+		t.Fatal("Console test event must NOT be ingested (synthetic payload)")
+	}
+	if woke {
+		t.Fatal("Console test event must NOT wake reconciliation")
+	}
+}
+
+func TestCompanyFundAirwallexWebhookHandler_TestEventRejectsBadSignature(t *testing.T) {
+	now := time.Date(2026, 7, 10, 3, 0, 0, 0, time.UTC)
+	timestamp := "1783652400000"
+	body := []byte(`{"id":"evt_test","name":"payout.transfer.paid"}`)
+	handler := newTestCompanyFundAirwallexWebhookHandler(t,
+		newTestAirwallexWebhookVerifier(t, now),
+		airwallexWebhookIngestorStub{ingest: func(context.Context, companyfund.OwnedProviderPayloadInput) (companyfund.ProviderEventInsertResult, error) {
+			t.Fatal("bad-signature test event must not be ingested")
+			return companyfund.ProviderEventInsertResult{}, nil
+		}},
+	)
+	response := runCompanyFundAirwallexWebhookWithTestEvent(handler, body, timestamp, "deadbeef", "BhaWQyMDI2")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("bad-signature test event status = %d, want 400", response.Code)
 	}
 }

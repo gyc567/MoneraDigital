@@ -166,6 +166,9 @@ type AirwallexCounterparty struct {
 type AirwallexMovementRelationship struct {
 	ParentMovementKey     string
 	ReversalOfMovementKey string
+	ReferenceType         RelationshipReferenceType
+	ReferenceKey          string
+	GroupKey              string
 	ConversionGroupKey    string
 	ConversionLeg         ConversionLeg
 	ConversionGroupState  ConversionGroupState
@@ -190,6 +193,7 @@ type AirwallexFinancialTransactionNormalizationInput struct {
 	ConfiguredAccount          CompanyFundAccount
 	Counterparty               *AirwallexCounterparty
 	CounterpartyCompanyAccount *CompanyFundAccount
+	ProviderFee                ProviderTransactionFeeInput
 	ConfiguredAccountSide      AirwallexConfiguredAccountSide
 	AssetPolicy                *AccountAssetPolicy
 	Source                     AirwallexFinancialTransactionSourceMetadata
@@ -243,6 +247,59 @@ func (result AirwallexFinancialTransactionNormalizationResult) ProviderEventNorm
 	default:
 		return ProviderEventNormalizationResult{}, NewPermanentProviderEventError(fmt.Errorf("unsupported Airwallex financial transaction normalization disposition %q", result.Disposition))
 	}
+}
+
+// DeferredProviderEventNormalization persists the normalized fact and a
+// restart-safe relationship task, but deliberately withholds the movement
+// until its provider relationship can be proven.
+func (result AirwallexFinancialTransactionNormalizationResult) DeferredProviderEventNormalization(
+	task AirwallexDeferredRelationshipTask,
+) (ProviderEventNormalizationResult, error) {
+	if result.Disposition != AirwallexFinancialTransactionDispositionApply ||
+		result.ProviderFact == nil || result.Transaction == nil {
+		return ProviderEventNormalizationResult{}, NewPermanentProviderEventError(
+			fmt.Errorf("deferred Airwallex normalization is incomplete"),
+		)
+	}
+	proposal := *result.Transaction
+	switch task.Kind {
+	case LedgerTaskKindFeeRelationship:
+		proposal.ParentMovementKey = ""
+	case LedgerTaskKindReversalRelationship:
+		proposal.ReversalOfMovementKey = ""
+	case LedgerTaskKindConversionPair:
+		proposal.ConversionGroupState = ConversionGroupIncomplete
+	default:
+		return ProviderEventNormalizationResult{}, NewPermanentProviderEventError(
+			fmt.Errorf("unsupported deferred Airwallex relationship task kind %q", task.Kind),
+		)
+	}
+	proposal.RelationshipReferenceType = task.ReferenceType
+	proposal.RelationshipReferenceKey = strings.TrimSpace(task.ReferenceKey)
+	proposal.RelationshipGroupKey = strings.TrimSpace(task.GroupKey)
+	factReference := "airwallex-fact:" + payloadSHA256Hex([]byte(result.ProviderFact.FactIdentityKey))
+	return ProviderEventNormalizationResult{
+		Facts: []ProviderEventNormalizedFact{{
+			Reference: factReference,
+			Input:     *result.ProviderFact,
+		}},
+		DeferredMovements: []ProviderEventDeferredMovement{{
+			FactReference: factReference,
+			Task: CompanyFundLedgerTaskInput{
+				Channel:                      ChannelAirwallex,
+				ProviderAccountKey:           proposal.ProviderAccountKey,
+				Kind:                         task.Kind,
+				SubjectProviderTransactionID: proposal.ProviderTransactionID,
+				RelationshipReferenceType:    task.ReferenceType,
+				RelationshipReferenceKey:     strings.TrimSpace(task.ReferenceKey),
+				RelationshipGroupKey:         strings.TrimSpace(task.GroupKey),
+				EvidenceReference:            strings.TrimSpace(task.EvidenceReference),
+				Proposal:                     proposal,
+				PolicyVersion:                strings.TrimSpace(task.PolicyVersion),
+				RelationshipSLA:              task.RelationshipSLA,
+			},
+		}},
+	}, nil
 }
 
 // NewAirwallexFinancialTransactionNormalizer validates an immutable, exact
@@ -370,23 +427,32 @@ func (n *AirwallexFinancialTransactionNormalizer) Normalize(input AirwallexFinan
 		return result
 	}
 
-	resolvedAccounts, err := resolveAirwallexMovementAccounts(classification.Direction, configuredAccount, input.CounterpartyCompanyAccount, input.ConfiguredAccountSide)
+	resolvedAccounts, err := resolveAirwallexMovementAccounts(
+		classification.MovementKind,
+		classification.Direction,
+		configuredAccount,
+		input.CounterpartyCompanyAccount,
+		input.ConfiguredAccountSide,
+	)
 	if err != nil {
 		result.Reason = "AIRWALLEX_MOVEMENT_ACCOUNTS_INVALID"
 		return result
 	}
 	relation := normalizeAirwallexRelationship(input.Relationship)
 	if err := ValidateMovementRelationship(MovementRelation{
-		MovementKind:          classification.MovementKind,
-		TransferMode:          classification.TransferMode,
-		Direction:             classification.Direction,
-		HasFromAccount:        resolvedAccounts.fromAccountID != nil,
-		HasToAccount:          resolvedAccounts.toAccountID != nil,
-		ParentMovementKey:     relation.ParentMovementKey,
-		ReversalOfMovementKey: relation.ReversalOfMovementKey,
-		ConversionGroupKey:    relation.ConversionGroupKey,
-		ConversionLeg:         relation.ConversionLeg,
-		ConversionGroupState:  relation.ConversionGroupState,
+		MovementKind:              classification.MovementKind,
+		TransferMode:              classification.TransferMode,
+		Direction:                 classification.Direction,
+		HasFromAccount:            resolvedAccounts.fromAccountID != nil,
+		HasToAccount:              resolvedAccounts.toAccountID != nil,
+		ParentMovementKey:         relation.ParentMovementKey,
+		ReversalOfMovementKey:     relation.ReversalOfMovementKey,
+		RelationshipReferenceType: relation.ReferenceType,
+		RelationshipReferenceKey:  relation.ReferenceKey,
+		RelationshipGroupKey:      relation.GroupKey,
+		ConversionGroupKey:        relation.ConversionGroupKey,
+		ConversionLeg:             relation.ConversionLeg,
+		ConversionGroupState:      relation.ConversionGroupState,
 	}); err != nil {
 		result.Reason = "AIRWALLEX_MOVEMENT_RELATIONSHIP_INVALID"
 		return result
@@ -427,12 +493,25 @@ func (n *AirwallexFinancialTransactionNormalizer) Normalize(input AirwallexFinan
 		return result
 	}
 
-	display, err := buildAirwallexTransactionDisplay(classification, numbers, transaction.currency, configuredAccount, input.Counterparty, resolvedAccounts)
+	display, err := buildAirwallexTransactionDisplay(
+		classification,
+		numbers,
+		transaction.currency,
+		configuredAccount,
+		input.Counterparty,
+		input.ProviderFee,
+		resolvedAccounts,
+	)
 	if err != nil {
 		result.Reason = "AIRWALLEX_DISPLAY_METADATA_INVALID"
 		return result
 	}
-	conversion, err := buildAirwallexConversionFact(classification, numbers, input.Conversion)
+	conversion, err := buildAirwallexConversionFact(
+		classification,
+		numbers,
+		transaction.currencyPair,
+		input.Conversion,
+	)
 	if err != nil {
 		result.Reason = "AIRWALLEX_CONVERSION_FACT_INVALID"
 		return result
@@ -448,105 +527,170 @@ func (n *AirwallexFinancialTransactionNormalizer) Normalize(input AirwallexFinan
 		return result
 	}
 
-	amountCopy := amount
-	currencyCopy := transaction.currency
-	assetCopy := asset
-	occurredAtCopy := occurredAt
+	return buildAirwallexAppliedNormalizationResult(airwallexAppliedNormalizationInput{
+		source:              input,
+		result:              result,
+		factVersion:         n.factVersion,
+		providerAccountKey:  providerAccountKey,
+		transaction:         transaction,
+		classification:      classification,
+		amount:              amount,
+		occurredAt:          occurredAt,
+		resolvedAccounts:    resolvedAccounts,
+		relation:            relation,
+		asset:               asset,
+		policy:              policy,
+		risk:                risk,
+		identity:            identity,
+		display:             display,
+		conversion:          conversion,
+		extras:              extras,
+		factIdentityKey:     factIdentityKey,
+		sourceProviderEvent: sourceProviderEventID,
+	})
+}
+
+type airwallexAppliedNormalizationInput struct {
+	source              AirwallexFinancialTransactionNormalizationInput
+	result              AirwallexFinancialTransactionNormalizationResult
+	factVersion         int
+	providerAccountKey  string
+	transaction         normalizedAirwallexFinancialTransaction
+	classification      AirwallexFinancialTransactionClassification
+	amount              decimal.Decimal
+	occurredAt          time.Time
+	resolvedAccounts    resolvedAirwallexMovementAccounts
+	relation            AirwallexMovementRelationship
+	asset               AssetIdentity
+	policy              *AccountAssetPolicy
+	risk                RiskAssessment
+	identity            MovementIdentity
+	display             ProviderTransactionDisplayInput
+	conversion          airwallexConversionFact
+	extras              []byte
+	factIdentityKey     string
+	sourceProviderEvent string
+}
+
+func buildAirwallexAppliedNormalizationResult(input airwallexAppliedNormalizationInput) AirwallexFinancialTransactionNormalizationResult {
+	amountCopy := input.amount
+	currencyCopy := input.transaction.currency
+	assetCopy := input.asset
+	occurredAtCopy := input.occurredAt
 	provider := ProviderOwnedFields{
-		Metadata:   ProviderFactMetadata{Source: input.Source.FactSource},
+		Metadata:   ProviderFactMetadata{Source: input.source.Source.FactSource},
 		Amount:     &amountCopy,
 		Currency:   &currencyCopy,
 		Asset:      &assetCopy,
 		OccurredAt: &occurredAtCopy,
 	}
 	providerFact := ProviderTransactionFactInput{
-		Channel:                ChannelAirwallex,
-		ProviderAccountKey:     providerAccountKey,
-		ProviderTransactionID:  transaction.providerID,
-		ProviderGroupID:        transaction.batchID,
-		FactIdentityKey:        factIdentityKey,
-		FactVersion:            n.factVersion,
-		SourceProviderEventID:  input.Source.ProviderEventRecordID,
-		SourcePayloadDigest:    input.Source.PayloadDigest,
-		ProviderOccurredAt:     &occurredAtCopy,
-		ProviderAmount:         &amountCopy,
-		ProviderCurrency:       transaction.currency,
-		ConversionFromCurrency: conversion.fromCurrency,
-		ConversionToCurrency:   conversion.toCurrency,
-		ConversionRate:         conversion.rate,
-		ValueScope:             ProviderValueScopeDirectItem,
-		AllocationState:        ProviderFactAllocationStateNotApplicable,
-		ProviderExtrasJSON:     extras,
+		Channel:                 ChannelAirwallex,
+		ProviderAccountKey:      input.providerAccountKey,
+		ProviderTransactionID:   input.transaction.providerID,
+		ProviderSourceReference: input.transaction.sourceID,
+		ProviderGroupID:         input.transaction.batchID,
+		FactIdentityKey:         input.factIdentityKey,
+		FactVersion:             input.factVersion,
+		SourceProviderEventID:   input.source.Source.ProviderEventRecordID,
+		SourcePayloadDigest:     input.source.Source.PayloadDigest,
+		ProviderOccurredAt:      &occurredAtCopy,
+		ProviderAmount:          &amountCopy,
+		ProviderCurrency:        input.transaction.currency,
+		ConversionFromCurrency:  input.conversion.fromCurrency,
+		ConversionToCurrency:    input.conversion.toCurrency,
+		ConversionRate:          input.conversion.rate,
+		ValueScope:              ProviderValueScopeDirectItem,
+		AllocationState:         ProviderFactAllocationStateNotApplicable,
+		ProviderExtrasJSON:      input.extras,
 	}
 	movement := CompanyFundMovement{
-		Identity:              identity,
-		Channel:               ChannelAirwallex,
-		MovementKind:          classification.MovementKind,
-		TransferMode:          classification.TransferMode,
-		Direction:             classification.Direction,
-		Amount:                amount,
-		Asset:                 asset,
-		FromAccountID:         copyAirwallexInt64(resolvedAccounts.fromAccountID),
-		ToAccountID:           copyAirwallexInt64(resolvedAccounts.toAccountID),
-		ParentMovementKey:     relation.ParentMovementKey,
-		ReversalOfMovementKey: relation.ReversalOfMovementKey,
-		ConversionGroupKey:    relation.ConversionGroupKey,
-		ConversionLeg:         relation.ConversionLeg,
-		ConversionGroupState:  relation.ConversionGroupState,
-		Provider:              provider,
+		Identity:                  input.identity,
+		Channel:                   ChannelAirwallex,
+		MovementKind:              input.classification.MovementKind,
+		TransferMode:              input.classification.TransferMode,
+		Direction:                 input.classification.Direction,
+		Amount:                    input.amount,
+		Asset:                     input.asset,
+		FromAccountID:             copyAirwallexInt64(input.resolvedAccounts.fromAccountID),
+		ToAccountID:               copyAirwallexInt64(input.resolvedAccounts.toAccountID),
+		ParentMovementKey:         input.relation.ParentMovementKey,
+		ReversalOfMovementKey:     input.relation.ReversalOfMovementKey,
+		RelationshipReferenceType: input.relation.ReferenceType,
+		RelationshipReferenceKey:  input.relation.ReferenceKey,
+		RelationshipGroupKey:      input.relation.GroupKey,
+		ConversionGroupKey:        input.relation.ConversionGroupKey,
+		ConversionLeg:             input.relation.ConversionLeg,
+		ConversionGroupState:      input.relation.ConversionGroupState,
+		Provider:                  provider,
 	}
-	automaticRisk := airwallexAutomaticRiskInput(policy, risk)
-	latestProviderEventID := input.Source.ProviderEventRecordID
+	automaticRisk := airwallexAutomaticRiskInput(input.policy, input.risk)
+	switch input.classification.MovementKind {
+	case MovementKindFee:
+		// Provider-declared fees are legitimate operating costs even when tiny;
+		// wallet dust-attack exclusion is not applicable to Airwallex fiat fees.
+		included := false
+		automaticRisk.AutoExcludedFromSummary = &included
+	case MovementKindConversion:
+		// Both legs remain visible in detail but never inflate external or
+		// operating cash-flow summaries.
+		excluded := true
+		automaticRisk.AutoExcludedFromSummary = &excluded
+	}
+	latestProviderEventID := input.source.Source.ProviderEventRecordID
 	transactionUpsert := TransactionUpsertInput{
-		MovementKey:              identity.Key,
+		MovementKey:              input.identity.Key,
 		Channel:                  ChannelAirwallex,
-		IdentityAlgorithmVersion: identity.AlgorithmVersion,
-		ProviderAccountKey:       providerAccountKey,
-		ProviderTransactionID:    transaction.providerID,
-		ProviderEventID:          sourceProviderEventID,
+		IdentityAlgorithmVersion: input.identity.AlgorithmVersion,
+		ProviderAccountKey:       input.providerAccountKey,
+		ProviderTransactionID:    input.transaction.providerID,
+		ProviderEventID:          input.sourceProviderEvent,
 		// The Financial Transactions item ID is the stable movement line
 		// identity. source_id remains an allowlisted provider fact only until a
 		// Sandbox fixture proves a cross-surface identity contract.
-		ProviderMovementID:       transaction.providerID,
-		MovementIndex:            0,
-		MovementKind:             classification.MovementKind,
-		TransferMode:             classification.TransferMode,
-		Direction:                classification.Direction,
-		ParentMovementKey:        relation.ParentMovementKey,
-		ReversalOfMovementKey:    relation.ReversalOfMovementKey,
-		ConversionGroupKey:       relation.ConversionGroupKey,
-		ConversionLeg:            relation.ConversionLeg,
-		ConversionGroupState:     relation.ConversionGroupState,
-		FromCompanyFundAccountID: copyAirwallexInt64(resolvedAccounts.fromAccountID),
-		ToCompanyFundAccountID:   copyAirwallexInt64(resolvedAccounts.toAccountID),
-		Currency:                 transaction.currency,
-		Asset:                    asset,
-		Amount:                   amount,
-		OccurredAt:               &occurredAtCopy,
-		LatestProviderEventID:    &latestProviderEventID,
-		RawSnapshotDigest:        input.Source.PayloadDigest,
-		FirstSeenSource:          input.Source.SeenSource,
-		Provider:                 provider,
-		ProviderStatusRank:       0,
-		ProviderDisplay:          display,
-		AutomaticRisk:            automaticRisk,
+		ProviderMovementID:        input.transaction.providerID,
+		MovementIndex:             0,
+		MovementKind:              input.classification.MovementKind,
+		TransferMode:              input.classification.TransferMode,
+		Direction:                 input.classification.Direction,
+		ParentMovementKey:         input.relation.ParentMovementKey,
+		ReversalOfMovementKey:     input.relation.ReversalOfMovementKey,
+		RelationshipReferenceType: input.relation.ReferenceType,
+		RelationshipReferenceKey:  input.relation.ReferenceKey,
+		RelationshipGroupKey:      input.relation.GroupKey,
+		ConversionGroupKey:        input.relation.ConversionGroupKey,
+		ConversionLeg:             input.relation.ConversionLeg,
+		ConversionGroupState:      input.relation.ConversionGroupState,
+		FromCompanyFundAccountID:  copyAirwallexInt64(input.resolvedAccounts.fromAccountID),
+		ToCompanyFundAccountID:    copyAirwallexInt64(input.resolvedAccounts.toAccountID),
+		Currency:                  input.transaction.currency,
+		Asset:                     input.asset,
+		Amount:                    input.amount,
+		OccurredAt:                &occurredAtCopy,
+		LatestProviderEventID:     &latestProviderEventID,
+		RawSnapshotDigest:         input.source.Source.PayloadDigest,
+		FirstSeenSource:           input.source.Source.SeenSource,
+		Provider:                  provider,
+		ProviderStatusRank:        0,
+		ProviderDisplay:           input.display,
+		AutomaticRisk:             automaticRisk,
 	}
 	if _, err := providerFact.validate(); err != nil {
-		result.Reason = "AIRWALLEX_PROVIDER_FACT_INVALID"
-		return result
+		input.result.Reason = "AIRWALLEX_PROVIDER_FACT_INVALID"
+		return input.result
 	}
 	if err := transactionUpsert.validate(); err != nil {
-		result.Reason = "AIRWALLEX_TRANSACTION_UPSERT_INVALID"
-		return result
+		input.result.Reason = "AIRWALLEX_TRANSACTION_UPSERT_INVALID"
+		return input.result
 	}
 
-	result.Disposition = AirwallexFinancialTransactionDispositionApply
-	result.Movement = &movement
-	result.ProviderFact = &providerFact
-	result.Transaction = &transactionUpsert
-	riskCopy := risk
-	result.Risk = &riskCopy
-	return result
+	input.result.Disposition = AirwallexFinancialTransactionDispositionApply
+	input.result.Movement = &movement
+	input.result.ProviderFact = &providerFact
+	input.result.Transaction = &transactionUpsert
+	riskCopy := input.risk
+	input.result.Risk = &riskCopy
+	return input.result
 }
 
 func normalizeAirwallexClassification(source AirwallexFinancialTransactionClassification) (AirwallexFinancialTransactionClassification, airwallexFinancialTransactionClassificationKey, error) {
@@ -782,7 +926,9 @@ func parseOptionalAirwallexJSONDecimal(label string, raw json.RawMessage) (*deci
 
 func parseAirwallexJSONDecimal(label string, raw json.RawMessage) (*decimal.Decimal, bool, error) {
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
+	// Absent and JSON null are both "no value". Sandbox Financial Transactions
+	// emits explicit null for optional fee/net/client_rate fields.
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, false, nil
 	}
 	if len(trimmed) > maxAirwallexNormalizationNumericBytes {
@@ -796,6 +942,9 @@ func parseAirwallexJSONDecimal(label string, raw json.RawMessage) (*decimal.Deci
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return nil, false, fmt.Errorf("Airwallex %s must contain one JSON value", label)
+	}
+	if decoded == nil {
+		return nil, false, nil
 	}
 	number, ok := decoded.(json.Number)
 	if !ok {
@@ -865,7 +1014,13 @@ type resolvedAirwallexMovementAccounts struct {
 	toAccount     CompanyFundAccount
 }
 
-func resolveAirwallexMovementAccounts(direction Direction, configured CompanyFundAccount, counterparty *CompanyFundAccount, configuredSide AirwallexConfiguredAccountSide) (resolvedAirwallexMovementAccounts, error) {
+func resolveAirwallexMovementAccounts(
+	movementKind MovementKind,
+	direction Direction,
+	configured CompanyFundAccount,
+	counterparty *CompanyFundAccount,
+	configuredSide AirwallexConfiguredAccountSide,
+) (resolvedAirwallexMovementAccounts, error) {
 	configuredKey := strings.TrimSpace(configured.ProviderAccountKey)
 	switch direction {
 	case DirectionInflow:
@@ -887,6 +1042,21 @@ func resolveAirwallexMovementAccounts(direction Direction, configured CompanyFun
 			fromAccount:   configured,
 		}, nil
 	case DirectionInternalTransfer:
+		if movementKind == MovementKindConversion && counterparty == nil && configuredSide == "" {
+			// One Airwallex account owns balances in multiple currencies. A
+			// conversion moves value between those balances without changing
+			// the owning company account, so both ledger endpoints deliberately
+			// reference the same configured account. The paired currencies and
+			// provider item IDs still distinguish the two immutable legs.
+			return resolvedAirwallexMovementAccounts{
+				fromAccountID: airwallexInt64Pointer(configured.ID),
+				toAccountID:   airwallexInt64Pointer(configured.ID),
+				identityFrom:  configuredKey,
+				identityTo:    configuredKey,
+				fromAccount:   configured,
+				toAccount:     configured,
+			}, nil
+		}
 		if counterparty == nil || (configuredSide != AirwallexConfiguredAccountSideFrom && configuredSide != AirwallexConfiguredAccountSideTo) {
 			return resolvedAirwallexMovementAccounts{}, fmt.Errorf("internal Airwallex movement requires an explicit other account and configured side")
 		}
@@ -918,13 +1088,35 @@ func resolveAirwallexMovementAccounts(direction Direction, configured CompanyFun
 }
 
 func normalizeAirwallexRelationship(source AirwallexMovementRelationship) AirwallexMovementRelationship {
-	return AirwallexMovementRelationship{
+	normalized := AirwallexMovementRelationship{
 		ParentMovementKey:     strings.TrimSpace(source.ParentMovementKey),
 		ReversalOfMovementKey: strings.TrimSpace(source.ReversalOfMovementKey),
+		ReferenceType:         source.ReferenceType,
+		ReferenceKey:          strings.TrimSpace(source.ReferenceKey),
+		GroupKey:              strings.TrimSpace(source.GroupKey),
 		ConversionGroupKey:    strings.TrimSpace(source.ConversionGroupKey),
 		ConversionLeg:         source.ConversionLeg,
 		ConversionGroupState:  source.ConversionGroupState,
 	}
+	// Direct callers already resolve movement keys before entering the pure
+	// normalizer. Preserve that contract while recording the corresponding
+	// exact evidence type; runtime provider-event processing uses the durable
+	// waiting path below instead of manufacturing movement keys.
+	if normalized.ReferenceType == "" {
+		switch {
+		case normalized.ParentMovementKey != "":
+			normalized.ReferenceType = RelationshipReferenceSourceIDExactParent
+			normalized.ReferenceKey = normalized.ParentMovementKey
+		case normalized.ReversalOfMovementKey != "":
+			normalized.ReferenceType = RelationshipReferenceSourceIDReversalTarget
+			normalized.ReferenceKey = normalized.ReversalOfMovementKey
+		case normalized.ConversionGroupKey != "":
+			normalized.ReferenceType = RelationshipReferenceSourceIDConversion
+			normalized.ReferenceKey = normalized.ConversionGroupKey
+			normalized.GroupKey = normalized.ConversionGroupKey
+		}
+	}
+	return normalized
 }
 
 func validatedAirwallexAssetPolicy(source *AccountAssetPolicy, accountID int64, asset AssetIdentity) (*AccountAssetPolicy, error) {
@@ -950,7 +1142,15 @@ func airwallexDustPolicy(policy *AccountAssetPolicy) DustPolicy {
 	return policy.Dust
 }
 
-func buildAirwallexTransactionDisplay(classification AirwallexFinancialTransactionClassification, numbers parsedAirwallexFinancialTransactionNumbers, currency string, configured CompanyFundAccount, counterparty *AirwallexCounterparty, resolved resolvedAirwallexMovementAccounts) (ProviderTransactionDisplayInput, error) {
+func buildAirwallexTransactionDisplay(
+	classification AirwallexFinancialTransactionClassification,
+	numbers parsedAirwallexFinancialTransactionNumbers,
+	currency string,
+	configured CompanyFundAccount,
+	counterparty *AirwallexCounterparty,
+	providerFee ProviderTransactionFeeInput,
+	resolved resolvedAirwallexMovementAccounts,
+) (ProviderTransactionDisplayInput, error) {
 	configuredParty := airwallexCompanyAccountDisplay(configured)
 	counterpartyParty, counterpartyName := airwallexCounterpartyDisplay(counterparty)
 	display := ProviderTransactionDisplayInput{}
@@ -968,6 +1168,10 @@ func buildAirwallexTransactionDisplay(classification AirwallexFinancialTransacti
 		display.To = airwallexCompanyAccountDisplay(resolved.toAccount)
 	default:
 		return ProviderTransactionDisplayInput{}, fmt.Errorf("unsupported Airwallex display direction")
+	}
+	if providerFee.Amount != nil || providerFee.Currency != nil || len(providerFee.DetailsJSON) != 0 {
+		display.Fee = cloneProviderTransactionFeeInput(providerFee)
+		return normalizedAirwallexDisplay(display)
 	}
 	if classification.IncludeFeeDisplay {
 		if numbers.fee == nil || numbers.fee.IsZero() {
@@ -988,6 +1192,10 @@ func normalizedAirwallexDisplay(display ProviderTransactionDisplayInput) (Provid
 	if err != nil {
 		return ProviderTransactionDisplayInput{}, err
 	}
+	var feeDetails json.RawMessage
+	if normalized.FeeDetailsJSON != nil {
+		feeDetails = json.RawMessage(*normalized.FeeDetailsJSON)
+	}
 	return ProviderTransactionDisplayInput{
 		From: ProviderTransactionPartyDisplayInput{
 			AddressOrAccount: normalized.From.AddressOrAccount,
@@ -1006,8 +1214,9 @@ func normalizedAirwallexDisplay(display ProviderTransactionDisplayInput) (Provid
 		PayerName: normalized.PayerName,
 		PayeeName: normalized.PayeeName,
 		Fee: ProviderTransactionFeeInput{
-			Amount:   normalized.FeeAmount,
-			Currency: normalized.FeeCurrency,
+			Amount:      normalized.FeeAmount,
+			Currency:    normalized.FeeCurrency,
+			DetailsJSON: feeDetails,
 		},
 	}, nil
 }
@@ -1048,7 +1257,12 @@ type airwallexConversionFact struct {
 	rate         *decimal.Decimal
 }
 
-func buildAirwallexConversionFact(classification AirwallexFinancialTransactionClassification, numbers parsedAirwallexFinancialTransactionNumbers, source AirwallexConversionDetails) (airwallexConversionFact, error) {
+func buildAirwallexConversionFact(
+	classification AirwallexFinancialTransactionClassification,
+	numbers parsedAirwallexFinancialTransactionNumbers,
+	providerCurrencyPair string,
+	source AirwallexConversionDetails,
+) (airwallexConversionFact, error) {
 	if classification.ClientRateUse == AirwallexFinancialClientRateUseNone {
 		return airwallexConversionFact{}, nil
 	}
@@ -1062,6 +1276,10 @@ func buildAirwallexConversionFact(classification AirwallexFinancialTransactionCl
 	toCurrency, err := normalizeAirwallexNormalizationRequired("Airwallex conversion to currency", source.ToCurrency, maxProviderFactCurrencyBytes)
 	if err != nil {
 		return airwallexConversionFact{}, err
+	}
+	normalizedPair := strings.ToUpper(strings.TrimSpace(providerCurrencyPair))
+	if normalizedPair == "" || normalizedPair != strings.ToUpper(fromCurrency+toCurrency) {
+		return airwallexConversionFact{}, fmt.Errorf("Airwallex provider currency_pair conflicts with the configured conversion currencies")
 	}
 	rate := *numbers.clientRate
 	if err := validateProviderFactDecimal("Airwallex conversion rate", &rate, true); err != nil {
@@ -1080,13 +1298,15 @@ func buildAirwallexFinancialTransactionFactExtras(
 	numericValues := map[string]json.RawMessage{
 		"amount": append(json.RawMessage(nil), source.Amount...),
 	}
-	if len(bytes.TrimSpace(source.Fee)) > 0 {
+	// Explicit JSON null is treated as absent by the numeric parser; keep fact
+	// extras aligned so raw_numeric_values never records a non-number.
+	if raw := bytes.TrimSpace(source.Fee); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["fee"] = append(json.RawMessage(nil), source.Fee...)
 	}
-	if len(bytes.TrimSpace(source.Net)) > 0 {
+	if raw := bytes.TrimSpace(source.Net); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["net"] = append(json.RawMessage(nil), source.Net...)
 	}
-	if len(bytes.TrimSpace(source.ClientRate)) > 0 {
+	if raw := bytes.TrimSpace(source.ClientRate); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		numericValues["client_rate"] = append(json.RawMessage(nil), source.ClientRate...)
 	}
 	value := struct {

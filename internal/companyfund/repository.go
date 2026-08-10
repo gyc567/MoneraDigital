@@ -93,7 +93,7 @@ const (
 // Webhooks reference their already-verified raw event by INTEGER ID; provider
 // API/Airwallex payloads use bounded encrypted bytes owned by this feature.
 type ProviderEventInput struct {
-	Channel                          Channel
+	Channel                          TransactionSource
 	ProviderEventID                  string
 	EventType                        string
 	ProviderEventVersion             string
@@ -119,7 +119,7 @@ type ProviderEventInsertResult struct {
 
 type ProviderEventLease struct {
 	ID                               int64
-	Channel                          Channel
+	Channel                          TransactionSource
 	ProviderEventID                  string
 	EventType                        string
 	ProviderEventVersion             string
@@ -672,7 +672,7 @@ func scanProviderEventLease(row *sql.Row) (*ProviderEventLease, error) {
 	); err != nil {
 		return nil, err
 	}
-	lease.Channel = Channel(channel)
+	lease.Channel = TransactionSource(channel)
 	lease.SourceKind = ProviderEventSource(sourceKind)
 	if rawEventID.Valid {
 		value := int(rawEventID.Int64)
@@ -845,7 +845,7 @@ const (
 // so webhook/reconciliation processing cannot overwrite them.
 type TransactionUpsertInput struct {
 	MovementKey                        string
-	Channel                            Channel
+	Channel                            TransactionSource
 	IdentityAlgorithmVersion           string
 	ProviderOccurrenceKey              string
 	ProviderOccurrenceAlgorithmVersion string
@@ -863,6 +863,9 @@ type TransactionUpsertInput struct {
 	// parent from nullable provider account/organization metadata.
 	ParentMovementKey          string
 	ReversalOfMovementKey      string
+	RelationshipReferenceType  RelationshipReferenceType
+	RelationshipReferenceKey   string
+	RelationshipGroupKey       string
 	ConversionGroupKey         string
 	ConversionLeg              ConversionLeg
 	ConversionGroupState       ConversionGroupState
@@ -910,6 +913,19 @@ FROM company_fund_transactions
 WHERE movement_key = $1
 FOR UPDATE`
 
+const selectAirwallexCompanyFundTransactionMovementKeyForUpdateSQL = `
+SELECT movement_key
+FROM company_fund_transactions
+WHERE channel = 'AIRWALLEX'
+  AND provider_account_key = $1
+  AND provider_transaction_id = $2
+  AND provider_movement_id = $3
+  AND from_company_fund_account_id IS NOT DISTINCT FROM $4::bigint
+  AND to_company_fund_account_id IS NOT DISTINCT FROM $5::bigint
+ORDER BY id
+LIMIT 2
+FOR UPDATE`
+
 const selectSafeheronCompanyFundTransactionForUpdateSQL = `
 SELECT id, movement_key, channel, identity_algorithm_version,
 	   COALESCE(provider_occurrence_key, ''), COALESCE(provider_occurrence_algorithm_version, ''),
@@ -946,7 +962,7 @@ INSERT INTO company_fund_transactions (
 	$25, $26, $27, $28,
 	$29, $30, $31
 )
-ON CONFLICT (movement_key) DO NOTHING
+ON CONFLICT DO NOTHING
 RETURNING id`
 
 const insertSafeheronCompanyFundTransactionSQL = `
@@ -1028,7 +1044,7 @@ SET from_address_or_account = CASE WHEN $2 THEN COALESCE($3, from_address_or_acc
 	provider_reported_fee_currency = CASE WHEN $2 THEN COALESCE($16, provider_reported_fee_currency) ELSE COALESCE(provider_reported_fee_currency, $16) END,
 	fee_details = CASE
 		WHEN $2 AND $17::jsonb IS NOT NULL THEN $17::jsonb
-		WHEN fee_details = '{}'::jsonb AND $17::jsonb IS NOT NULL THEN $17::jsonb
+		WHEN $17::jsonb IS NOT NULL THEN $17::jsonb || fee_details
 		ELSE fee_details
 	END,
 	block_height = CASE WHEN $2 THEN COALESCE($18::bigint, block_height) ELSE COALESCE(block_height, $18::bigint) END,
@@ -1089,6 +1105,26 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 			_ = tx.Rollback()
 		}
 	}()
+	result, err := r.upsertCompanyFundTransactionTx(ctx, tx, input, supplement)
+	if err != nil {
+		return result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction upsert: %w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+// upsertCompanyFundTransactionTx applies one already validated movement inside
+// a caller-owned transaction. It is used by conversion pairing so both legs
+// and their COMPLETE transition share one commit boundary.
+func (r *DBRepository) upsertCompanyFundTransactionTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	input TransactionUpsertInput,
+	supplement normalizedTransactionProviderSupplement,
+) (TransactionUpsertResult, error) {
 	if err := ensureCompanyRoutingAction(ctx, tx, input.AuthorizingRoutingActionID); err != nil {
 		return TransactionUpsertResult{}, err
 	}
@@ -1101,6 +1137,7 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 		return TransactionUpsertResult{Quarantined: true}, &TransactionQuarantineError{MovementKey: input.MovementKey, Reason: err.Error()}
 	}
 
+	stableIdentityFallback := false
 	for attempt := 0; attempt < 2; attempt++ {
 		var existing persistedCompanyFundTransaction
 		var found bool
@@ -1108,6 +1145,14 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 			existing, found, err = loadSafeheronCompanyFundTransactionForUpdate(ctx, tx, input)
 		} else {
 			existing, found, err = loadCompanyFundTransactionForUpdate(ctx, tx, input.MovementKey)
+			if err == nil && !found && stableIdentityFallback &&
+				input.Channel == ChannelAirwallex {
+				existing, found, err = loadAirwallexCompanyFundTransactionForUpdate(
+					ctx,
+					tx,
+					input,
+				)
+			}
 		}
 		if err != nil {
 			return TransactionUpsertResult{}, err
@@ -1134,14 +1179,11 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 				if err := r.applyCompanyFundTransactionProviderLinkage(ctx, tx, id, input); err != nil {
 					return TransactionUpsertResult{}, err
 				}
-				if err := tx.Commit(); err != nil {
-					return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction insert: %w", err)
-				}
-				committed = true
 				return TransactionUpsertResult{ID: id, Inserted: true}, nil
 			}
 			// A concurrent insert won the unique key. Read/lock it in the same
 			// transaction and apply the protected update on the next iteration.
+			stableIdentityFallback = true
 			continue
 		}
 		if existing.Channel != input.Channel {
@@ -1191,13 +1233,55 @@ func (r *DBRepository) UpsertCompanyFundTransaction(ctx context.Context, input T
 		if err := r.applyCompanyFundTransactionProviderLinkage(ctx, tx, id, input); err != nil {
 			return TransactionUpsertResult{}, err
 		}
-		if err := tx.Commit(); err != nil {
-			return TransactionUpsertResult{}, fmt.Errorf("commit company-fund transaction update: %w", err)
-		}
-		committed = true
 		return TransactionUpsertResult{ID: id}, nil
 	}
 	return TransactionUpsertResult{}, fmt.Errorf("company-fund transaction %q could not be locked after concurrent insert", input.MovementKey)
+}
+
+func loadAirwallexCompanyFundTransactionForUpdate(
+	ctx context.Context,
+	tx *sql.Tx,
+	input TransactionUpsertInput,
+) (persistedCompanyFundTransaction, bool, error) {
+	if input.ProviderAccountKey == "" || input.ProviderTransactionID == "" ||
+		input.ProviderMovementID == "" {
+		return persistedCompanyFundTransaction{}, false, nil
+	}
+	rows, err := tx.QueryContext(
+		ctx,
+		selectAirwallexCompanyFundTransactionMovementKeyForUpdateSQL,
+		input.ProviderAccountKey,
+		input.ProviderTransactionID,
+		input.ProviderMovementID,
+		nullableInt64(input.FromCompanyFundAccountID),
+		nullableInt64(input.ToCompanyFundAccountID),
+	)
+	if err != nil {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("lock Airwallex company-fund transaction by stable identity: %w", err)
+	}
+	defer rows.Close()
+	var movementKeys []string
+	for rows.Next() {
+		var movementKey string
+		if err := rows.Scan(&movementKey); err != nil {
+			return persistedCompanyFundTransaction{}, false,
+				fmt.Errorf("scan Airwallex stable movement key: %w", err)
+		}
+		movementKeys = append(movementKeys, movementKey)
+	}
+	if err := rows.Err(); err != nil {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("iterate Airwallex stable movement keys: %w", err)
+	}
+	if len(movementKeys) == 0 {
+		return persistedCompanyFundTransaction{}, false, nil
+	}
+	if len(movementKeys) != 1 {
+		return persistedCompanyFundTransaction{}, false,
+			fmt.Errorf("Airwallex stable transaction identity is ambiguous")
+	}
+	return loadCompanyFundTransactionForUpdate(ctx, tx, movementKeys[0])
 }
 
 func ensureCompanyRoutingAction(ctx context.Context, tx *sql.Tx, actionID int64) error {
@@ -1246,7 +1330,7 @@ func alignSafeheronIncomingRecognitionSnapshot(
 type persistedCompanyFundTransaction struct {
 	ID                                 int64
 	MovementKey                        string
-	Channel                            Channel
+	Channel                            TransactionSource
 	IdentityAlgorithmVersion           string
 	ProviderOccurrenceKey              string
 	ProviderOccurrenceAlgorithmVersion string
@@ -1345,7 +1429,7 @@ func loadCompanyFundTransactionForUpdate(ctx context.Context, tx *sql.Tx, moveme
 		}
 		return persistedCompanyFundTransaction{}, false, fmt.Errorf("lock company-fund transaction: %w", err)
 	}
-	persisted.Channel = Channel(channel)
+	persisted.Channel = TransactionSource(channel)
 	persisted.Provenance.RawSnapshotDigest = rawSnapshotDigest
 	if providerFactID.Valid {
 		value := providerFactID.Int64
@@ -1480,7 +1564,7 @@ func scanSafeheronPersistedCompanyFundTransaction(scanner companyFundTransaction
 	); err != nil {
 		return persistedCompanyFundTransaction{}, fmt.Errorf("scan locked Safeheron company-fund transaction: %w", err)
 	}
-	persisted.Channel = Channel(channel)
+	persisted.Channel = TransactionSource(channel)
 	persisted.Provenance.RawSnapshotDigest = rawSnapshotDigest
 	if providerFactID.Valid {
 		value := providerFactID.Int64
@@ -1728,7 +1812,7 @@ func (input TransactionUpsertInput) providerFields() ProviderOwnedFields {
 	return provider
 }
 
-func effectiveTransactionStatusRank(channel Channel, existingRank, incomingRank int, status *LifecycleStatus) int {
+func effectiveTransactionStatusRank(channel TransactionSource, existingRank, incomingRank int, status *LifecycleStatus) int {
 	rank := existingRank
 	if incomingRank > rank {
 		rank = incomingRank

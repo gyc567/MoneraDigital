@@ -3,15 +3,16 @@
 // MoneraDigital Go migration runner. Replaces the previous dead state where
 // the binary was excluded via //go:build ignore. Run from repo root:
 //
-//   DATABASE_URL=... go run ./cmd/migrate                  # apply all pending
-//   DATABASE_URL=... go run ./cmd/migrate -dry-run        # status only
-//   DATABASE_URL=... go run ./cmd/migrate -rollback       # roll back last
-//   EXPECTED_MIGRATION_CEILING=050 DATABASE_URL=... \
-//     go run ./cmd/migrate -exact-version 050             # apply only 050
+//   MIGRATION_DATABASE_URL=... go run ./cmd/migrate       # preferred on stage/prod (direct)
+//   DATABASE_URL=... go run ./cmd/migrate                 # local fallback if direct
+//   ... go run ./cmd/migrate -dry-run
+//   ... go run ./cmd/migrate -rollback
+//   EXPECTED_MIGRATION_CEILING=050 MIGRATION_DATABASE_URL=... \
+//     go run ./cmd/migrate -exact-version 050
 //
-// In production the binary is intended to be invoked as a one-shot step
-// in the deployment pipeline, not at server boot. See
-// docs/security/MIGRATION-NOTES.md for the operational model.
+// Stage/production require MIGRATION_DATABASE_URL (direct/unpooled). Pooler
+// hosts are rejected. Advisory lock wait is bounded (default 30s).
+// See docs/security/MIGRATION-NOTES.md and ADR 0003.
 
 package main
 
@@ -32,7 +33,56 @@ import (
 )
 
 var version = "dev"
-var artifactMigrationCeiling = "060"
+
+var artifactMigrationReleaseSequence = []string{"063"}
+
+type migrationDescriptor struct {
+	version          string
+	predecessor      string
+	exactDeploy      bool
+	artifactCeiling  bool
+	newMigrationFunc func() migration.Migration
+}
+
+var migrationRegistry = []migrationDescriptor{
+	{version: "001", newMigrationFunc: func() migration.Migration { return &migrations.CreateUsersTable{} }},
+	{version: "002", newMigrationFunc: func() migration.Migration { return &migrations.CreateLendingPositionsTable{} }},
+	{version: "003", newMigrationFunc: func() migration.Migration { return &migrations.CreateWithdrawalTables{} }},
+	{version: "004", newMigrationFunc: func() migration.Migration { return &migrations.AddTwoFactorColumnsMigration{} }},
+	{version: "005", newMigrationFunc: func() migration.Migration { return &migrations.AddTwoFactorTimestampMigration{} }},
+	{version: "007", newMigrationFunc: func() migration.Migration { return &migrations.UpdateWalletRequestsTable{} }},
+	{version: "008", newMigrationFunc: func() migration.Migration { return &migrations.CreateUserWalletsTable{} }},
+	{version: "009", newMigrationFunc: func() migration.Migration { return &migrations.AddUserWalletStatusField{} }},
+	{version: "010", newMigrationFunc: func() migration.Migration { return &migrations.AddIsPrimaryToWhitelist{} }},
+	{version: "011", newMigrationFunc: func() migration.Migration { return &migrations.CreateDepositsTable{} }},
+	{version: "012", newMigrationFunc: func() migration.Migration { return &migrations.AddUserStatus{} }},
+	{version: "013", newMigrationFunc: func() migration.Migration { return &migrations.AddFrozenUntilToWhitelist{} }},
+	{version: "014", newMigrationFunc: func() migration.Migration { return &migrations.AddEmailVerifiedStatusAndContactFields{} }},
+	{version: "015", newMigrationFunc: func() migration.Migration { return &migrations.SafeheronPhase1{} }},
+	{version: "016", newMigrationFunc: func() migration.Migration { return &migrations.AccountFrozenBalanceDefault{} }},
+	{version: "046", newMigrationFunc: func() migration.Migration { return &migrations.AddPendingStatusAndActivationFields{} }},
+	{version: "047", newMigrationFunc: func() migration.Migration { return &migrations.NormalizeAmountTypes{} }},
+	{version: "048", newMigrationFunc: func() migration.Migration { return &migrations.AddMissingForeignKeys{} }},
+	{version: "049", newMigrationFunc: func() migration.Migration { return &migrations.CreateFundReports{} }},
+	{version: "050", predecessor: "049", exactDeploy: true, newMigrationFunc: func() migration.Migration { return &migrations.CreateCompanyFundLedger{} }},
+	{version: "051", predecessor: "050", exactDeploy: true, newMigrationFunc: func() migration.Migration { return &migrations.WidenAmountPrecision{} }},
+	{version: "052", predecessor: "051", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.ExpandCompanyFundOccurrenceAndManualValuation{} }},
+	{version: "053", predecessor: "052", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.EnforceSafeheronOccurrence{} }},
+	{version: "054", predecessor: "053", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AllowManualCompanyFundTransactions{} }},
+	{version: "055", predecessor: "054", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AddCounterpartyNameOverride{} }},
+	{version: "056", predecessor: "055", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.UnifySafeheronAddressOwnership{} }},
+	{version: "057", predecessor: "056", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.CreateSafeheronRoutingCases{} }},
+	{version: "058", predecessor: "057", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.ScopeSafeheronProviderEventsByOccurrence{} }},
+	{version: "059", predecessor: "058", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AllowOtherCompanyFundAccounts{} }},
+	{version: "060", predecessor: "059", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AddManualTransactionVoidColumns{} }},
+	{version: "061", predecessor: "060", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.CreateWithdrawalsTable{} }},
+	{version: "062", predecessor: "061", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration { return &migrations.AddAirwallexPhase2Ledger{} }},
+	{version: "063", predecessor: "062", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddAirwallexAccountLifecycle{
+			LegacyMappingJSON: os.Getenv("AIRWALLEX_LEGACY_LIFECYCLE_MAPPING_JSON"),
+		}
+	}},
+}
 
 const controlledCommitOutcomeIndeterminateExitCode = 75
 
@@ -45,8 +95,18 @@ func main() {
 	rollback := flag.Bool("rollback", false, "Roll back the most recently applied migration instead of applying pending ones")
 	printCeiling := flag.Bool("print-ceiling", false, "Print the highest registered migration version and exit")
 	printVersions := flag.Bool("print-versions", false, "Print the complete registered migration version list as JSON and exit")
+	printReleaseSequence := flag.Bool("print-release-sequence", false, "Print the ordered exact migrations required by this release, one per line, and exit")
 	exactVersion := flag.String("exact-version", "", "Register and run exactly one approved production migration")
 	flag.Parse()
+	if *printReleaseSequence {
+		if _, err := validateArtifactMigrationReleaseSequence(artifactMigrationReleaseSequence); err != nil {
+			log.Fatal("Invalid artifact migration release sequence:", err)
+		}
+		for _, releaseVersion := range artifactMigrationReleaseSequence {
+			fmt.Fprintln(os.Stdout, releaseVersion)
+		}
+		return
+	}
 	if *printVersions {
 		m := migration.NewMigrator(nil)
 		if err := registerSelectedMigrations(m, *exactVersion); err != nil {
@@ -71,14 +131,22 @@ func main() {
 		log.Fatal("Invalid migration selection:", err)
 	}
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is required")
+	dbURL, err := migration.ResolveMigrationDSN(migration.ResolveMigrationDSNInput{
+		AppEnv:               os.Getenv("APP_ENV"),
+		MigrationDatabaseURL: os.Getenv("MIGRATION_DATABASE_URL"),
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+	})
+	if err != nil {
+		log.Fatal("Migration database URL:", err)
+	}
+	lockTimeout, err := migration.ParseAdvisoryLockTimeout(os.Getenv("MIGRATION_ADVISORY_LOCK_TIMEOUT"))
+	if err != nil {
+		log.Fatal("Migration lock timeout:", err)
 	}
 
 	provenanceURL, err := buildinfo.DatabaseURL(dbURL, version, os.Getenv("INVOCATION_ID"))
 	if err != nil {
-		log.Fatal("Invalid DATABASE_URL:", err)
+		log.Fatal("Invalid migration database URL:", err)
 	}
 	db, err := sql.Open("pgx", provenanceURL)
 	if err != nil {
@@ -87,6 +155,9 @@ func main() {
 	defer db.Close()
 
 	m := migration.NewMigrator(db)
+	if err := m.SetAdvisoryLockTimeout(lockTimeout); err != nil {
+		log.Fatal("Set advisory lock timeout:", err)
+	}
 	// Register in version order. Order matters: each migration is
 	// recorded in the `migrations` tracking table with its version, and
 	// the runner refuses to re-apply an already-recorded version.
@@ -134,24 +205,11 @@ func validateExactMigrationOptions(exactVersion, expectedCeiling string, rollbac
 	if expectedCeiling != exactVersion {
 		return "", fmt.Errorf("exact-version %s requires EXPECTED_MIGRATION_CEILING=%s", exactVersion, exactVersion)
 	}
-	predecessors := map[string]string{
-		"050": "049",
-		"051": "050",
-		"052": "051",
-		"053": "052",
-		"054": "053",
-		"055": "054",
-		"056": "055",
-		"057": "056",
-		"058": "057",
-		"059": "058",
-		"060": "059",
-	}
-	predecessor, ok := predecessors[exactVersion]
-	if !ok {
+	descriptor, ok := migrationDescriptorForVersion(exactVersion)
+	if !ok || !descriptor.exactDeploy {
 		return "", fmt.Errorf("unsupported exact migration version %q", exactVersion)
 	}
-	return predecessor, nil
+	return descriptor.predecessor, nil
 }
 
 func requireAppliedMigration(db *sql.DB, version string) error {
@@ -172,66 +230,61 @@ func migrationFailureExitCode(err error) int {
 	return 1
 }
 
-// registerMigrations wires every known Go migration into the runner. Adding
-// a new migration? Append it here AND add the corresponding *.go file under
-// internal/migration/migrations/. The CI guard
-// scripts/check-secrets.sh's migration entrypoint check enforces both
-// pieces exist.
+func artifactMigrationCeiling() string {
+	ceiling, err := validateArtifactMigrationReleaseSequence(artifactMigrationReleaseSequence)
+	if err != nil {
+		panic(err)
+	}
+	return ceiling
+}
+
+func validateArtifactMigrationReleaseSequence(sequence []string) (string, error) {
+	if len(sequence) == 0 {
+		return "", fmt.Errorf("release sequence is empty")
+	}
+	for index, version := range sequence {
+		descriptor, ok := migrationDescriptorForVersion(version)
+		if !ok {
+			return "", fmt.Errorf("release sequence contains unknown migration %q", version)
+		}
+		if !descriptor.exactDeploy {
+			return "", fmt.Errorf("release sequence migration %q is not exact-deployable", version)
+		}
+		if index > 0 && descriptor.predecessor != sequence[index-1] {
+			return "", fmt.Errorf(
+				"release sequence migration %q requires predecessor %q, not %q",
+				version,
+				descriptor.predecessor,
+				sequence[index-1],
+			)
+		}
+	}
+	ceiling := sequence[len(sequence)-1]
+	descriptor, _ := migrationDescriptorForVersion(ceiling)
+	if !descriptor.artifactCeiling {
+		return "", fmt.Errorf("release sequence ceiling %q is not an artifact ceiling", ceiling)
+	}
+	return ceiling, nil
+}
+
+// registerMigrations selects the current artifact ceiling from migrationRegistry.
+// The CI guard compares that registry with the Go migration implementations.
 func registerMigrations(m *migration.Migrator) {
-	if err := registerMigrationsForArtifact(m, artifactMigrationCeiling); err != nil {
+	if err := registerMigrationsForArtifact(m, artifactMigrationCeiling()); err != nil {
 		panic(err)
 	}
 }
 
 func registerMigrationsForArtifact(m *migration.Migrator, ceiling string) error {
-	if ceiling != "052" && ceiling != "053" && ceiling != "054" && ceiling != "055" && ceiling != "056" && ceiling != "057" && ceiling != "058" && ceiling != "059" && ceiling != "060" {
+	ceilingDescriptor, ok := migrationDescriptorForVersion(ceiling)
+	if !ok || !ceilingDescriptor.artifactCeiling {
 		return fmt.Errorf("unsupported compiled migration ceiling %q", ceiling)
 	}
-	m.Register(&migrations.CreateUsersTable{})
-	m.Register(&migrations.CreateLendingPositionsTable{})
-	m.Register(&migrations.CreateWithdrawalTables{})
-	m.Register(&migrations.AddTwoFactorColumnsMigration{})
-	m.Register(&migrations.AddTwoFactorTimestampMigration{})
-	m.Register(&migrations.UpdateWalletRequestsTable{})
-	m.Register(&migrations.CreateUserWalletsTable{})
-	m.Register(&migrations.AddUserWalletStatusField{})
-	m.Register(&migrations.AddIsPrimaryToWhitelist{})
-	m.Register(&migrations.CreateDepositsTable{})
-	m.Register(&migrations.AddUserStatus{})
-	m.Register(&migrations.AddFrozenUntilToWhitelist{})
-	m.Register(&migrations.AddEmailVerifiedStatusAndContactFields{})
-	m.Register(&migrations.SafeheronPhase1{})
-	m.Register(&migrations.AccountFrozenBalanceDefault{})
-	m.Register(&migrations.AddPendingStatusAndActivationFields{})
-	m.Register(&migrations.NormalizeAmountTypes{})
-	m.Register(&migrations.AddMissingForeignKeys{})
-	m.Register(&migrations.CreateFundReports{})
-	m.Register(&migrations.CreateCompanyFundLedger{})
-	m.Register(&migrations.WidenAmountPrecision{})
-	m.Register(&migrations.ExpandCompanyFundOccurrenceAndManualValuation{})
-	if ceiling == "053" || ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.EnforceSafeheronOccurrence{})
-	}
-	if ceiling == "054" || ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.AllowManualCompanyFundTransactions{})
-	}
-	if ceiling == "055" || ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.AddCounterpartyNameOverride{})
-	}
-	if ceiling == "056" || ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.UnifySafeheronAddressOwnership{})
-	}
-	if ceiling == "057" || ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.CreateSafeheronRoutingCases{})
-	}
-	if ceiling == "058" || ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.ScopeSafeheronProviderEventsByOccurrence{})
-	}
-	if ceiling == "059" || ceiling == "060" {
-		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
-	}
-	if ceiling == "060" {
-		m.Register(&migrations.AddManualTransactionVoidColumns{})
+	for _, descriptor := range migrationRegistry {
+		if descriptor.version > ceiling {
+			break
+		}
+		m.Register(descriptor.newMigrationFunc())
 	}
 	return nil
 }
@@ -241,33 +294,21 @@ func registerSelectedMigrations(m *migration.Migrator, exactVersion string) erro
 		registerMigrations(m)
 		return nil
 	}
-	switch exactVersion {
-	case "050":
-		m.Register(&migrations.CreateCompanyFundLedger{})
-	case "051":
-		m.Register(&migrations.WidenAmountPrecision{})
-	case "052":
-		m.Register(&migrations.ExpandCompanyFundOccurrenceAndManualValuation{})
-	case "053":
-		m.Register(&migrations.EnforceSafeheronOccurrence{})
-	case "054":
-		m.Register(&migrations.AllowManualCompanyFundTransactions{})
-	case "055":
-		m.Register(&migrations.AddCounterpartyNameOverride{})
-	case "056":
-		m.Register(&migrations.UnifySafeheronAddressOwnership{})
-	case "057":
-		m.Register(&migrations.CreateSafeheronRoutingCases{})
-	case "058":
-		m.Register(&migrations.ScopeSafeheronProviderEventsByOccurrence{})
-	case "059":
-		m.Register(&migrations.AllowOtherCompanyFundAccounts{})
-	case "060":
-		m.Register(&migrations.AddManualTransactionVoidColumns{})
-	default:
+	descriptor, ok := migrationDescriptorForVersion(exactVersion)
+	if !ok || !descriptor.exactDeploy {
 		return fmt.Errorf("unsupported exact migration version %q", exactVersion)
 	}
+	m.Register(descriptor.newMigrationFunc())
 	return nil
+}
+
+func migrationDescriptorForVersion(version string) (migrationDescriptor, bool) {
+	for _, descriptor := range migrationRegistry {
+		if descriptor.version == version {
+			return descriptor, true
+		}
+	}
+	return migrationDescriptor{}, false
 }
 
 func printStatus(status []migration.MigrationStatus) {

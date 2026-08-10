@@ -14,7 +14,7 @@ import (
 type ProviderEventWorker struct {
 	repository  ProviderEventWorkerRepository
 	payloads    ProviderEventPayloadReader
-	normalizers map[Channel]ProviderEventNormalizer
+	normalizers map[TransactionSource]ProviderEventNormalizer
 	config      ProviderEventWorkerConfig
 }
 
@@ -25,7 +25,7 @@ type providerEventDueRepository interface {
 func NewProviderEventWorker(
 	repository ProviderEventWorkerRepository,
 	payloads ProviderEventPayloadReader,
-	normalizers map[Channel]ProviderEventNormalizer,
+	normalizers map[TransactionSource]ProviderEventNormalizer,
 	config ProviderEventWorkerConfig,
 ) (*ProviderEventWorker, error) {
 	if repository == nil {
@@ -41,7 +41,7 @@ func NewProviderEventWorker(
 		return nil, fmt.Errorf("at least one provider event normalizer is required")
 	}
 
-	registered := make(map[Channel]ProviderEventNormalizer, len(normalizers))
+	registered := make(map[TransactionSource]ProviderEventNormalizer, len(normalizers))
 	for channel, normalizer := range normalizers {
 		if !channel.Valid() {
 			return nil, fmt.Errorf("unsupported provider event normalizer channel %q", channel)
@@ -149,6 +149,7 @@ func (worker *ProviderEventWorker) ProcessNext(ctx context.Context) (result Prov
 			movements, processingErr = worker.persistNormalizedProviderFacts(processingContext, *lease, normalized)
 			if processingErr == nil {
 				result.FactCount = len(normalized.Facts)
+				result.TaskCount = len(normalized.DeferredMovements)
 			}
 			for _, movement := range movements {
 				if processingErr != nil {

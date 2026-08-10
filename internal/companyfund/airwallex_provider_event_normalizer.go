@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // AirwallexRegistrySnapshotProvider exposes the current immutable account
@@ -17,11 +18,12 @@ type AirwallexRegistrySnapshotProvider interface {
 
 // AirwallexProviderEventTransactionContext is the intentionally limited
 // provider context available to mapping/relationship/counterparty resolvers.
-// In particular it excludes source_id and raw payload bytes, so those
-// resolvers cannot promote undocumented source_id relationships into movement
-// identity or linkage.
+// SourceReference is available only to an evidence-pinned relationship or
+// counterparty rule; it is never used as movement identity. Raw payload bytes
+// remain excluded.
 type AirwallexProviderEventTransactionContext struct {
 	FinancialTransactionID string
+	SourceReference        string
 	TransactionType        string
 	SourceType             string
 	Currency               string
@@ -31,7 +33,8 @@ type AirwallexProviderEventTransactionContext struct {
 
 // AirwallexProviderEventResolutionInput contains only configured-account and
 // allowlisted Financial Transactions metadata. It never contains nullable
-// webhook account_id/org_id or a source_id cross-resource identity hint.
+// webhook account_id/org_id; SourceReference remains an explicitly bounded
+// provider lookup value rather than a cross-resource movement identity.
 type AirwallexProviderEventResolutionInput struct {
 	ProviderEventID       string
 	ProviderEventRecordID int64
@@ -60,8 +63,27 @@ type AirwallexProviderEventMappingResolver interface {
 // fee/reversal/conversion linkage. The strict normalizer rejects missing links
 // for movement kinds that require them.
 type AirwallexProviderEventRelationshipResolution struct {
+	State        AirwallexProviderEventRelationshipState
 	Relationship AirwallexMovementRelationship
 	Conversion   AirwallexConversionDetails
+	Task         *AirwallexDeferredRelationshipTask
+}
+
+type AirwallexProviderEventRelationshipState string
+
+const (
+	AirwallexProviderEventRelationshipResolved AirwallexProviderEventRelationshipState = "RESOLVED"
+	AirwallexProviderEventRelationshipWaiting  AirwallexProviderEventRelationshipState = "WAITING"
+)
+
+type AirwallexDeferredRelationshipTask struct {
+	Kind              LedgerTaskKind
+	ReferenceType     RelationshipReferenceType
+	ReferenceKey      string
+	GroupKey          string
+	EvidenceReference string
+	PolicyVersion     string
+	RelationshipSLA   time.Duration
 }
 
 type AirwallexProviderEventRelationshipResolver interface {
@@ -75,6 +97,7 @@ type AirwallexProviderEventRelationshipResolver interface {
 type AirwallexProviderEventCounterpartyResolution struct {
 	Counterparty              *AirwallexCounterparty
 	CompanyProviderAccountKey string
+	Fee                       ProviderTransactionFeeInput
 }
 
 type AirwallexProviderEventCounterpartyResolver interface {
@@ -222,6 +245,7 @@ func (normalizer *AirwallexProviderEventNormalizer) NormalizeProviderEvent(
 		ConfiguredAccount:          configuredAccount,
 		Counterparty:               cloneAirwallexProviderEventCounterparty(counterparty.Counterparty),
 		CounterpartyCompanyAccount: counterpartyAccount,
+		ProviderFee:                cloneProviderTransactionFeeInput(counterparty.Fee),
 		ConfiguredAccountSide:      mapping.ConfiguredAccountSide,
 		AssetPolicy:                assetPolicy,
 		Source: AirwallexFinancialTransactionSourceMetadata{
@@ -235,7 +259,16 @@ func (normalizer *AirwallexProviderEventNormalizer) NormalizeProviderEvent(
 		Conversion:           relationship.Conversion,
 		FinancialTransaction: transaction,
 	})
-	return result.ProviderEventNormalization()
+	if relationship.State == "" {
+		relationship.State = AirwallexProviderEventRelationshipResolved
+	}
+	if relationship.State == AirwallexProviderEventRelationshipResolved {
+		return result.ProviderEventNormalization()
+	}
+	if relationship.State != AirwallexProviderEventRelationshipWaiting || relationship.Task == nil {
+		return ProviderEventNormalizationResult{}, airwallexPermanentNormalizationError("invalid Airwallex relationship resolution state")
+	}
+	return result.DeferredProviderEventNormalization(*relationship.Task)
 }
 
 func validateAirwallexProviderEventLease(lease ProviderEventLease) error {
@@ -267,6 +300,7 @@ func airwallexProviderEventResolutionInput(lease ProviderEventLease, account Com
 		Registry:              registry,
 		Transaction: AirwallexProviderEventTransactionContext{
 			FinancialTransactionID: strings.TrimSpace(transaction.ProviderID),
+			SourceReference:        strings.TrimSpace(transaction.SourceID),
 			TransactionType:        strings.TrimSpace(transaction.TransactionType),
 			SourceType:             strings.TrimSpace(transaction.SourceType),
 			Currency:               strings.TrimSpace(transaction.Currency),
@@ -306,8 +340,27 @@ func cloneAirwallexProviderEventCounterparty(source *AirwallexCounterparty) *Air
 	return &copy
 }
 
+func cloneProviderTransactionFeeInput(source ProviderTransactionFeeInput) ProviderTransactionFeeInput {
+	return ProviderTransactionFeeInput{
+		Amount:      copyTransactionSupplementDecimal(source.Amount),
+		Currency:    copyAirwallexString(source.Currency),
+		DetailsJSON: append([]byte(nil), source.DetailsJSON...),
+	}
+}
+
+func copyAirwallexString(source *string) *string {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
+}
+
 func airwallexProviderEventResolverError(err error, safeReason string) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if errors.Is(err, ErrAirwallexTransferDetailsTemporary) {
 		return err
 	}
 	return airwallexPermanentNormalizationError(safeReason)

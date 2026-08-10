@@ -115,7 +115,7 @@ const finalizeCompanyFundSyncRunSQL = `
 UPDATE company_fund_sync_runs
 SET status = $3,
 	completed_at = NOW(),
-	next_attempt_at = $4,
+	next_attempt_at = $4::timestamptz,
 	lease_owner = NULL,
 	lease_expires_at = NULL,
 	last_error = $5,
@@ -124,7 +124,7 @@ WHERE id = $1
 	AND status = 'LEASED'
 	AND lease_owner = $2
 	AND lease_expires_at > NOW()
-	AND ($3 NOT IN ('FAILED', 'PARTIAL') OR ($4 IS NOT NULL AND $4 > NOW()))
+	AND ($3 NOT IN ('FAILED', 'PARTIAL') OR ($4::timestamptz IS NOT NULL AND $4::timestamptz > NOW()))
 RETURNING id`
 
 // CreateCompanyFundSyncRun creates one independently idempotent reconciliation
@@ -397,7 +397,7 @@ func scanCompanyFundSyncRun(row *sql.Row) (CompanyFundSyncRun, error) {
 	if err != nil {
 		return CompanyFundSyncRun{}, fmt.Errorf("scan company-fund sync-run checkpoint: %w", err)
 	}
-	run.Channel = Channel(channel)
+	run.Channel = TransactionSource(channel)
 	run.Status = CompanyFundSyncRunStatus(status)
 	run.Checkpoint = checkpoint
 	if leaseOwner.Valid {

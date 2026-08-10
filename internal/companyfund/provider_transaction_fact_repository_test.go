@@ -25,6 +25,7 @@ func TestInsertProviderTransactionFact_PersistsExactDecimals(t *testing.T) {
 			input.Channel,
 			input.ProviderAccountKey,
 			input.ProviderTransactionID,
+			input.ProviderSourceReference,
 			nil,
 			input.FactIdentityKey,
 			input.FactVersion,
@@ -221,7 +222,7 @@ func TestInsertProviderTransactionFact_RejectsInvalidInputBeforeDatabaseUse(t *t
 func TestInsertProviderTransactionFact_RejectsSourceEventChannelOrDigestMismatch(t *testing.T) {
 	for _, testCase := range []struct {
 		name         string
-		eventChannel Channel
+		eventChannel TransactionSource
 		eventDigest  string
 	}{
 		{name: "channel", eventChannel: ChannelAirwallex},
@@ -271,31 +272,33 @@ func newProviderTransactionFactInput() ProviderTransactionFactInput {
 	buyAmount := decimal.RequireFromString("1.234567890123456789")
 	sellAmount := decimal.RequireFromString("4321.123456789012345678")
 	return ProviderTransactionFactInput{
-		Channel:                ChannelSafeheron,
-		ProviderAccountKey:     "wallet-a",
-		ProviderTransactionID:  "transaction-a",
-		FactIdentityKey:        "safeheron:transaction-a:total",
-		FactVersion:            2,
-		SourceProviderEventID:  41,
-		SourcePayloadDigest:    strings.Repeat("a", 64),
-		ProviderOccurredAt:     &occurredAt,
-		ProviderAmount:         &amount,
-		ProviderCurrency:       "ETH",
-		ProviderReportedUSD:    &providerUSD,
-		ConversionFromCurrency: "ETH",
-		ConversionToCurrency:   "USD",
-		ConversionRate:         &conversionRate,
-		ConversionBuyAmount:    &buyAmount,
-		ConversionSellAmount:   &sellAmount,
-		ValueScope:             ProviderValueScopeTransactionTotal,
-		AllocationState:        ProviderFactAllocationStateUnproven,
-		ProviderExtrasJSON:     []byte(`{"provider":"safeheron","kind":"batch","sequence":9007199254740993,"unit":1.234567890123456789}`),
+		Channel:                 ChannelSafeheron,
+		ProviderAccountKey:      "wallet-a",
+		ProviderTransactionID:   "transaction-a",
+		ProviderSourceReference: "source-reference-a",
+		FactIdentityKey:         "safeheron:transaction-a:total",
+		FactVersion:             2,
+		SourceProviderEventID:   41,
+		SourcePayloadDigest:     strings.Repeat("a", 64),
+		ProviderOccurredAt:      &occurredAt,
+		ProviderAmount:          &amount,
+		ProviderCurrency:        "ETH",
+		ProviderReportedUSD:     &providerUSD,
+		ConversionFromCurrency:  "ETH",
+		ConversionToCurrency:    "USD",
+		ConversionRate:          &conversionRate,
+		ConversionBuyAmount:     &buyAmount,
+		ConversionSellAmount:    &sellAmount,
+		ValueScope:              ProviderValueScopeTransactionTotal,
+		AllocationState:         ProviderFactAllocationStateUnproven,
+		ProviderExtrasJSON:      []byte(`{"provider":"safeheron","kind":"batch","sequence":9007199254740993,"unit":1.234567890123456789}`),
 	}
 }
 
 func providerTransactionFactColumnNames() []string {
 	return []string{
 		"id", "channel", "provider_account_key", "provider_transaction_id", "provider_group_id",
+		"provider_source_reference",
 		"fact_identity_key", "fact_version", "source_provider_event_id", "source_payload_digest",
 		"provider_occurred_at", "provider_amount", "provider_currency", "provider_reported_usd_value",
 		"conversion_from_currency", "conversion_to_currency", "conversion_rate", "conversion_buy_amount",
@@ -306,7 +309,7 @@ func providerTransactionFactColumnNames() []string {
 
 func providerTransactionFactRows(id int64, input ProviderTransactionFactInput) *sqlmock.Rows {
 	return sqlmock.NewRows(providerTransactionFactColumnNames()).AddRow(
-		id, input.Channel, input.ProviderAccountKey, input.ProviderTransactionID, nil,
+		id, input.Channel, input.ProviderAccountKey, input.ProviderTransactionID, nil, input.ProviderSourceReference,
 		input.FactIdentityKey, input.FactVersion, input.SourceProviderEventID, input.SourcePayloadDigest,
 		*input.ProviderOccurredAt, input.ProviderAmount.String(), input.ProviderCurrency, input.ProviderReportedUSD.String(),
 		input.ConversionFromCurrency, input.ConversionToCurrency, input.ConversionRate.String(), input.ConversionBuyAmount.String(),

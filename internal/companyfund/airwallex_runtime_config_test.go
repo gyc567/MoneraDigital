@@ -3,9 +3,12 @@ package companyfund
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 func TestAirwallexFinancialTransactionsRuntimeBundle_DisabledConfigurationIsExplicit(t *testing.T) {
@@ -129,6 +132,231 @@ func TestAirwallexFinancialTransactionsRuntimeBundle_MapsOnlyApprovedExternalSna
 	second, err := bundle.Resolvers.ResolveAirwallexProviderEventCounterparty(context.Background(), resolution, AirwallexProviderEventMapping{})
 	if err != nil || second.Counterparty == nil || second.Counterparty.Name != "Approved manual payer" {
 		t.Fatalf("runtime resolver leaked mutable counterparty state: %#v, %v", second, err)
+	}
+}
+
+func TestAirwallexFinancialTransactionsRuntimeBundle_ResolvesPayoutBeneficiaryFromTransferAPI(t *testing.T) {
+	registry := &airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)}
+	config := testAirwallexRuntimePayoutConfig()
+	feeAmount := decimal.RequireFromString("15.58")
+	feeCurrency := "USD"
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{
+			beneficiary: AirwallexTransferBeneficiary{
+				AddressOrAccount: "1234567890",
+				Name:             "Ada Recipient",
+			},
+			fee: ProviderTransactionFeeInput{
+				Amount:   &feeAmount,
+				Currency: &feeCurrency,
+				DetailsJSON: []byte(
+					`{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`,
+				),
+			},
+		},
+	}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		config,
+		registry,
+		factory,
+	)
+	if err != nil {
+		t.Fatalf("NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient() error = %v", err)
+	}
+
+	payload := []byte(`{"id":"ft_payout_1","amount":-19.75,"fee":0,"net":-19.75,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_1","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	result, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	)
+	if err != nil {
+		t.Fatalf("NormalizeProviderEvent() error = %v", err)
+	}
+	if len(result.Movements) != 1 {
+		t.Fatalf("movement count = %d, want 1", len(result.Movements))
+	}
+	movement := result.Movements[0]
+	if movement.ProviderDisplay.To.AddressOrAccount == nil ||
+		*movement.ProviderDisplay.To.AddressOrAccount != "1234567890" ||
+		movement.ProviderDisplay.PayeeName == nil ||
+		*movement.ProviderDisplay.PayeeName != "Ada Recipient" {
+		t.Fatalf("payout counterparty display = %#v", movement.ProviderDisplay)
+	}
+	if movement.ProviderDisplay.Fee.Amount == nil ||
+		!movement.ProviderDisplay.Fee.Amount.Equal(decimal.RequireFromString("15.58")) ||
+		movement.ProviderDisplay.Fee.Currency == nil ||
+		*movement.ProviderDisplay.Fee.Currency != "USD" {
+		t.Fatalf("payout fee display = %#v", movement.ProviderDisplay.Fee)
+	}
+	const wantFeeDetails = `{"amountBeneficiaryReceives":984.42,"amountPayerPays":1000,"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY","swiftChargeOption":"SHARED"}`
+	if string(movement.ProviderDisplay.Fee.DetailsJSON) != wantFeeDetails {
+		t.Fatalf("payout fee details = %s, want %s", movement.ProviderDisplay.Fee.DetailsJSON, wantFeeDetails)
+	}
+	if factory.scope != "awx-usd" || factory.client.transferID != "transfer_1" {
+		t.Fatalf("resolver scope=%q transfer=%q, want awx-usd/transfer_1", factory.scope, factory.client.transferID)
+	}
+	secondPayload := []byte(`{"id":"ft_payout_2","amount":-5,"fee":0,"net":-5,"created_at":"2026-07-10T03:01:00Z","currency":"USD","source_id":"transfer_2","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	if _, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		secondPayload,
+	); err != nil {
+		t.Fatalf("second NormalizeProviderEvent() error = %v", err)
+	}
+	if factory.calls != 1 {
+		t.Fatalf("scoped client factory calls = %d, want one cached client", factory.calls)
+	}
+}
+
+func TestAirwallexFinancialTransactionsRuntimeBundle_PreservesManualPayoutCounterpartyWhileEnrichingFee(t *testing.T) {
+	config := testAirwallexRuntimePayoutConfig()
+	config.Rules[0].Counterparty = &AirwallexRuntimeManualCounterparty{
+		EvidenceReference: "finance-approved-payout-counterparty",
+		AddressOrAccount:  "manual-account",
+		Name:              "Manual recipient",
+	}
+	feeAmount := decimal.RequireFromString("15.58")
+	feeCurrency := "USD"
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{
+			beneficiary: AirwallexTransferBeneficiary{
+				AddressOrAccount: "provider-account",
+				Name:             "Provider recipient",
+			},
+			fee: ProviderTransactionFeeInput{
+				Amount:   &feeAmount,
+				Currency: &feeCurrency,
+				DetailsJSON: []byte(
+					`{"enrichmentSource":"AIRWALLEX_TRANSFER_API","feePaidBy":"BENEFICIARY"}`,
+				),
+			},
+		},
+	}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		config,
+		&airwallexProviderEventRegistryStub{
+			snapshot: testAirwallexProviderEventRegistrySnapshot(t, true),
+		},
+		factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"id":"ft_payout_manual","amount":-1000,"fee":0,"net":-1000,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_manual","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	result, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	)
+	if err != nil || len(result.Movements) != 1 {
+		t.Fatalf("NormalizeProviderEvent() = %#v, %v", result, err)
+	}
+	display := result.Movements[0].ProviderDisplay
+	if display.To.AddressOrAccount == nil || *display.To.AddressOrAccount != "manual-account" ||
+		display.PayeeName == nil || *display.PayeeName != "Manual recipient" {
+		t.Fatalf("manual payout counterparty was overwritten: %#v", display)
+	}
+	if display.Fee.Amount == nil || !display.Fee.Amount.Equal(feeAmount) ||
+		display.Fee.Currency == nil || *display.Fee.Currency != feeCurrency {
+		t.Fatalf("manual payout fee display = %#v", display.Fee)
+	}
+	if factory.calls != 1 || factory.client.transferID != "transfer_manual" {
+		t.Fatalf("Transfer API calls=%d id=%q, want one transfer_manual", factory.calls, factory.client.transferID)
+	}
+}
+
+func TestAirwallexFinancialTransactionsRuntimeBundle_DoesNotFetchBeneficiaryForTerminalPayoutRule(t *testing.T) {
+	config := testAirwallexRuntimePayoutConfig()
+	config.Rules[0].Classification.Action = AirwallexFinancialTransactionActionQuarantine
+	config.Rules[0].Classification.Reason = "terminal payout fixture"
+	config.Rules[0].Classification.MovementKind = ""
+	config.Rules[0].Classification.Direction = ""
+	config.Rules[0].Classification.TransferMode = ""
+	config.Rules[0].Classification.AmountField = ""
+	config.Rules[0].Classification.ExpectedSign = ""
+	config.Rules[0].Classification.OccurredAtField = ""
+	factory := &airwallexTransferDetailsFactoryStub{
+		client: &airwallexTransferDetailsClientStub{},
+	}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		config,
+		&airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)},
+		factory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"id":"ft_payout_terminal","amount":-1,"fee":0,"net":-1,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_terminal","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	if _, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	); !errors.Is(err, ErrProviderEventPermanent) {
+		t.Fatalf("terminal payout error = %v, want permanent quarantine", err)
+	}
+	if factory.calls != 0 {
+		t.Fatalf("terminal payout beneficiary factory calls = %d, want 0", factory.calls)
+	}
+}
+
+func TestAirwallexFinancialTransactionsRuntimeBundle_RetriesOnlyTemporaryTransferDetailsFailures(t *testing.T) {
+	client := &airwallexTransferDetailsClientStub{err: ErrAirwallexNetwork}
+	bundle, err := NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		testAirwallexRuntimePayoutConfig(),
+		&airwallexProviderEventRegistryStub{snapshot: testAirwallexProviderEventRegistrySnapshot(t, true)},
+		&airwallexTransferDetailsFactoryStub{client: client},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"id":"ft_payout_error","amount":-1,"fee":0,"net":-1,"created_at":"2026-07-10T03:00:00Z","currency":"USD","source_id":"transfer_error","source_type":"PAYOUT","status":"SETTLED","transaction_type":"PAYOUT"}`)
+	if _, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	); !errors.Is(err, ErrAirwallexTransferDetailsTemporary) ||
+		errors.Is(err, ErrProviderEventPermanent) {
+		t.Fatalf("network beneficiary error = %v, want temporary provider failure", err)
+	}
+
+	client.err = &AirwallexHTTPError{StatusCode: 404}
+	if _, err := bundle.ProviderEvents.NormalizeProviderEvent(
+		context.Background(),
+		testAirwallexFinancialTransactionProviderEventLease("awx-usd"),
+		payload,
+	); !errors.Is(err, ErrProviderEventPermanent) {
+		t.Fatalf("404 beneficiary error = %v, want permanent failure", err)
+	}
+}
+
+func TestAirwallexTransferDetailsErrorIsTemporary(t *testing.T) {
+	testCases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "network", err: ErrAirwallexNetwork, want: true},
+		{name: "server classification", err: ErrAirwallexServerResponse, want: true},
+		{name: "response read", err: ErrAirwallexResponseRead, want: true},
+		{name: "request timeout", err: &AirwallexHTTPError{StatusCode: http.StatusRequestTimeout}, want: true},
+		{name: "conflict", err: &AirwallexHTTPError{StatusCode: http.StatusConflict}, want: true},
+		{name: "too early", err: &AirwallexHTTPError{StatusCode: http.StatusTooEarly}, want: true},
+		{name: "rate limited", err: &AirwallexHTTPError{StatusCode: http.StatusTooManyRequests}, want: true},
+		{name: "server status", err: &AirwallexHTTPError{StatusCode: http.StatusBadGateway}, want: true},
+		{name: "unauthorized", err: &AirwallexHTTPError{StatusCode: http.StatusUnauthorized}},
+		{name: "forbidden", err: &AirwallexHTTPError{StatusCode: http.StatusForbidden}},
+		{name: "not found", err: &AirwallexHTTPError{StatusCode: http.StatusNotFound}},
+		{name: "malformed response", err: ErrAirwallexMalformedResponse},
+		{name: "response too large", err: ErrAirwallexResponseTooLarge},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := airwallexTransferDetailsErrorIsTemporary(testCase.err); got != testCase.want {
+				t.Fatalf("airwallexTransferDetailsErrorIsTemporary(%v) = %t, want %t",
+					testCase.err, got, testCase.want)
+			}
+		})
 	}
 }
 
@@ -325,6 +553,67 @@ func testAirwallexRuntimeExternalConfig() AirwallexFinancialTransactionsRuntimeC
 			},
 		}},
 	}
+}
+
+func testAirwallexRuntimePayoutConfig() AirwallexFinancialTransactionsRuntimeConfig {
+	return AirwallexFinancialTransactionsRuntimeConfig{
+		Enabled:        true,
+		APIVersion:     airwallexTestAPIVersion,
+		SchemaVersion:  "schema-v1",
+		EventVersion:   "event-v1",
+		MappingVersion: "mapping-v1",
+		FactVersion:    1,
+		Rules: []AirwallexFinancialTransactionsRuntimeRule{{
+			EvidenceReference:  "sandbox-approved-payout-fixture",
+			ProviderAccountKey: "awx-usd",
+			Currency:           "USD",
+			Status:             "SETTLED",
+			Classification: AirwallexFinancialTransactionClassification{
+				TransactionType: "PAYOUT",
+				SourceType:      "PAYOUT",
+				Action:          AirwallexFinancialTransactionActionApply,
+				MovementKind:    MovementKindPrincipal,
+				Direction:       DirectionOutflow,
+				TransferMode:    TransferModeSingle,
+				AmountField:     AirwallexFinancialAmountFieldAmount,
+				ExpectedSign:    AirwallexFinancialValueSignNegative,
+				OccurredAtField: AirwallexFinancialOccurredAtCreated,
+			},
+		}},
+	}
+}
+
+type airwallexTransferDetailsFactoryStub struct {
+	scope  string
+	client *airwallexTransferDetailsClientStub
+	err    error
+	calls  int
+}
+
+func (stub *airwallexTransferDetailsFactoryStub) AirwallexTransferDetailsClientForScope(
+	providerAccountKey string,
+) (AirwallexTransferDetailsClient, error) {
+	stub.scope = providerAccountKey
+	stub.calls++
+	return stub.client, stub.err
+}
+
+type airwallexTransferDetailsClientStub struct {
+	transferID  string
+	beneficiary AirwallexTransferBeneficiary
+	fee         ProviderTransactionFeeInput
+	err         error
+}
+
+func (stub *airwallexTransferDetailsClientStub) GetTransferDetails(
+	_ context.Context,
+	transferID string,
+) (AirwallexTransferDetails, error) {
+	stub.transferID = transferID
+	return AirwallexTransferDetails{
+		Beneficiary: stub.beneficiary,
+		Fee:         cloneProviderTransactionFeeInput(stub.fee),
+	}, stub.err
 }
 
 func cloneAirwallexRuntimeConfig(source AirwallexFinancialTransactionsRuntimeConfig) AirwallexFinancialTransactionsRuntimeConfig {

@@ -19,6 +19,8 @@ const (
 	defaultCompanyFundEventPollInterval             = time.Second
 	defaultCompanyFundEventMaxIdleInterval          = 10 * time.Minute
 	defaultCompanyFundEventDrainLimit               = 100
+	defaultCompanyFundAccountLifecyclePollInterval  = time.Second
+	defaultCompanyFundAccountLifecycleMaxIdle       = 10 * time.Minute
 	maxCompanyFundEventDrainLimit                   = 10_000
 	defaultCompanyFundReconciliationPollInterval    = time.Minute
 	defaultCompanyFundReconciliationFinalizeTimeout = 10 * time.Second
@@ -30,6 +32,18 @@ const (
 // runtime intentionally sees only its one-item, durable lease boundary.
 type CompanyFundProviderEventProcessor interface {
 	ProcessNext(ctx context.Context) (ProviderEventWorkerResult, error)
+}
+
+type CompanyFundLedgerTaskProcessor interface {
+	ProcessNext(ctx context.Context) (LedgerTaskProcessResult, error)
+}
+
+type companyFundLedgerTaskMaintainer interface {
+	Maintain(ctx context.Context) (bool, error)
+}
+
+type companyFundLedgerTaskDueProvider interface {
+	NextCompanyFundLedgerTaskDue(ctx context.Context) (time.Time, error)
 }
 
 type companyFundProviderEventDueProvider interface {
@@ -109,11 +123,13 @@ func (policy CompanyFundReconciliationRetryPolicy) Delay(attempt int) (time.Dura
 // can deploy the REST compensator independently, but any reconciliation path
 // requires the immutable account cache and exact sync-run finalizer.
 type CompanyFundRuntimeDependencies struct {
-	ProviderEventWorker CompanyFundProviderEventProcessor
-	AccountSnapshots    CompanyFundAccountSnapshotProvider
-	SafeheronReconciler CompanyFundSafeheronReconciliationRunner
-	AirwallexReconciler CompanyFundAirwallexReconciliationRunner
-	SyncRunFinalizer    CompanyFundReconciliationRunFinalizer
+	ProviderEventWorker       CompanyFundProviderEventProcessor
+	LedgerTaskProcessor       CompanyFundLedgerTaskProcessor
+	AccountLifecycleProcessor AccountLifecycleCommandProcessor
+	AccountSnapshots          CompanyFundAccountSnapshotProvider
+	SafeheronReconciler       CompanyFundSafeheronReconciliationRunner
+	AirwallexReconciler       CompanyFundAirwallexReconciliationRunner
+	SyncRunFinalizer          CompanyFundReconciliationRunFinalizer
 }
 
 // CompanyFundRuntimeConfig contains process-local scheduling limits only. It
@@ -126,11 +142,13 @@ type CompanyFundRuntimeDependencies struct {
 // EventMaxIdleInterval is the progressive ceiling (default 10m). Durable
 // correctness still comes from PostgreSQL leases and next-attempt state.
 type CompanyFundRuntimeConfig struct {
-	EventPollInterval          time.Duration
-	EventMaxIdleInterval       time.Duration
-	EventDrainLimit            int
-	ReconciliationPollInterval time.Duration
-	ReconciliationSchedule     ReconciliationDailyScheduleConfig
+	EventPollInterval               time.Duration
+	EventMaxIdleInterval            time.Duration
+	EventDrainLimit                 int
+	AccountLifecyclePollInterval    time.Duration
+	AccountLifecycleMaxIdleInterval time.Duration
+	ReconciliationPollInterval      time.Duration
+	ReconciliationSchedule          ReconciliationDailyScheduleConfig
 	// LateStatusOverlapDays defaults to seven unless LateStatusOverlapConfigured
 	// is true. An explicit configured zero disables the independent terminal
 	// status repair pass without changing the primary daily compensation.
@@ -150,6 +168,7 @@ type CompanyFundProviderEventDrainResult struct {
 	Claimed       int
 	FactCount     int
 	MovementCount int
+	TaskCount     int
 	LimitReached  bool
 }
 
@@ -168,13 +187,15 @@ type CompanyFundReconciliationCycleResult struct {
 // CompanyFundRuntime owns the in-process timing only. PostgreSQL sync-run
 // leases remain the authoritative cross-replica coordination and retry state.
 type CompanyFundRuntime struct {
-	dependencies       CompanyFundRuntimeDependencies
-	config             CompanyFundRuntimeConfig
-	schedule           *ReconciliationDailySchedule
-	airwallexContract  AirwallexFinancialTransactionsReconciliationContract
-	airwallexWake      chan struct{}
-	providerEventLoop  *adaptiveschedule.Loop
-	reconciliationLoop *adaptiveschedule.Loop
+	dependencies         CompanyFundRuntimeDependencies
+	config               CompanyFundRuntimeConfig
+	schedule             *ReconciliationDailySchedule
+	airwallexContract    AirwallexFinancialTransactionsReconciliationContract
+	airwallexWake        chan struct{}
+	providerEventLoop    *adaptiveschedule.Loop
+	ledgerTaskLoop       *adaptiveschedule.Loop
+	accountLifecycleLoop *adaptiveschedule.Loop
+	reconciliationLoop   *adaptiveschedule.Loop
 
 	mu        sync.Mutex
 	running   bool
@@ -231,6 +252,30 @@ func NewCompanyFundRuntime(dependencies CompanyFundRuntimeDependencies, config C
 		}
 		runtime.providerEventLoop = loop
 	}
+	if dependencies.LedgerTaskProcessor != nil {
+		loop, err := adaptiveschedule.New(adaptiveschedule.Config{
+			Name:    "company-fund-ledger-task",
+			MinIdle: normalized.EventPollInterval,
+			MaxIdle: normalized.EventMaxIdleInterval,
+			Now:     normalized.Now,
+		}, runtime.ledgerTaskCycle)
+		if err != nil {
+			return nil, fmt.Errorf("company-fund ledger task adaptive schedule: %w", err)
+		}
+		runtime.ledgerTaskLoop = loop
+	}
+	if dependencies.AccountLifecycleProcessor != nil {
+		loop, err := adaptiveschedule.New(adaptiveschedule.Config{
+			Name:    "company-fund-account-lifecycle",
+			MinIdle: normalized.AccountLifecyclePollInterval,
+			MaxIdle: normalized.AccountLifecycleMaxIdleInterval,
+			Now:     normalized.Now,
+		}, runtime.accountLifecycleCycle)
+		if err != nil {
+			return nil, fmt.Errorf("company-fund account lifecycle adaptive schedule: %w", err)
+		}
+		runtime.accountLifecycleLoop = loop
+	}
 	if dependencies.AirwallexReconciler != nil {
 		contract := dependencies.AirwallexReconciler.ReconciliationContract()
 		if err := contract.validate(); err != nil {
@@ -284,6 +329,19 @@ func normalizeCompanyFundRuntimeConfig(config CompanyFundRuntimeConfig) (Company
 	}
 	if config.EventDrainLimit < 1 || config.EventDrainLimit > maxCompanyFundEventDrainLimit {
 		return CompanyFundRuntimeConfig{}, nil, fmt.Errorf("company-fund event drain limit must be between 1 and %d", maxCompanyFundEventDrainLimit)
+	}
+	if config.AccountLifecyclePollInterval == 0 {
+		config.AccountLifecyclePollInterval = defaultCompanyFundAccountLifecyclePollInterval
+	}
+	if config.AccountLifecyclePollInterval <= 0 ||
+		config.AccountLifecyclePollInterval.Microseconds() <= 0 {
+		return CompanyFundRuntimeConfig{}, nil, fmt.Errorf("company-fund account lifecycle poll interval must be positive")
+	}
+	if config.AccountLifecycleMaxIdleInterval == 0 {
+		config.AccountLifecycleMaxIdleInterval = defaultCompanyFundAccountLifecycleMaxIdle
+	}
+	if config.AccountLifecycleMaxIdleInterval < config.AccountLifecyclePollInterval {
+		return CompanyFundRuntimeConfig{}, nil, fmt.Errorf("company-fund account lifecycle max idle must be >= poll interval")
 	}
 	if config.ReconciliationPollInterval == 0 {
 		config.ReconciliationPollInterval = defaultCompanyFundReconciliationPollInterval
@@ -411,6 +469,22 @@ func (runtime *CompanyFundRuntime) Run(ctx context.Context) {
 			runtime.reconciliationLoop.Run(ctx)
 		}()
 	}
+	if runtime.ledgerTaskLoop != nil {
+		loops.Add(1)
+		go func() {
+			defer loops.Done()
+			defer recoverCompanyFundTask("ledger_task")
+			runtime.ledgerTaskLoop.Run(ctx)
+		}()
+	}
+	if runtime.accountLifecycleLoop != nil {
+		loops.Add(1)
+		go func() {
+			defer loops.Done()
+			defer recoverCompanyFundTask("account_lifecycle")
+			runtime.accountLifecycleLoop.Run(ctx)
+		}()
+	}
 	loops.Wait()
 }
 
@@ -425,6 +499,12 @@ func recoverCompanyFundTask(kind string) {
 // EventDrainLimit; MoreWork re-enters immediately when the limit is hit.
 func (runtime *CompanyFundRuntime) providerEventCycle(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
 	result, err := runtime.DrainProviderEvents(ctx)
+	// Deferred relationship tasks and newly persisted movements both wake the
+	// ledger loop. The latter lets group-linked FEE movements receive their
+	// automatic classification promptly without introducing a fixed poll.
+	if (result.TaskCount > 0 || result.MovementCount > 0) && runtime.ledgerTaskLoop != nil {
+		_ = runtime.ledgerTaskLoop.Notify()
+	}
 	outcome := adaptiveschedule.CycleOutcome{
 		Worked:   result.Claimed > 0,
 		MoreWork: result.LimitReached,
@@ -446,6 +526,63 @@ func (runtime *CompanyFundRuntime) providerEventCycle(ctx context.Context) (adap
 		)
 	}
 	return outcome, err
+}
+
+func (runtime *CompanyFundRuntime) ledgerTaskCycle(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
+	worked := false
+	if maintainer, ok := runtime.dependencies.LedgerTaskProcessor.(companyFundLedgerTaskMaintainer); ok {
+		maintained, err := maintainer.Maintain(ctx)
+		if err != nil {
+			return adaptiveschedule.CycleOutcome{}, err
+		}
+		worked = maintained
+	}
+	for attempts := 0; attempts < runtime.config.EventDrainLimit; attempts++ {
+		result, err := runtime.dependencies.LedgerTaskProcessor.ProcessNext(ctx)
+		if err != nil {
+			return adaptiveschedule.CycleOutcome{Worked: worked}, err
+		}
+		if result.Outcome == LedgerTaskProcessIdle {
+			outcome := adaptiveschedule.CycleOutcome{Worked: worked}
+			if dueProvider, ok := runtime.dependencies.LedgerTaskProcessor.(companyFundLedgerTaskDueProvider); ok {
+				due, dueErr := dueProvider.NextCompanyFundLedgerTaskDue(ctx)
+				outcome.NextDue = adaptiveschedule.EarliestDue(outcome.NextDue, due)
+				return outcome, dueErr
+			}
+			return outcome, nil
+		}
+		worked = true
+		if attempts+1 == runtime.config.EventDrainLimit {
+			return adaptiveschedule.CycleOutcome{Worked: true, MoreWork: true}, nil
+		}
+	}
+	return adaptiveschedule.CycleOutcome{Worked: worked}, nil
+}
+
+func (runtime *CompanyFundRuntime) accountLifecycleCycle(
+	ctx context.Context,
+) (adaptiveschedule.CycleOutcome, error) {
+	worked := false
+	for attempts := 0; attempts < runtime.config.EventDrainLimit; attempts++ {
+		result, err := runtime.dependencies.AccountLifecycleProcessor.ProcessNext(ctx)
+		if err != nil {
+			return adaptiveschedule.CycleOutcome{Worked: worked}, err
+		}
+		if result.Outcome == AccountLifecycleProcessIdle {
+			outcome := adaptiveschedule.CycleOutcome{Worked: worked}
+			if dueProvider, ok := runtime.dependencies.AccountLifecycleProcessor.(accountLifecycleCommandDueProvider); ok {
+				due, dueErr := dueProvider.NextAccountLifecycleCommandDue(ctx)
+				outcome.NextDue = adaptiveschedule.EarliestDue(outcome.NextDue, due)
+				return outcome, dueErr
+			}
+			return outcome, nil
+		}
+		worked = true
+		if attempts+1 == runtime.config.EventDrainLimit {
+			return adaptiveschedule.CycleOutcome{Worked: true, MoreWork: true}, nil
+		}
+	}
+	return adaptiveschedule.CycleOutcome{Worked: worked}, nil
 }
 
 // NotifyProviderEvent is the nonblocking callback for a handler or upstream
@@ -599,7 +736,10 @@ func (runtime *CompanyFundRuntime) AirwallexReconciliationEnabled() bool {
 	if runtime == nil || runtime.dependencies.AirwallexReconciler == nil || runtime.dependencies.AccountSnapshots == nil {
 		return false
 	}
-	_, ok := ResolveAirwallexSingleAccountScope(runtime.dependencies.AccountSnapshots.Snapshot(), runtime.airwallexContract.LoginAsScope)
+	_, ok := resolveAirwallexReconciliationAccount(
+		runtime.dependencies.AccountSnapshots.Snapshot(),
+		runtime.airwallexContract.LoginAsScope,
+	)
 	return ok
 }
 
@@ -635,6 +775,7 @@ func (runtime *CompanyFundRuntime) DrainProviderEvents(ctx context.Context) (Com
 			result.Claimed++
 			result.FactCount += workerResult.FactCount
 			result.MovementCount += workerResult.MovementCount
+			result.TaskCount += workerResult.TaskCount
 		}
 		if err != nil {
 			return result, err
@@ -710,7 +851,10 @@ func (runtime *CompanyFundRuntime) reconcileWindows(ctx context.Context, windows
 		return result, err
 	}
 	accounts := snapshot.Accounts()
-	airwallexAccount, airwallexEligible := ResolveAirwallexSingleAccountScope(snapshot, runtime.airwallexContract.LoginAsScope)
+	airwallexAccount, airwallexEligible := resolveAirwallexReconciliationAccount(
+		snapshot,
+		runtime.airwallexContract.LoginAsScope,
+	)
 	var failures []error
 	for _, window := range windows {
 		for _, account := range accounts {
@@ -763,7 +907,10 @@ func (runtime *CompanyFundRuntime) airwallexReconciliationAccount() (CompanyFund
 	if runtime == nil || runtime.dependencies.AirwallexReconciler == nil || runtime.dependencies.AccountSnapshots == nil {
 		return CompanyFundAccount{}, false
 	}
-	return ResolveAirwallexSingleAccountScope(runtime.dependencies.AccountSnapshots.Snapshot(), runtime.airwallexContract.LoginAsScope)
+	return resolveAirwallexReconciliationAccount(
+		runtime.dependencies.AccountSnapshots.Snapshot(),
+		runtime.airwallexContract.LoginAsScope,
+	)
 }
 
 func (runtime *CompanyFundRuntime) reconcileSafeheronWindow(ctx context.Context, account CompanyFundAccount, window CompanyFundReconciliationWindow, result CompanyFundReconciliationCycleResult) (CompanyFundReconciliationCycleResult, error) {
@@ -885,7 +1032,7 @@ func (runtime *CompanyFundRuntime) finalizeAirwallexFailure(ctx context.Context,
 	return result, errors.Join(providerErr, finalizeErr)
 }
 
-func (runtime *CompanyFundRuntime) finalizeReconciliationFailure(parent context.Context, channel Channel, runID int64, attempt int, partial bool) error {
+func (runtime *CompanyFundRuntime) finalizeReconciliationFailure(parent context.Context, channel TransactionSource, runID int64, attempt int, partial bool) error {
 	if attempt <= 0 {
 		attempt = 1
 	}

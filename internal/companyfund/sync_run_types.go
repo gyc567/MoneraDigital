@@ -48,7 +48,7 @@ const (
 // channel/sync-kind/window-key tuple makes every local calendar day
 // independently idempotent across scheduler replicas.
 type CompanyFundSyncRunInput struct {
-	Channel     Channel
+	Channel     TransactionSource
 	SyncKind    string
 	WindowKey   string
 	WindowStart time.Time
@@ -61,7 +61,7 @@ type CompanyFundSyncRunInput struct {
 // are database facts; callers must not derive lease expiry from local time.
 type CompanyFundSyncRun struct {
 	ID                   int64
-	Channel              Channel
+	Channel              TransactionSource
 	SyncKind             string
 	WindowKey            string
 	WindowStart          time.Time
@@ -91,7 +91,7 @@ type CompanyFundSyncRunCreateResult struct {
 // CompanyFundSyncRunClaimScope prevents a channel-specific reconciler from
 // claiming another provider's window when several replicas share one queue.
 type CompanyFundSyncRunClaimScope struct {
-	Channel  Channel
+	Channel  TransactionSource
 	SyncKind string
 }
 
@@ -155,8 +155,15 @@ func (input CompanyFundSyncRunInput) canonical() (CompanyFundSyncRunInput, error
 	if err != nil {
 		return CompanyFundSyncRunInput{}, err
 	}
-	input.WindowStart = input.WindowStart.UTC()
-	input.WindowEnd = input.WindowEnd.UTC()
+	// PostgreSQL timestamptz stores microsecond precision. Canonicalize to the
+	// same resolution before insert/claim identity checks so sub-microsecond
+	// wall-clock windows (e.g. Airwallex webhook lookback ending at time.Now)
+	// do not create orphan PENDING runs that fail MatchesWindow after insert.
+	input.WindowStart = input.WindowStart.UTC().Truncate(time.Microsecond)
+	input.WindowEnd = input.WindowEnd.UTC().Truncate(time.Microsecond)
+	if !input.WindowEnd.After(input.WindowStart) {
+		return CompanyFundSyncRunInput{}, fmt.Errorf("company-fund sync-run window end must be after a non-zero window start")
+	}
 	input.Checkpoint = checkpoint
 	return input, nil
 }

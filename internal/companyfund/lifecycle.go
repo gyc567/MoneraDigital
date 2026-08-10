@@ -14,7 +14,7 @@ import (
 // lattice.
 type SafeheronLifecyclePolicy struct{}
 
-func (SafeheronLifecyclePolicy) Channel() Channel { return ChannelSafeheron }
+func (SafeheronLifecyclePolicy) Channel() TransactionSource { return ChannelSafeheron }
 
 func (SafeheronLifecyclePolicy) Transition(current, incoming LifecycleStatus) LifecycleDecision {
 	current = normalizedLifecycleStatus(current)
@@ -81,7 +81,7 @@ func isSafeheronTerminal(status LifecycleStatus) bool {
 // such as PAID -> FAILED, which must not be treated as a generic regression.
 type AirwallexLifecyclePolicy struct{}
 
-func (AirwallexLifecyclePolicy) Channel() Channel { return ChannelAirwallex }
+func (AirwallexLifecyclePolicy) Channel() TransactionSource { return ChannelAirwallex }
 
 func (AirwallexLifecyclePolicy) Transition(current, incoming LifecycleStatus) LifecycleDecision {
 	current = normalizedLifecycleStatus(current)
@@ -143,7 +143,7 @@ func airwallexTransitionAllowed(current, incoming LifecycleStatus) bool {
 }
 
 // LifecyclePolicyFor prevents cross-provider policy selection at the call site.
-func LifecyclePolicyFor(channel Channel) (LifecyclePolicy, error) {
+func LifecyclePolicyFor(channel TransactionSource) (LifecyclePolicy, error) {
 	switch channel {
 	case ChannelSafeheron:
 		return SafeheronLifecyclePolicy{}, nil
@@ -190,8 +190,13 @@ func ValidateMovementRelationship(relation MovementRelation) error {
 
 	switch relation.MovementKind {
 	case MovementKindFee:
-		if strings.TrimSpace(relation.ParentMovementKey) == "" {
-			return fmt.Errorf("fee movement requires a parent movement")
+		hasParent := strings.TrimSpace(relation.ParentMovementKey) != ""
+		hasGroup := (relation.RelationshipReferenceType == RelationshipReferenceBatchIDGroupOnly ||
+			relation.RelationshipReferenceType == RelationshipReferenceSourceIDGroupOnly) &&
+			strings.TrimSpace(relation.RelationshipReferenceKey) != "" &&
+			strings.TrimSpace(relation.RelationshipGroupKey) != ""
+		if !hasParent && !hasGroup {
+			return fmt.Errorf("fee movement requires a parent movement or a proven group relationship")
 		}
 	case MovementKindReversal:
 		if strings.TrimSpace(relation.ReversalOfMovementKey) == "" {
@@ -261,7 +266,7 @@ func MergeMovementProviderFields(existing MovementState, incoming ProviderOwnedF
 // lattice, so a newer Safeheron fact can enrich a terminal movement without
 // regressing its terminal status. New repository code must use this function
 // rather than calling MergeMovementProviderFields directly.
-func MergeMovementProviderFieldsForChannel(channel Channel, existing MovementState, incoming ProviderOwnedFields) (MovementState, MergeDecision) {
+func MergeMovementProviderFieldsForChannel(channel TransactionSource, existing MovementState, incoming ProviderOwnedFields) (MovementState, MergeDecision) {
 	policy, err := LifecyclePolicyFor(channel)
 	if err != nil {
 		return existing, MergeDecision{Outcome: MergeOutcomeQuarantine, Reason: err.Error()}

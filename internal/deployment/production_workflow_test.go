@@ -51,17 +51,17 @@ func TestProductionWorkflowIsSingleStandardPath(t *testing.T) {
 	}
 }
 
-func TestRemoteMigrationUsesOneExactVersion(t *testing.T) {
+func TestRemoteMigrationUsesArtifactSequenceOfExactVersions(t *testing.T) {
 	content, err := os.ReadFile("../../scripts/deploy-remote.sh")
 	if err != nil {
 		t.Fatalf("read remote deploy script: %v", err)
 	}
 	script := string(content)
-	if !strings.Contains(script, `-print-ceiling -exact-version "$EXPECTED_MIGRATION_CEILING"`) {
-		t.Fatal("remote deployment must inspect the selected exact migration")
+	if !strings.Contains(script, `-print-release-sequence`) {
+		t.Fatal("remote deployment must inspect the artifact release sequence")
 	}
-	if !strings.Contains(script, `./monera-migrate -exact-version "$EXPECTED_MIGRATION_CEILING"`) {
-		t.Fatal("remote deployment must invoke one controlled exact migration version")
+	if !strings.Contains(script, `./monera-migrate -exact-version "$release_version"`) {
+		t.Fatal("remote deployment must invoke every release migration as an exact version")
 	}
 }
 
@@ -72,5 +72,16 @@ func TestProductionWorkflowUsesInstalledServerPort(t *testing.T) {
 	}
 	if !strings.Contains(string(content), `--port 8081`) {
 		t.Fatal("production workflow must health-check the installed server port")
+	}
+}
+
+func TestProductionWorkflowDefaultsToCurrentArtifactMigrationCeiling(t *testing.T) {
+	content, err := os.ReadFile("../../.github/workflows/deploy-backend-prod.yml")
+	if err != nil {
+		t.Fatalf("read production workflow: %v", err)
+	}
+	workflow := string(content)
+	if !strings.Contains(workflow, `default: "063"`) {
+		t.Fatal("production workflow must default to the current artifact migration ceiling 063")
 	}
 }

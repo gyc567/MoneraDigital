@@ -28,6 +28,22 @@ func TestCompanyFundRuntimeConfigReadsEventMaxIdleBoundary(t *testing.T) {
 	}
 }
 
+func TestCompanyFundRuntimeConfigReadsAccountLifecycleAdaptiveBoundary(t *testing.T) {
+	viper.Set("COMPANY_FUND_ACCOUNT_LIFECYCLE_POLL_INTERVAL", "2s")
+	viper.Set("COMPANY_FUND_ACCOUNT_LIFECYCLE_MAX_IDLE_INTERVAL", "9m")
+	t.Cleanup(func() {
+		viper.Set("COMPANY_FUND_ACCOUNT_LIFECYCLE_POLL_INTERVAL", nil)
+		viper.Set("COMPANY_FUND_ACCOUNT_LIFECYCLE_MAX_IDLE_INTERVAL", nil)
+	})
+
+	config := companyFundRuntimeConfigFromViper()
+	if config.AccountLifecyclePollInterval != 2*time.Second ||
+		config.AccountLifecycleMaxIdle != 9*time.Minute {
+		t.Fatalf("lifecycle adaptive range=%s..%s",
+			config.AccountLifecyclePollInterval, config.AccountLifecycleMaxIdle)
+	}
+}
+
 type companyFundEventWriterStub struct{}
 
 type companyFundRegistryLoaderStub struct{}
@@ -243,12 +259,13 @@ func TestFinalizeCompanyFundRuntime_InvalidStrictAirwallexMappingDoesNotExposeIn
 	require.Nil(t, cont.CompanyFundAirwallexClient)
 	require.Nil(t, cont.CompanyFundAirwallexReconciler)
 	require.Nil(t, cont.CompanyFundAirwallexWebhookHandler)
-	require.Nil(t, cont.CompanyFundRuntime)
+	require.NotNil(t, cont.CompanyFundAccountLifecycleWorker)
+	require.NotNil(t, cont.CompanyFundRuntime, "lifecycle commands remain available when ingestion mappings are invalid")
 	require.False(t, cont.RateLimiter.IsPathWhitelisted(companyFundAirwallexWebhookPath))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestFinalizeCompanyFundRuntime_AirwallexScopeMismatchDoesNotExposeIngress(t *testing.T) {
+func TestFinalizeCompanyFundRuntime_LegacyAirwallexScopeDoesNotOverrideDatabaseCurrent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
@@ -272,12 +289,13 @@ func TestFinalizeCompanyFundRuntime_AirwallexScopeMismatchDoesNotExposeIngress(t
 	finalizeCompanyFundRuntime(cont)
 	defer cont.CompanyFundAccountRegistry.Stop()
 
-	require.Nil(t, cont.CompanyFundAirwallexRuntimeBundle)
-	require.Nil(t, cont.CompanyFundAirwallexClient)
-	require.Nil(t, cont.CompanyFundAirwallexReconciler)
-	require.Nil(t, cont.CompanyFundAirwallexWebhookHandler)
-	require.Nil(t, cont.CompanyFundRuntime)
-	require.False(t, cont.RateLimiter.IsPathWhitelisted(companyFundAirwallexWebhookPath))
+	require.NotNil(t, cont.CompanyFundAirwallexRuntimeBundle)
+	require.NotNil(t, cont.CompanyFundAirwallexClient)
+	require.Empty(t, cont.CompanyFundAirwallexClient.PinnedLoginAsScope())
+	require.NotNil(t, cont.CompanyFundAirwallexReconciler)
+	require.NotNil(t, cont.CompanyFundAirwallexWebhookHandler)
+	require.NotNil(t, cont.CompanyFundRuntime)
+	require.True(t, cont.RateLimiter.IsPathWhitelisted(companyFundAirwallexWebhookPath))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

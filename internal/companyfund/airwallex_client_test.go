@@ -113,6 +113,32 @@ func TestAirwallexClient_CoalescesConcurrentTokenRefresh(t *testing.T) {
 	}
 }
 
+func TestAirwallexClient_CreatesIndependentExactBusinessScope(t *testing.T) {
+	client, err := NewAirwallexClient(AirwallexClientConfig{
+		BaseURL:    "https://api.airwallex.com",
+		ClientID:   "client",
+		APIKey:     "secret",
+		APIVersion: airwallexTestAPIVersion,
+	})
+	if err != nil {
+		t.Fatalf("NewAirwallexClient() error = %v", err)
+	}
+
+	scoped, err := client.AirwallexFinancialTransactionsClientForScope("awx-current")
+	if err != nil {
+		t.Fatalf("AirwallexFinancialTransactionsClientForScope() error = %v", err)
+	}
+	if scoped.PinnedLoginAsScope() != "awx-current" {
+		t.Fatalf("scoped login-as = %q", scoped.PinnedLoginAsScope())
+	}
+	if client.PinnedLoginAsScope() != "" {
+		t.Fatalf("base client scope mutated to %q", client.PinnedLoginAsScope())
+	}
+	if _, err := client.AirwallexFinancialTransactionsClientForScope(" awx-current"); err == nil {
+		t.Fatal("whitespace-padded scope must fail closed")
+	}
+}
+
 func TestParseAirwallexTokenExpiry_AcceptsOfficialISO8601Offsets(t *testing.T) {
 	for _, testCase := range []struct {
 		value string

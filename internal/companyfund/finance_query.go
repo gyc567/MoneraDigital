@@ -10,6 +10,15 @@ import (
 const financeTransactionDateSQL = "COALESCE(transaction.occurred_at, transaction.completed_at, transaction.created_at)"
 
 const financeSummaryIncludedSQL = "COALESCE(transaction.summary_inclusion_override, NOT transaction.auto_excluded_from_summary)"
+const financeEffectiveDirectionSQL = `CASE
+	WHEN transaction.movement_kind = 'REVERSAL'
+		THEN COALESCE(original_transaction.transaction_direction, transaction.transaction_direction)
+	ELSE transaction.transaction_direction
+END`
+const financeSignedAmountSQL = `CASE WHEN transaction.movement_kind = 'REVERSAL'
+	THEN -transaction.amount ELSE transaction.amount END`
+const financeSignedUSDValueSQL = `CASE WHEN transaction.movement_kind = 'REVERSAL'
+	THEN -transaction.usd_value ELSE transaction.usd_value END`
 
 const financeTransactionFromSQL = `
 FROM company_fund_transactions AS transaction
@@ -20,14 +29,16 @@ LEFT JOIN finance_categories AS category_level2
 LEFT JOIN company_fund_accounts AS from_account
 	ON from_account.id = transaction.from_company_fund_account_id
 LEFT JOIN company_fund_accounts AS to_account
-	ON to_account.id = transaction.to_company_fund_account_id`
+	ON to_account.id = transaction.to_company_fund_account_id
+LEFT JOIN company_fund_transactions AS original_transaction
+	ON original_transaction.id = transaction.reversal_of_transaction_id`
 
 const financeDashboardSelectSQL = `
-SELECT transaction.transaction_direction,
+SELECT ` + financeEffectiveDirectionSQL + `,
 	transaction.currency,
 	COUNT(*)::BIGINT,
-	COALESCE(SUM(transaction.amount), 0)::TEXT,
-	SUM(transaction.usd_value)::TEXT,
+	COALESCE(SUM(` + financeSignedAmountSQL + `), 0)::TEXT,
+	SUM(` + financeSignedUSDValueSQL + `)::TEXT,
 	COUNT(*) FILTER (WHERE transaction.usd_value IS NULL)::BIGINT`
 
 const financeDetailSelectSQL = `
@@ -70,6 +81,14 @@ SELECT transaction.id,
 	COALESCE(transaction.business_description, ''),
 	COALESCE(transaction.tx_hash, ''),
 	COALESCE(transaction.provider_transaction_id, ''),
+	transaction.parent_transaction_id,
+	transaction.reversal_of_transaction_id,
+	COALESCE(transaction.relationship_reference_type, ''),
+	COALESCE(transaction.relationship_reference_key, ''),
+	COALESCE(transaction.relationship_group_key, ''),
+	COALESCE(transaction.conversion_group_key, ''),
+	COALESCE(transaction.conversion_leg, ''),
+	COALESCE(transaction.conversion_group_status, ''),
 	` + financeSummaryIncludedSQL + `,
 	transaction.is_dust,
 	transaction.auto_excluded_from_summary,
@@ -90,8 +109,8 @@ func (r *DBRepository) GetFinanceDashboard(ctx context.Context, filter FinanceTr
 
 	where, args, _ := buildFinanceTransactionWhere(canonical, 1)
 	query := financeDashboardSelectSQL + financeTransactionFromSQL + where + `
-GROUP BY transaction.transaction_direction, transaction.currency
-ORDER BY transaction.transaction_direction, transaction.currency`
+GROUP BY ` + financeEffectiveDirectionSQL + `, transaction.currency
+ORDER BY ` + financeEffectiveDirectionSQL + `, transaction.currency`
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return FinanceDashboardSummary{}, fmt.Errorf("query company-fund finance dashboard: %w", err)
@@ -193,7 +212,7 @@ func buildFinanceTransactionWhere(filter FinanceTransactionFilter, firstPlacehol
 		for _, value := range filter.Directions {
 			values = append(values, value)
 		}
-		appendIn("transaction.transaction_direction", values)
+		appendIn(financeEffectiveDirectionSQL, values)
 	}
 	if len(filter.Currencies) > 0 {
 		values := make([]any, 0, len(filter.Currencies))
@@ -219,6 +238,7 @@ func buildFinanceTransactionWhere(filter FinanceTransactionFilter, firstPlacehol
 	if filter.OperatingIncomeExpense != nil {
 		conditions = append(conditions, "transaction.is_operating_income_expense = "+appendArgument(*filter.OperatingIncomeExpense))
 	}
+	conditions = append(conditions, "(transaction.movement_kind <> 'CONVERSION' OR transaction.conversion_group_status = 'COMPLETE')")
 	if !filter.IncludeSummaryExcluded {
 		conditions = append(conditions, financeSummaryIncludedSQL)
 	}
@@ -274,6 +294,11 @@ func scanFinanceTransactionDetail(rows *sql.Rows) (FinanceTransactionDetail, err
 		feeAmount                sql.NullString
 		counterpartyNameOverride sql.NullString
 		summaryOverride          sql.NullBool
+		parentTransactionID      sql.NullInt64
+		reversalTransactionID    sql.NullInt64
+		relationshipType         string
+		conversionLeg            string
+		conversionGroupState     string
 	)
 	if err := rows.Scan(
 		&detail.ID,
@@ -307,6 +332,14 @@ func scanFinanceTransactionDetail(rows *sql.Rows) (FinanceTransactionDetail, err
 		&detail.BusinessDescription,
 		&detail.TxHash,
 		&detail.ProviderTransactionID,
+		&parentTransactionID,
+		&reversalTransactionID,
+		&relationshipType,
+		&detail.RelationshipReferenceKey,
+		&detail.RelationshipGroupKey,
+		&detail.ConversionGroupKey,
+		&conversionLeg,
+		&conversionGroupState,
 		&detail.SummaryIncluded,
 		&detail.IsDust,
 		&detail.AutoExcludedFromSummary,
@@ -314,7 +347,7 @@ func scanFinanceTransactionDetail(rows *sql.Rows) (FinanceTransactionDetail, err
 	); err != nil {
 		return FinanceTransactionDetail{}, fmt.Errorf("scan company-fund finance transaction detail: %w", err)
 	}
-	detail.Channel = Channel(channel)
+	detail.Channel = TransactionSource(channel)
 	detail.Direction = Direction(direction)
 	detail.TransferMode = TransferMode(transferMode)
 	detail.MovementKind = MovementKind(movementKind)
@@ -324,6 +357,11 @@ func scanFinanceTransactionDetail(rows *sql.Rows) (FinanceTransactionDetail, err
 	detail.USDValue = financeNullStringPointer(usdValue)
 	detail.FeeAmount = financeNullStringPointer(feeAmount)
 	detail.CounterpartyNameOverride = financeNullStringPointer(counterpartyNameOverride)
+	detail.ParentTransactionID = financeNullInt64Pointer(parentTransactionID)
+	detail.ReversalOfTransactionID = financeNullInt64Pointer(reversalTransactionID)
+	detail.RelationshipReferenceType = RelationshipReferenceType(relationshipType)
+	detail.ConversionLeg = ConversionLeg(conversionLeg)
+	detail.ConversionGroupState = ConversionGroupState(conversionGroupState)
 	detail.EffectiveCounterpartyName = effectiveFinanceCounterpartyName(detail.Direction, detail.Payer, detail.Payee, detail.CounterpartyNameOverride)
 	detail.SummaryInclusionOverride = financeNullBoolPointer(summaryOverride)
 	return detail, nil

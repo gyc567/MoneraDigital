@@ -107,7 +107,7 @@ func TestFinanceClassificationAndProviderSQLOwnershipContracts(t *testing.T) {
 		"applicant = $5",
 		"business_description = $6",
 		"summary_inclusion_override = $7",
-		"counterparty_name_override = CASE WHEN $8 THEN $9 ELSE counterparty_name_override END",
+		"counterparty_name_override = CASE WHEN $8::BOOLEAN THEN $9::TEXT ELSE counterparty_name_override END",
 		"classification_updated_by = $10",
 		"classification_updated_at = NOW()",
 	} {
@@ -131,6 +131,18 @@ func TestFinanceClassificationAndProviderSQLOwnershipContracts(t *testing.T) {
 	}
 	if !strings.Contains(updateCompanyFundTransactionProviderSupplementSQL, "auto_excluded_from_summary") {
 		t.Fatal("provider supplement SQL must persist the automatic summary exclusion snapshot")
+	}
+}
+
+func TestAirwallexFeeBackfillSkipsExistingPolicyTasksBeforeApplyingLimit(t *testing.T) {
+	for _, required := range []string{
+		"NOT EXISTS",
+		"task.subject_transaction_id = transaction.id",
+		"COALESCE(task.policy_version, '') = COALESCE($1, '')",
+	} {
+		if !strings.Contains(listAirwallexFeesNeedingClassificationSQL, required) {
+			t.Fatalf("fee backfill query must contain %q", required)
+		}
 	}
 }
 

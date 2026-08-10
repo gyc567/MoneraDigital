@@ -37,6 +37,16 @@ type AirwallexFinancialTransactionsClient interface {
 	ListFinancialTransactions(ctx context.Context, input AirwallexFinancialTransactionsRequest) (AirwallexFinancialTransactionsPage, error)
 }
 
+// AirwallexFinancialTransactionsScopedClientFactory creates an immutable
+// account-scoped client for one reconciliation call. Lifecycle cutover can
+// therefore select the CURRENT account from PostgreSQL without mutating a
+// long-lived client or relying on a stale process environment variable.
+type AirwallexFinancialTransactionsScopedClientFactory interface {
+	AirwallexFinancialTransactionsClientForScope(
+		providerAccountKey string,
+	) (AirwallexFinancialTransactionsClient, error)
+}
+
 // AirwallexOwnedProviderEventIngestor is satisfied by
 // OwnedProviderPayloadService. It is the only mutation performed by this
 // reconciler: raw API item bytes are encrypted and inserted into the durable
@@ -89,7 +99,7 @@ type AirwallexFinancialTransactionsReconcileInput struct {
 // all parser/API pins, and page size, so a changed request contract never
 // silently reuses an older run.
 type AirwallexFinancialTransactionsSyncRunInput struct {
-	Channel              Channel
+	Channel              TransactionSource
 	SyncKind             string
 	WindowKey            string
 	CompanyFundAccountID int64
@@ -156,7 +166,45 @@ func (contract AirwallexFinancialTransactionsReconciliationContract) validate() 
 	if _, err := normalizeAirwallexReconcilerVersion("Airwallex financial transactions event version", contract.EventVersion); err != nil {
 		return err
 	}
-	if _, err := normalizeAirwallexReconcilerAccountKey(contract.LoginAsScope); err != nil {
+	if contract.LoginAsScope != "" {
+		if _, err := normalizeAirwallexReconcilerAccountKey(contract.LoginAsScope); err != nil {
+			return fmt.Errorf("Airwallex financial transactions login scope is invalid: %w", err)
+		}
+	}
+	return nil
+}
+
+func resolveAirwallexReconciliationAccount(
+	snapshot *AccountRegistrySnapshot,
+	loginAsScope string,
+) (CompanyFundAccount, bool) {
+	if loginAsScope != "" {
+		return ResolveAirwallexSingleAccountScope(snapshot, loginAsScope)
+	}
+	if snapshot == nil {
+		return CompanyFundAccount{}, false
+	}
+	var selected CompanyFundAccount
+	found := false
+	for _, account := range snapshot.Accounts() {
+		if account.Channel != AccountChannelAirwallex || !account.Enabled {
+			continue
+		}
+		if found || account.ProviderAccountKey == "" ||
+			account.ProviderAccountKey != strings.TrimSpace(account.ProviderAccountKey) {
+			return CompanyFundAccount{}, false
+		}
+		selected = account
+		found = true
+	}
+	if !found {
+		return CompanyFundAccount{}, false
+	}
+	return selected, true
+}
+
+func validateStaticAirwallexScope(loginAsScope string) error {
+	if _, err := normalizeAirwallexReconcilerAccountKey(loginAsScope); err != nil {
 		return fmt.Errorf("Airwallex financial transactions login scope is invalid: %w", err)
 	}
 	return nil
@@ -221,8 +269,10 @@ func NewAirwallexFinancialTransactionsReconciler(
 	if strings.TrimSpace(client.PinnedAPIVersion()) != normalizedConfig.APIVersion {
 		return nil, fmt.Errorf("Airwallex financial transactions client API version does not match reconciler pin")
 	}
-	if _, err := normalizeAirwallexReconcilerAccountKey(client.PinnedLoginAsScope()); err != nil {
-		return nil, fmt.Errorf("Airwallex financial transactions client login scope is invalid")
+	if _, dynamic := client.(AirwallexFinancialTransactionsScopedClientFactory); !dynamic {
+		if _, err := normalizeAirwallexReconcilerAccountKey(client.PinnedLoginAsScope()); err != nil {
+			return nil, fmt.Errorf("Airwallex financial transactions client login scope is invalid")
+		}
 	}
 	return &AirwallexFinancialTransactionsReconciler{
 		client:   client,
@@ -230,6 +280,26 @@ func NewAirwallexFinancialTransactionsReconciler(
 		syncRuns: syncRuns,
 		config:   normalizedConfig,
 	}, nil
+}
+
+func (r *AirwallexFinancialTransactionsReconciler) scopedClient(
+	providerAccountKey string,
+) (AirwallexFinancialTransactionsClient, error) {
+	if factory, ok := r.client.(AirwallexFinancialTransactionsScopedClientFactory); ok {
+		client, err := factory.AirwallexFinancialTransactionsClientForScope(providerAccountKey)
+		if err != nil {
+			return nil, fmt.Errorf("create Airwallex financial transactions account scope: %w", err)
+		}
+		if client == nil || client.PinnedAPIVersion() != r.config.APIVersion ||
+			client.PinnedLoginAsScope() != providerAccountKey {
+			return nil, fmt.Errorf("Airwallex scoped client does not match the reconciliation contract")
+		}
+		return client, nil
+	}
+	if r.client.PinnedLoginAsScope() != providerAccountKey {
+		return nil, fmt.Errorf("Airwallex financial transactions client login scope no longer matches configured company account")
+	}
+	return r.client, nil
 }
 
 // ReconciliationContract returns the immutable API/schema/event pins that

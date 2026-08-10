@@ -148,6 +148,36 @@ func TestFinalizeCompanyFundSyncRun_RetryIsDurableAndLeaseGuarded(t *testing.T) 
 	assertSyncRunMockExpectations(t, mock)
 }
 
+func TestFinalizeCompanyFundSyncRun_SucceededWithNilRetryAtUsesTimestamptzCast(t *testing.T) {
+	// Regression for SQLSTATE 42P08: untyped NULL next_attempt_at must be cast
+	// as timestamptz so pgx can bind a nil retry deadline on success/skip.
+	if !strings.Contains(finalizeCompanyFundSyncRunSQL, "next_attempt_at = $4::timestamptz") {
+		t.Fatalf("finalize SQL missing $4::timestamptz cast:\n%s", finalizeCompanyFundSyncRunSQL)
+	}
+	if !strings.Contains(finalizeCompanyFundSyncRunSQL, "($4::timestamptz IS NOT NULL AND $4::timestamptz > NOW())") {
+		t.Fatalf("finalize SQL missing typed retry guard:\n%s", finalizeCompanyFundSyncRunSQL)
+	}
+
+	db, mock := newSyncRunMockDB(t)
+	defer db.Close()
+	repository := NewDBRepository(db)
+
+	mock.ExpectQuery(regexp.QuoteMeta(finalizeCompanyFundSyncRunSQL)).
+		WithArgs(int64(92), "sync-worker-a", CompanyFundSyncRunStatusSucceeded, nil, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(92))
+	if err := repository.FinalizeCompanyFundSyncRun(context.Background(), 92, "sync-worker-a", CompanyFundSyncRunFinalizeSucceeded, nil, ""); err != nil {
+		t.Fatalf("FinalizeCompanyFundSyncRun(succeeded,nil retryAt) = %v", err)
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(finalizeCompanyFundSyncRunSQL)).
+		WithArgs(int64(93), "sync-worker-a", CompanyFundSyncRunStatusSkipped, nil, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(93))
+	if err := repository.FinalizeCompanyFundSyncRun(context.Background(), 93, "sync-worker-a", CompanyFundSyncRunFinalizeSkipped, nil, ""); err != nil {
+		t.Fatalf("FinalizeCompanyFundSyncRun(skipped,nil retryAt) = %v", err)
+	}
+	assertSyncRunMockExpectations(t, mock)
+}
+
 func TestCompanyFundSyncRunValidationAndSQLContracts(t *testing.T) {
 	input := validCompanyFundSyncRunInput()
 	for _, checkpoint := range [][]byte{
@@ -166,7 +196,7 @@ func TestCompanyFundSyncRunValidationAndSQLContracts(t *testing.T) {
 	if err := (CompanyFundSyncRunProgressUpdate{CandidatesSeenDelta: -1}).validate(); err == nil {
 		t.Fatal("negative progress delta must be rejected")
 	}
-	if _, err := NewDBRepository(nil).ClaimNextCompanyFundSyncRun(context.Background(), CompanyFundSyncRunClaimScope{Channel: Channel("OTHER"), SyncKind: "DAILY_RECONCILIATION"}, "sync-worker-a", time.Minute); err == nil {
+	if _, err := NewDBRepository(nil).ClaimNextCompanyFundSyncRun(context.Background(), CompanyFundSyncRunClaimScope{Channel: TransactionSource("OTHER"), SyncKind: "DAILY_RECONCILIATION"}, "sync-worker-a", time.Minute); err == nil {
 		t.Fatal("invalid sync-run claim scope must be rejected before database use")
 	}
 	for _, required := range []string{
@@ -180,6 +210,44 @@ func TestCompanyFundSyncRunValidationAndSQLContracts(t *testing.T) {
 		if !strings.Contains(claimNextCompanyFundSyncRunSQL+updateClaimedCompanyFundSyncRunSQL+renewCompanyFundSyncRunLeaseSQL+updateCompanyFundSyncRunProgressSQL+finalizeCompanyFundSyncRunSQL, required) {
 			t.Fatalf("sync-run SQL missing %q", required)
 		}
+	}
+}
+
+func TestCompanyFundSyncRunInputCanonical_TruncatesToPostgresMicroseconds(t *testing.T) {
+	// Regression: webhook lookback windows end at time.Now() with nanosecond
+	// residue. PG stores microseconds; MatchesWindow uses Equal, so untruncated
+	// inputs created orphan PENDING AIRWALLEX runs (attempts=0) on stage.
+	input := validCompanyFundSyncRunInput()
+	input.WindowStart = time.Date(2026, time.July, 26, 15, 35, 4, 661624123, time.UTC)
+	input.WindowEnd = time.Date(2026, time.July, 27, 15, 35, 4, 661624456, time.UTC)
+	got, err := input.canonical()
+	if err != nil {
+		t.Fatalf("canonical() error = %v", err)
+	}
+	wantStart := time.Date(2026, time.July, 26, 15, 35, 4, 661624000, time.UTC)
+	wantEnd := time.Date(2026, time.July, 27, 15, 35, 4, 661624000, time.UTC)
+	if !got.WindowStart.Equal(wantStart) || !got.WindowEnd.Equal(wantEnd) {
+		t.Fatalf("canonical windows = %s .. %s, want %s .. %s",
+			got.WindowStart.Format(time.RFC3339Nano), got.WindowEnd.Format(time.RFC3339Nano),
+			wantStart.Format(time.RFC3339Nano), wantEnd.Format(time.RFC3339Nano))
+	}
+	// Simulated DB round-trip equality (pgx scans microsecond times).
+	if err := companyFundSyncRunAdapterMatchesWindow(CompanyFundSyncRun{
+		ID: 1, Channel: got.Channel, SyncKind: got.SyncKind, WindowKey: got.WindowKey,
+		WindowStart: wantStart, WindowEnd: wantEnd,
+	}, got); err != nil {
+		t.Fatalf("MatchesWindow after micro truncate: %v", err)
+	}
+	// Untruncated input must still fail against the stored microsecond row.
+	raw := validCompanyFundSyncRunInput()
+	raw.WindowStart = time.Date(2026, time.July, 26, 15, 35, 4, 661624123, time.UTC)
+	raw.WindowEnd = time.Date(2026, time.July, 27, 15, 35, 4, 661624456, time.UTC)
+	raw.Checkpoint = []byte(`{}`)
+	if err := companyFundSyncRunAdapterMatchesWindow(CompanyFundSyncRun{
+		ID: 1, Channel: raw.Channel, SyncKind: raw.SyncKind, WindowKey: raw.WindowKey,
+		WindowStart: wantStart, WindowEnd: wantEnd,
+	}, raw); err == nil {
+		t.Fatal("untruncated input unexpectedly matched microsecond DB window")
 	}
 }
 

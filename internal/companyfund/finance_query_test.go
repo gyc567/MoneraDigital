@@ -20,7 +20,7 @@ func TestFinanceFilter_BuildsOneCanonicalInclusionContractForDashboardAndDrilldo
 	filter, err := (FinanceTransactionFilter{
 		DateFrom:                 &from,
 		DateTo:                   &to,
-		Channels:                 []Channel{ChannelSafeheron, ChannelAirwallex, ChannelSafeheron},
+		Channels:                 []TransactionSource{ChannelSafeheron, ChannelAirwallex, ChannelSafeheron},
 		AccountIDs:               []int64{9, 3, 9},
 		Directions:               []Direction{DirectionOutflow, DirectionInflow},
 		Currencies:               []string{"usdt", "USD", "USDT"},
@@ -41,7 +41,7 @@ func TestFinanceFilter_BuildsOneCanonicalInclusionContractForDashboardAndDrilldo
 		"transaction.channel IN ($3, $4)",
 		"transaction.from_company_fund_account_id IN ($5, $6)",
 		"transaction.to_company_fund_account_id IN ($7, $8)",
-		"transaction.transaction_direction IN ($9, $10)",
+		financeEffectiveDirectionSQL + " IN ($9, $10)",
 		"transaction.currency IN ($11, $12)",
 		"transaction.finance_category_level1_id IN ($13)",
 		"transaction.finance_category_level2_id IN ($14)",
@@ -73,8 +73,8 @@ func TestGetFinanceDashboard_ReturnsExactAggregateAndCanonicalDrilldown(t *testi
 	}
 	where, args, _ := buildFinanceTransactionWhere(canonical, 1)
 	query := financeDashboardSelectSQL + financeTransactionFromSQL + where + `
-GROUP BY transaction.transaction_direction, transaction.currency
-ORDER BY transaction.transaction_direction, transaction.currency`
+GROUP BY ` + financeEffectiveDirectionSQL + `, transaction.currency
+ORDER BY ` + financeEffectiveDirectionSQL + `, transaction.currency`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(financeMockArgs(args)...).
 		WillReturnRows(sqlmock.NewRows([]string{"transaction_direction", "currency", "count", "amount", "usd_value", "unpriced_count"}).
@@ -116,6 +116,7 @@ func TestListFinanceTransactionDetails_ReturnsFinancialDisplayWithoutRawPayload(
 			1, "OPERATING", "Operating", 2, "VENDOR", "Vendor payment",
 			"USDT", "10.000000000000000001", "10.123456789012345678", "0.00021", "ETH",
 			"Treasury", "Vendor Ltd", "Finance vendor alias", "0xfrom", "0xto", "finance@monera", "July invoice", "0xtx", "provider-tx-7",
+			nil, nil, "", "", "", "", "", "",
 			true, false, false, nil,
 		))
 
@@ -140,7 +141,9 @@ func financeDetailColumns() []string {
 	return []string{
 		"id", "date", "channel", "company_entity", "fund_account_name", "sub_account_name", "account_type", "direction", "transfer_mode", "movement_kind", "operating",
 		"level1_id", "level1_code", "level1_name", "level2_id", "level2_code", "level2_name", "currency", "amount", "usd_value", "fee_amount", "fee_currency",
-		"payer", "payee", "counterparty_name_override", "from_address", "to_address", "applicant", "business_description", "tx_hash", "provider_transaction_id", "summary_included", "is_dust", "auto_excluded", "summary_override",
+		"payer", "payee", "counterparty_name_override", "from_address", "to_address", "applicant", "business_description", "tx_hash", "provider_transaction_id",
+		"parent_transaction_id", "reversal_of_transaction_id", "relationship_reference_type", "relationship_reference_key", "relationship_group_key", "conversion_group_key", "conversion_leg", "conversion_group_state",
+		"summary_included", "is_dust", "auto_excluded", "summary_override",
 	}
 }
 

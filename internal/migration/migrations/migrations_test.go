@@ -1,10 +1,9 @@
 package migrations
 
 import (
+	"encoding/json"
 	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
+	"os/exec"
 	"testing"
 
 	"monera-digital/internal/migration"
@@ -134,95 +133,34 @@ func TestAddTwoFactorTimestampMigration_Description(t *testing.T) {
 	}
 }
 
-// TestMigrationOrder verifies all migrations are properly ordered and
-// has a unique version per entry. Keep this list in sync with the
-// registerMigrations() function in cmd/migrate/main.go — a CI
-// guard in scripts/check-secrets.sh asserts both are aligned.
-func TestMigrationOrder(t *testing.T) {
-	migrations := []struct {
-		name    string
-		version string
-	}{
-		{"CreateUsersTable", "001"},
-		{"CreateLendingPositionsTable", "002"},
-		{"CreateWithdrawalTables", "003"},
-		{"AddTwoFactorColumnsMigration", "004"},
-		{"AddTwoFactorTimestampMigration", "005"},
-		{"UpdateWalletRequestsTable", "007"},
-		{"CreateUserWalletsTable", "008"},
-		{"AddUserWalletStatusField", "009"},
-		{"AddIsPrimaryToWhitelist", "010"},
-		{"CreateDepositsTable", "011"},
-		{"AddUserStatus", "012"},
-		{"AddFrozenUntilToWhitelist", "013"},
-		{"AddEmailVerifiedStatusAndContactFields", "014"},
-		{"SafeheronPhase1", "015"},
-		{"AccountFrozenBalanceDefault", "016"},
-		{"AddPendingStatusAndActivationFields", "046"},
-		{"NormalizeAmountTypes", "047"},
-		{"AddMissingForeignKeys", "048"},
-		{"CreateFundReports", "049"},
-		{"CreateCompanyFundLedger", "050"},
-		{"WidenAmountPrecision", "051"},
-		{"ExpandCompanyFundOccurrenceAndManualValuation", "052"},
-		{"EnforceSafeheronOccurrence", "053"},
-		{"AllowManualCompanyFundTransactions", "054"},
-		{"AddCounterpartyNameOverride", "055"},
-	}
-
-	seen := make(map[string]bool, len(migrations))
-	for i, m := range migrations {
-		t.Run(m.name, func(t *testing.T) {
-			if m.version == "" {
-				t.Error("Version should not be empty")
-			}
-			if seen[m.version] {
-				t.Errorf("Duplicate version %q in migration list", m.version)
-			}
-			seen[m.version] = true
-			if i > 0 {
-				prevVersion := migrations[i-1].version
-				if m.version <= prevVersion {
-					t.Errorf("Migration %s version %s should be greater than previous %s",
-						m.name, m.version, prevVersion)
-				}
-			}
-		})
-	}
-}
-
 func TestMigrationRunnerRegistersVersionsInOrder(t *testing.T) {
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
-	source, err := os.ReadFile(filepath.Join(repoRoot, "cmd", "migrate", "main.go"))
+	cmd := exec.Command("go", "run", "../../../cmd/migrate", "-print-versions")
+	cmd.Env = append(os.Environ(), "APP_ENV=production")
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("read migration runner: %v", err)
+		t.Fatalf("print migration registry: %v\n%s", err, output)
+	}
+	var versions []string
+	if err := json.Unmarshal(output, &versions); err != nil {
+		t.Fatalf("decode migration registry: %v\n%s", err, output)
 	}
 
-	previous := -1
-	for _, registration := range []string{
-		"m.Register(&migrations.AddPendingStatusAndActivationFields{})",
-		"m.Register(&migrations.NormalizeAmountTypes{})",
-		"m.Register(&migrations.AddMissingForeignKeys{})",
-		"m.Register(&migrations.CreateFundReports{})",
-		"m.Register(&migrations.CreateCompanyFundLedger{})",
-		"m.Register(&migrations.WidenAmountPrecision{})",
-		"m.Register(&migrations.ExpandCompanyFundOccurrenceAndManualValuation{})",
-		"m.Register(&migrations.EnforceSafeheronOccurrence{})",
-		"m.Register(&migrations.AllowManualCompanyFundTransactions{})",
-		"m.Register(&migrations.AddCounterpartyNameOverride{})",
-	} {
-		position := strings.Index(string(source), registration)
-		if position < 0 {
-			t.Errorf("registerMigrations is missing %q", registration)
-			continue
+	if len(versions) == 0 {
+		t.Fatal("migration registry is empty")
+	}
+	for index, version := range versions {
+		if index > 0 && version <= versions[index-1] {
+			t.Fatalf("migration registry is not ordered: %v", versions)
 		}
-		if position <= previous {
-			t.Errorf("registerMigrations entry %q is not in version order", registration)
+	}
+	wantTail := []string{"046", "047", "048", "049", "050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063"}
+	if len(versions) < len(wantTail) {
+		t.Fatalf("migration registry is incomplete: %v", versions)
+	}
+	gotTail := versions[len(versions)-len(wantTail):]
+	for index := range wantTail {
+		if gotTail[index] != wantTail[index] {
+			t.Fatalf("migration registry tail = %v, want %v", gotTail, wantTail)
 		}
-		previous = position
 	}
 }

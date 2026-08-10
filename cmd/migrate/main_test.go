@@ -40,6 +40,48 @@ func TestExactVersionPrintCeilingMatchesSelection(t *testing.T) {
 	}
 }
 
+func TestCurrentArtifactPrintReleaseSequenceIncludesEveryRequiredExactMigration(t *testing.T) {
+	t.Parallel()
+	cmd := exec.Command("go", "run", ".", "-print-release-sequence")
+	cmd.Env = append(os.Environ(), "APP_ENV=production")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("release sequence CLI failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "063" {
+		t.Fatalf("release sequence = %q, want 063", got)
+	}
+}
+
+func TestArtifactReleaseSequenceMustBeContiguousExactAndEndAtCeiling(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name     string
+		sequence []string
+	}{
+		{name: "empty", sequence: nil},
+		{name: "unknown", sequence: []string{"061", "999"}},
+		{name: "not exact deployable", sequence: []string{"049"}},
+		{name: "not contiguous", sequence: []string{"060", "062"}},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := validateArtifactMigrationReleaseSequence(testCase.sequence); err == nil {
+				t.Fatalf("invalid release sequence accepted: %v", testCase.sequence)
+			}
+		})
+	}
+
+	ceiling, err := validateArtifactMigrationReleaseSequence([]string{"063"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ceiling != "063" {
+		t.Fatalf("release sequence ceiling = %q, want 063", ceiling)
+	}
+}
+
 func TestExactVersionRejectsRollbackBeforeOpeningDatabase(t *testing.T) {
 	t.Parallel()
 	cmd := exec.Command("go", "run", ".", "-rollback", "-exact-version", "050")
@@ -83,6 +125,8 @@ func TestExactMigrationOptionsRequireImmediatePredecessor(t *testing.T) {
 		{version: "058", predecessor: "057"},
 		{version: "059", predecessor: "058"},
 		{version: "060", predecessor: "059"},
+		{version: "061", predecessor: "060"},
+		{version: "062", predecessor: "061"},
 	} {
 		got, err := validateExactMigrationOptions(testCase.version, testCase.version, false)
 		if err != nil {
@@ -160,7 +204,7 @@ func TestRequireAppliedMigrationPropagatesLookupFailure(t *testing.T) {
 
 func TestExactMigrationRegistrationContainsOnlyRequestedVersion(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060"} {
+	for _, version := range []string{"050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063"} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerSelectedMigrations(migrator, version); err != nil {
 			t.Fatalf("register %s: %v", version, err)
@@ -174,7 +218,7 @@ func TestExactMigrationRegistrationContainsOnlyRequestedVersion(t *testing.T) {
 
 func TestExactMigrationRegistrationRejectsHistoricalAndUnknownVersions(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"049", "061", "latest"} {
+	for _, version := range []string{"049", "064", "latest"} {
 		if err := registerSelectedMigrations(migration.NewMigrator(nil), version); err == nil {
 			t.Fatalf("exact migration %q accepted", version)
 		}
@@ -187,17 +231,17 @@ func TestDefaultMigrationSelectionRegistersCurrentArtifact(t *testing.T) {
 	if err := registerSelectedMigrations(migrator, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := migrator.Ceiling(); got != artifactMigrationCeiling {
-		t.Fatalf("default migration ceiling = %q, want %q", got, artifactMigrationCeiling)
+	if got := migrator.Ceiling(); got != artifactMigrationCeiling() {
+		t.Fatalf("default migration ceiling = %q, want %q", got, artifactMigrationCeiling())
 	}
 }
 
-func TestCurrentArtifactCeilingIs060(t *testing.T) {
+func TestCurrentArtifactCeilingIs063(t *testing.T) {
 	t.Parallel()
 	migrator := migration.NewMigrator(nil)
 	registerMigrations(migrator)
-	if got := migrator.Ceiling(); got != "060" {
-		t.Fatalf("registered migration ceiling = %q, want 060", got)
+	if got := migrator.Ceiling(); got != "063" {
+		t.Fatalf("registered migration ceiling = %q, want 063", got)
 	}
 }
 
@@ -216,6 +260,9 @@ func TestArtifactMigrationCeilingControlsRegistrationAndCannotBeRuntimeExpanded(
 		{ceiling: "058", want: "058"},
 		{ceiling: "059", want: "059"},
 		{ceiling: "060", want: "060"},
+		{ceiling: "061", want: "061"},
+		{ceiling: "062", want: "062"},
+		{ceiling: "063", want: "063"},
 	} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerMigrationsForArtifact(migrator, testCase.ceiling); err != nil {
@@ -228,8 +275,8 @@ func TestArtifactMigrationCeilingControlsRegistrationAndCannotBeRuntimeExpanded(
 	if err := registerMigrationsForArtifact(migration.NewMigrator(nil), "051"); err == nil {
 		t.Fatal("unsupported artifact migration ceiling accepted")
 	}
-	if artifactMigrationCeiling != "060" {
-		t.Fatalf("current tree compiled ceiling = %q", artifactMigrationCeiling)
+	if artifactMigrationCeiling() != "063" {
+		t.Fatalf("current tree compiled ceiling = %q", artifactMigrationCeiling())
 	}
 }
 
@@ -248,6 +295,9 @@ func TestArtifactMigrationRegistrationManifestIsCompleteOrderedAndImmutable(t *t
 		{ceiling: "058", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058")},
 		{ceiling: "059", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059")},
 		{ceiling: "060", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060")},
+		{ceiling: "061", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061")},
+		{ceiling: "062", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061", "062")},
+		{ceiling: "063", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063")},
 	} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerMigrationsForArtifact(migrator, testCase.ceiling); err != nil {
@@ -289,5 +339,45 @@ func TestMigrationFailureExitCodeIsDedicatedOnlyToIndeterminateControlledCommit(
 	}
 	if got := migrationFailureExitCode(errors.New("preflight rejected")); got != 1 {
 		t.Fatalf("ordinary failure exit = %d", got)
+	}
+}
+
+func TestMigrateCLI_RejectsPoolerMigrationURL(t *testing.T) {
+	t.Parallel()
+	cmd := exec.Command("go", "run", ".", "-dry-run")
+	cmd.Env = append(os.Environ(),
+		"APP_ENV=production",
+		"MIGRATION_DATABASE_URL=postgresql://user:secret-pass@ep-foo-pooler.example.com/db?sslmode=require",
+		"DATABASE_URL=",
+		"EXPECTED_MIGRATION_CEILING=",
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected pooler reject, got success:\n%s", out)
+	}
+	msg := string(out)
+	if !strings.Contains(strings.ToLower(msg), "pooler") {
+		t.Fatalf("expected pooler wording in output:\n%s", msg)
+	}
+	if strings.Contains(msg, "secret-pass") {
+		t.Fatalf("password leaked in CLI output:\n%s", msg)
+	}
+}
+
+func TestMigrateCLI_RequiresDedicatedURLOnProduction(t *testing.T) {
+	t.Parallel()
+	cmd := exec.Command("go", "run", ".", "-dry-run")
+	cmd.Env = append(os.Environ(),
+		"APP_ENV=production",
+		"MIGRATION_DATABASE_URL=",
+		"DATABASE_URL=postgresql://user:p@localhost:5432/db",
+		"EXPECTED_MIGRATION_CEILING=",
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected missing MIGRATION_DATABASE_URL failure:\n%s", out)
+	}
+	if !strings.Contains(string(out), "MIGRATION_DATABASE_URL") {
+		t.Fatalf("output should mention required var:\n%s", out)
 	}
 }

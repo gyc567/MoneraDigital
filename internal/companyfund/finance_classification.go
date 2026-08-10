@@ -13,18 +13,20 @@ import (
 // existing deferred database constraint trigger.
 const updateFinanceTransactionClassificationSQL = `
 UPDATE company_fund_transactions
-SET finance_category_level1_id = $2,
-	finance_category_level2_id = $3,
-	is_operating_income_expense = $4,
-	applicant = $5,
-	business_description = $6,
-	summary_inclusion_override = $7,
-	counterparty_name_override = CASE WHEN $8 THEN $9 ELSE counterparty_name_override END,
+SET finance_category_level1_id = $2::BIGINT,
+	finance_category_level2_id = $3::BIGINT,
+	is_operating_income_expense = $4::BOOLEAN,
+	applicant = $5::TEXT,
+	business_description = $6::TEXT,
+	summary_inclusion_override = $7::BOOLEAN,
+	counterparty_name_override = CASE WHEN $8::BOOLEAN THEN $9::TEXT ELSE counterparty_name_override END,
 	classification_status = CASE
-		WHEN $2 IS NULL AND $3 IS NULL THEN 'UNCLASSIFIED'
+		WHEN $2::BIGINT IS NULL AND $3::BIGINT IS NULL THEN 'UNCLASSIFIED'
 		ELSE 'CLASSIFIED'
 	END,
-	classification_updated_by = $10,
+	classification_source = 'MANUAL',
+	classification_policy_version = NULL,
+	classification_updated_by = $10::TEXT,
 	classification_updated_at = NOW(),
 	updated_at = NOW()
 WHERE id = $1

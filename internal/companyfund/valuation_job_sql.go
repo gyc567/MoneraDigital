@@ -100,7 +100,7 @@ RETURNING lease_expires_at`
 const finalizeCompanyFundValuationJobSQL = `
 UPDATE company_fund_valuation_jobs
 SET job_state = $3,
-	next_attempt_at = $4,
+	next_attempt_at = $4::timestamptz,
 	lease_owner = NULL,
 	lease_expires_at = NULL,
 	completed_at = CASE WHEN $3 IN ('SUCCEEDED', 'SUPERSEDED', 'FAILED') THEN clock_timestamp() ELSE NULL END,

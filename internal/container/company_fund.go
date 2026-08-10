@@ -36,6 +36,12 @@ const (
 	defaultCompanyFundSafeheronCollectorBatchSize     = 100
 	defaultCompanyFundAirwallexFinancialPageSize      = 100
 	defaultCompanyFundAirwallexFinancialMaxPages      = 100
+	defaultCompanyFundAirwallexLedgerLeaseDuration    = time.Minute
+	defaultCompanyFundAirwallexLedgerRetryDelay       = time.Minute
+	defaultCompanyFundAirwallexLedgerTaskSLA          = 7 * 24 * time.Hour
+	defaultCompanyFundAirwallexLedgerMaintenanceBatch = 100
+	defaultCompanyFundAccountLifecycleLeaseDuration   = time.Minute
+	defaultCompanyFundAccountLifecycleRetryDelay      = 5 * time.Second
 	defaultCompanyFundCurrentRateRefreshInterval      = 5 * time.Minute
 	defaultCompanyFundCurrentRateCacheTTL             = 10 * time.Minute
 	defaultCompanyFundCurrentRateCacheMaxAge          = 60 * time.Minute
@@ -72,6 +78,11 @@ type companyFundRuntimeConfig struct {
 	EventRenewInterval            time.Duration
 	EventRetryInitial             time.Duration
 	EventRetryMax                 time.Duration
+	AccountLifecyclePollInterval  time.Duration
+	AccountLifecycleMaxIdle       time.Duration
+	AccountLifecycleLeaseOwner    string
+	AccountLifecycleLease         time.Duration
+	AccountLifecycleRetryDelay    time.Duration
 	ReconciliationPoll            time.Duration
 	ReconciliationZone            string
 	ReconciliationTime            string
@@ -90,18 +101,27 @@ type companyFundRuntimeConfig struct {
 	SafeheronCollectorBatchSize         int
 	SafeheronCoinCatalogRefreshInterval time.Duration
 
-	AirwallexBaseURL           string
-	AirwallexClientID          string
-	AirwallexAPIKey            string
-	AirwallexAPIVersion        string
-	AirwallexLoginAs           string
-	AirwallexWebhookVersion    string
-	AirwallexWebhookSecret     string
-	AirwallexWebhookMaxAge     time.Duration
-	AirwallexWebhookLookback   time.Duration
-	AirwallexRuntimeConfigJSON string
-	AirwallexFinancialPageSize int
-	AirwallexFinancialMaxPages int
+	AirwallexBaseURL                        string
+	AirwallexClientID                       string
+	AirwallexAPIKey                         string
+	AirwallexAPIVersion                     string
+	AirwallexLoginAs                        string
+	AirwallexWebhookVersion                 string
+	AirwallexWebhookSecret                  string
+	AirwallexWebhookMaxAge                  time.Duration
+	AirwallexWebhookLookback                time.Duration
+	AirwallexRuntimeConfigJSON              string
+	AirwallexFinancialPageSize              int
+	AirwallexFinancialMaxPages              int
+	AirwallexLedgerLeaseOwner               string
+	AirwallexLedgerLeaseDuration            time.Duration
+	AirwallexLedgerRetryDelay               time.Duration
+	AirwallexLedgerTaskSLA                  time.Duration
+	AirwallexLedgerMaintenanceBatch         int
+	AirwallexFeeCategoryLevel1Code          string
+	AirwallexFeeCategoryLevel2Code          string
+	AirwallexFeeClassificationPolicyVersion string
+	AirwallexReversalPolicyVersion          string
 
 	CoinGeckoBaseURL               string
 	CoinGeckoDemoAPIKey            string
@@ -125,59 +145,73 @@ func companyFundRuntimeConfigFromViper() companyFundRuntimeConfig {
 		lateStatusOverlapDays = viper.GetInt("COMPANY_FUND_LATE_STATUS_OVERLAP_DAYS")
 	}
 	return companyFundRuntimeConfig{
-		Enabled:                             viper.GetBool("COMPANY_FUND_ENABLED"),
-		StartBackgroundWorkers:              startBackgroundWorkers,
-		AccountRefreshInterval:              viper.GetDuration("COMPANY_FUND_ACCOUNT_REFRESH_INTERVAL"),
-		PayloadKey:                          viper.GetString("COMPANY_FUND_PAYLOAD_KEY"),
-		PayloadKeyVersion:                   viper.GetString("COMPANY_FUND_PAYLOAD_KEY_VERSION"),
-		PayloadRetention:                    viper.GetDuration("COMPANY_FUND_PAYLOAD_RETENTION"),
-		PayloadLegalHold:                    viper.GetBool("COMPANY_FUND_PAYLOAD_LEGAL_HOLD"),
-		AdminKey:                            viper.GetString("COMPANY_FUND_ADMIN_KEY"),
-		EventPollInterval:                   viper.GetDuration("COMPANY_FUND_EVENT_POLL_INTERVAL"),
-		EventMaxIdleInterval:                viper.GetDuration("COMPANY_FUND_EVENT_MAX_IDLE_INTERVAL"),
-		EventDrainLimit:                     viper.GetInt("COMPANY_FUND_EVENT_DRAIN_LIMIT"),
-		EventLeaseOwner:                     viper.GetString("COMPANY_FUND_EVENT_LEASE_OWNER"),
-		EventLeaseDuration:                  viper.GetDuration("COMPANY_FUND_EVENT_LEASE_DURATION"),
-		EventRenewInterval:                  viper.GetDuration("COMPANY_FUND_EVENT_LEASE_RENEW_INTERVAL"),
-		EventRetryInitial:                   viper.GetDuration("COMPANY_FUND_EVENT_RETRY_INITIAL_DELAY"),
-		EventRetryMax:                       viper.GetDuration("COMPANY_FUND_EVENT_RETRY_MAX_DELAY"),
-		ReconciliationPoll:                  viper.GetDuration("COMPANY_FUND_RECONCILIATION_POLL_INTERVAL"),
-		ReconciliationZone:                  viper.GetString("COMPANY_FUND_RECONCILIATION_TIME_ZONE"),
-		ReconciliationTime:                  viper.GetString("COMPANY_FUND_RECONCILIATION_DAILY_TIME"),
-		ReconciliationCatchUp:               viper.GetInt("COMPANY_FUND_RECONCILIATION_CATCH_UP_DAYS"),
-		LateStatusOverlapDays:               lateStatusOverlapDays,
-		LateStatusOverlapConfigured:         lateStatusOverlapConfigured,
-		ReconciliationLeaseOwner:            viper.GetString("COMPANY_FUND_RECONCILIATION_LEASE_OWNER"),
-		ReconciliationLeaseDuration:         viper.GetDuration("COMPANY_FUND_RECONCILIATION_LEASE_DURATION"),
-		ReconciliationRetryInitial:          viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_INITIAL_DELAY"),
-		ReconciliationRetryMax:              viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_MAX_DELAY"),
-		ReconciliationFinalizeTimeout:       viper.GetDuration("COMPANY_FUND_RECONCILIATION_FINALIZE_TIMEOUT"),
-		SafeheronHistoryPageSize:            viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_PAGE_SIZE"),
-		SafeheronHistoryMaxPages:            viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_MAX_PAGES"),
-		SafeheronCollectorInterval:          viper.GetDuration("COMPANY_FUND_SAFEHERON_COLLECTOR_INTERVAL"),
-		SafeheronCollectorBatchSize:         viper.GetInt("COMPANY_FUND_SAFEHERON_COLLECTOR_BATCH_SIZE"),
-		SafeheronCoinCatalogRefreshInterval: viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_REFRESH_INTERVAL"),
-		AirwallexBaseURL:                    viper.GetString("AIRWALLEX_BASE_URL"),
-		AirwallexClientID:                   viper.GetString("AIRWALLEX_CLIENT_ID"),
-		AirwallexAPIKey:                     viper.GetString("AIRWALLEX_API_KEY"),
-		AirwallexAPIVersion:                 viper.GetString("AIRWALLEX_API_VERSION"),
-		AirwallexLoginAs:                    viper.GetString("AIRWALLEX_LOGIN_AS"),
-		AirwallexWebhookVersion:             viper.GetString("AIRWALLEX_WEBHOOK_VERSION"),
-		AirwallexWebhookSecret:              viper.GetString("AIRWALLEX_WEBHOOK_SECRET"),
-		AirwallexWebhookMaxAge:              viper.GetDuration("AIRWALLEX_WEBHOOK_TIMESTAMP_TOLERANCE"),
-		AirwallexWebhookLookback:            viper.GetDuration("COMPANY_FUND_AIRWALLEX_WEBHOOK_LOOKBACK"),
-		AirwallexRuntimeConfigJSON:          viper.GetString("AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG"),
-		AirwallexFinancialPageSize:          viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_PAGE_SIZE"),
-		AirwallexFinancialMaxPages:          viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_MAX_PAGES"),
-		CoinGeckoBaseURL:                    viper.GetString("COINGECKO_BASE_URL"),
-		CoinGeckoDemoAPIKey:                 viper.GetString("COINGECKO_DEMO_API_KEY"),
-		CurrentRateDefaultMappingsJSON:      viper.GetString("COMPANY_FUND_USD_RATE_DEFAULT_MAPPINGS"),
-		CurrentRateRefreshInterval:          viper.GetDuration("COMPANY_FUND_USD_RATE_REFRESH_INTERVAL"),
-		CurrentRateCacheTTL:                 viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_TTL"),
-		CurrentRateCacheMaxAge:              viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_MAX_AGE"),
-		CurrentValuationSweepInterval:       viper.GetDuration("COMPANY_FUND_USD_VALUATION_SWEEP_INTERVAL"),
-		CurrentValuationSweepBatch:          viper.GetInt("COMPANY_FUND_USD_VALUATION_SWEEP_BATCH"),
-		CurrentValuationPolicyVersion:       viper.GetString("COMPANY_FUND_USD_VALUATION_POLICY_VERSION"),
+		Enabled:                                 viper.GetBool("COMPANY_FUND_ENABLED"),
+		StartBackgroundWorkers:                  startBackgroundWorkers,
+		AccountRefreshInterval:                  viper.GetDuration("COMPANY_FUND_ACCOUNT_REFRESH_INTERVAL"),
+		PayloadKey:                              viper.GetString("COMPANY_FUND_PAYLOAD_KEY"),
+		PayloadKeyVersion:                       viper.GetString("COMPANY_FUND_PAYLOAD_KEY_VERSION"),
+		PayloadRetention:                        viper.GetDuration("COMPANY_FUND_PAYLOAD_RETENTION"),
+		PayloadLegalHold:                        viper.GetBool("COMPANY_FUND_PAYLOAD_LEGAL_HOLD"),
+		AdminKey:                                viper.GetString("COMPANY_FUND_ADMIN_KEY"),
+		EventPollInterval:                       viper.GetDuration("COMPANY_FUND_EVENT_POLL_INTERVAL"),
+		EventMaxIdleInterval:                    viper.GetDuration("COMPANY_FUND_EVENT_MAX_IDLE_INTERVAL"),
+		EventDrainLimit:                         viper.GetInt("COMPANY_FUND_EVENT_DRAIN_LIMIT"),
+		EventLeaseOwner:                         viper.GetString("COMPANY_FUND_EVENT_LEASE_OWNER"),
+		EventLeaseDuration:                      viper.GetDuration("COMPANY_FUND_EVENT_LEASE_DURATION"),
+		EventRenewInterval:                      viper.GetDuration("COMPANY_FUND_EVENT_LEASE_RENEW_INTERVAL"),
+		EventRetryInitial:                       viper.GetDuration("COMPANY_FUND_EVENT_RETRY_INITIAL_DELAY"),
+		EventRetryMax:                           viper.GetDuration("COMPANY_FUND_EVENT_RETRY_MAX_DELAY"),
+		AccountLifecyclePollInterval:            viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_POLL_INTERVAL"),
+		AccountLifecycleMaxIdle:                 viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_MAX_IDLE_INTERVAL"),
+		AccountLifecycleLeaseOwner:              viper.GetString("COMPANY_FUND_ACCOUNT_LIFECYCLE_LEASE_OWNER"),
+		AccountLifecycleLease:                   viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_LEASE_DURATION"),
+		AccountLifecycleRetryDelay:              viper.GetDuration("COMPANY_FUND_ACCOUNT_LIFECYCLE_RETRY_DELAY"),
+		ReconciliationPoll:                      viper.GetDuration("COMPANY_FUND_RECONCILIATION_POLL_INTERVAL"),
+		ReconciliationZone:                      viper.GetString("COMPANY_FUND_RECONCILIATION_TIME_ZONE"),
+		ReconciliationTime:                      viper.GetString("COMPANY_FUND_RECONCILIATION_DAILY_TIME"),
+		ReconciliationCatchUp:                   viper.GetInt("COMPANY_FUND_RECONCILIATION_CATCH_UP_DAYS"),
+		LateStatusOverlapDays:                   lateStatusOverlapDays,
+		LateStatusOverlapConfigured:             lateStatusOverlapConfigured,
+		ReconciliationLeaseOwner:                viper.GetString("COMPANY_FUND_RECONCILIATION_LEASE_OWNER"),
+		ReconciliationLeaseDuration:             viper.GetDuration("COMPANY_FUND_RECONCILIATION_LEASE_DURATION"),
+		ReconciliationRetryInitial:              viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_INITIAL_DELAY"),
+		ReconciliationRetryMax:                  viper.GetDuration("COMPANY_FUND_RECONCILIATION_RETRY_MAX_DELAY"),
+		ReconciliationFinalizeTimeout:           viper.GetDuration("COMPANY_FUND_RECONCILIATION_FINALIZE_TIMEOUT"),
+		SafeheronHistoryPageSize:                viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_PAGE_SIZE"),
+		SafeheronHistoryMaxPages:                viper.GetInt("COMPANY_FUND_SAFEHERON_HISTORY_MAX_PAGES"),
+		SafeheronCollectorInterval:              viper.GetDuration("COMPANY_FUND_SAFEHERON_COLLECTOR_INTERVAL"),
+		SafeheronCollectorBatchSize:             viper.GetInt("COMPANY_FUND_SAFEHERON_COLLECTOR_BATCH_SIZE"),
+		SafeheronCoinCatalogRefreshInterval:     viper.GetDuration("COMPANY_FUND_SAFEHERON_COIN_CATALOG_REFRESH_INTERVAL"),
+		AirwallexBaseURL:                        viper.GetString("AIRWALLEX_BASE_URL"),
+		AirwallexClientID:                       viper.GetString("AIRWALLEX_CLIENT_ID"),
+		AirwallexAPIKey:                         viper.GetString("AIRWALLEX_API_KEY"),
+		AirwallexAPIVersion:                     viper.GetString("AIRWALLEX_API_VERSION"),
+		AirwallexLoginAs:                        viper.GetString("AIRWALLEX_LOGIN_AS"),
+		AirwallexWebhookVersion:                 viper.GetString("AIRWALLEX_WEBHOOK_VERSION"),
+		AirwallexWebhookSecret:                  viper.GetString("AIRWALLEX_WEBHOOK_SECRET"),
+		AirwallexWebhookMaxAge:                  viper.GetDuration("AIRWALLEX_WEBHOOK_TIMESTAMP_TOLERANCE"),
+		AirwallexWebhookLookback:                viper.GetDuration("COMPANY_FUND_AIRWALLEX_WEBHOOK_LOOKBACK"),
+		AirwallexRuntimeConfigJSON:              viper.GetString("AIRWALLEX_FINANCIAL_TRANSACTIONS_RUNTIME_CONFIG"),
+		AirwallexFinancialPageSize:              viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_PAGE_SIZE"),
+		AirwallexFinancialMaxPages:              viper.GetInt("AIRWALLEX_FINANCIAL_TRANSACTIONS_MAX_PAGES"),
+		AirwallexLedgerLeaseOwner:               viper.GetString("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_OWNER"),
+		AirwallexLedgerLeaseDuration:            viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_LEASE_DURATION"),
+		AirwallexLedgerRetryDelay:               viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_RETRY_DELAY"),
+		AirwallexLedgerTaskSLA:                  viper.GetDuration("COMPANY_FUND_AIRWALLEX_LEDGER_TASK_SLA"),
+		AirwallexLedgerMaintenanceBatch:         viper.GetInt("COMPANY_FUND_AIRWALLEX_LEDGER_MAINTENANCE_BATCH"),
+		AirwallexFeeCategoryLevel1Code:          viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL1_CODE"),
+		AirwallexFeeCategoryLevel2Code:          viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CATEGORY_LEVEL2_CODE"),
+		AirwallexFeeClassificationPolicyVersion: viper.GetString("COMPANY_FUND_AIRWALLEX_FEE_CLASSIFICATION_POLICY_VERSION"),
+		AirwallexReversalPolicyVersion:          viper.GetString("COMPANY_FUND_AIRWALLEX_REVERSAL_POLICY_VERSION"),
+		CoinGeckoBaseURL:                        viper.GetString("COINGECKO_BASE_URL"),
+		CoinGeckoDemoAPIKey:                     viper.GetString("COINGECKO_DEMO_API_KEY"),
+		CurrentRateDefaultMappingsJSON:          viper.GetString("COMPANY_FUND_USD_RATE_DEFAULT_MAPPINGS"),
+		CurrentRateRefreshInterval:              viper.GetDuration("COMPANY_FUND_USD_RATE_REFRESH_INTERVAL"),
+		CurrentRateCacheTTL:                     viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_TTL"),
+		CurrentRateCacheMaxAge:                  viper.GetDuration("COMPANY_FUND_USD_RATE_CACHE_MAX_AGE"),
+		CurrentValuationSweepInterval:           viper.GetDuration("COMPANY_FUND_USD_VALUATION_SWEEP_INTERVAL"),
+		CurrentValuationSweepBatch:              viper.GetInt("COMPANY_FUND_USD_VALUATION_SWEEP_BATCH"),
+		CurrentValuationPolicyVersion:           viper.GetString("COMPANY_FUND_USD_VALUATION_POLICY_VERSION"),
 	}
 }
 
@@ -294,120 +328,132 @@ func finalizeCompanyFundRuntime(c *Container) {
 	}
 
 	safeNormalizer, safeHistoryClient := newCompanyFundSafeheronNormalizer(c, config.SafeheronCoinCatalogRefreshInterval)
-	airBundle, airwallexConfig := newCompanyFundAirwallexRuntimeBundle(c.CompanyFundAccountRegistry, config)
+	airBundle, airwallexConfig, configuredAirwallexClient := newCompanyFundAirwallexRuntimeBundle(
+		c.CompanyFundAccountRegistry,
+		config,
+	)
 
-	normalizers := make(map[companyfund.Channel]companyfund.ProviderEventNormalizer, 2)
+	normalizers := make(map[companyfund.TransactionSource]companyfund.ProviderEventNormalizer, 2)
 	if safeNormalizer != nil {
 		normalizers[companyfund.ChannelSafeheron] = safeNormalizer
 	}
 	if airBundle != nil && airBundle.Enabled && airBundle.ProviderEvents != nil {
 		normalizers[companyfund.ChannelAirwallex] = airBundle.ProviderEvents
 	}
+	var worker *companyfund.ProviderEventWorker
+	var err error
 	if len(normalizers) == 0 {
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		log.Printf("company-fund workers disabled: no provider normalizer is configured")
-		return
-	}
-
-	payloadReader, err := companyfund.NewProviderEventSourceBytesReader(
-		companyfund.NewPostgresSafeheronWebhookPayloadReader(c.DB),
-		c.CompanyFundOwnedPayloadService,
-	)
-	if err != nil {
-		log.Printf("company-fund workers disabled: provider event source reader could not be initialized")
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		return
-	}
-	worker, err := companyfund.NewProviderEventWorker(
-		c.CompanyFundRepository,
-		payloadReader,
-		normalizers,
-		companyFundProviderEventWorkerConfig(config, valuator, func() {
-			notifyCompanyFundValuationWork(c)
-		}),
-	)
-	if err != nil {
-		log.Printf("company-fund workers disabled: provider event worker configuration is invalid")
-		startCompanyFundCoreLoops(c, config, nil, refresher, valuator)
-		return
-	}
-
-	var syncAdapter *companyfund.CompanyFundReconciliationSyncRunAdapter
-	if safeHistoryClient != nil || (airBundle != nil && airBundle.Enabled) {
-		syncAdapter, err = companyfund.NewCompanyFundReconciliationSyncRunAdapter(
-			c.CompanyFundRepository,
-			companyfund.CompanyFundReconciliationSyncRunAdapterConfig{
-				LeaseOwner:    companyFundLeaseOwner("company-fund-reconcile", config.ReconciliationLeaseOwner),
-				LeaseDuration: companyFundDurationOrDefault(config.ReconciliationLeaseDuration, defaultCompanyFundReconciliationLeaseDuration),
-			},
+		log.Printf("company-fund provider-event worker disabled: no provider normalizer is configured")
+	} else {
+		payloadReader, readerErr := companyfund.NewProviderEventSourceBytesReader(
+			companyfund.NewPostgresSafeheronWebhookPayloadReader(c.DB),
+			c.CompanyFundOwnedPayloadService,
 		)
-		if err != nil {
-			log.Printf("company-fund REST reconciliation disabled: sync-run lease configuration is invalid")
-			syncAdapter = nil
-		}
-	}
-
-	var safeReconciler *companyfund.SafeheronTransactionHistoryReconciler
-	if safeHistoryClient != nil && syncAdapter != nil {
-		var historyIngester companyfund.SafeheronHistoryOwnedProviderEventIngestor = c.CompanyFundOwnedPayloadService
-		if c.SafeheronRoutingMode == fundrouting.ModeCaptureOnly || c.SafeheronRoutingMode == fundrouting.ModeRoutingAuthoritative {
-			routingHistoryIngester, historyErr := fundrouting.NewHistoryInboxIngester(c.DB)
-			if historyErr != nil {
-				log.Printf("company-fund Safeheron routing history inbox disabled: %v", historyErr)
-			} else {
-				historyIngester = routingHistoryIngester
-			}
-		}
-		safeReconciler, err = companyfund.NewSafeheronTransactionHistoryReconciler(
-			safeHistoryClient,
-			historyIngester,
-			syncAdapter,
-			companyfund.SafeheronTransactionHistoryReconcilerConfig{
-				PageSize:          int32(companyFundPositiveIntOrDefault(config.SafeheronHistoryPageSize, defaultCompanyFundSafeheronHistoryPageSize)),
-				MaxPages:          companyFundPositiveIntOrDefault(config.SafeheronHistoryMaxPages, defaultCompanyFundSafeheronHistoryMaxPages),
-				PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
-				PayloadRetention:  config.PayloadRetention,
-			},
-		)
-		if err != nil {
-			log.Printf("company-fund Safeheron REST reconciliation disabled: configuration is invalid")
-			safeReconciler = nil
-		}
-	}
-
-	var airwallexClient *companyfund.AirwallexClient
-	var airwallexReconciler *companyfund.AirwallexFinancialTransactionsReconciler
-	if airBundle != nil && airBundle.Enabled && syncAdapter != nil {
-		airwallexClient, err = newCompanyFundAirwallexClient(config)
-		if err != nil {
-			log.Printf("company-fund Airwallex REST client disabled: incomplete or invalid configuration")
-			airwallexClient = nil
-		}
-		if airwallexClient != nil {
-			airwallexReconciler, err = companyfund.NewAirwallexFinancialTransactionsReconciler(
-				airwallexClient,
-				c.CompanyFundOwnedPayloadService,
-				syncAdapter,
-				companyfund.AirwallexFinancialTransactionsReconcilerConfig{
-					APIVersion:        airwallexConfig.APIVersion,
-					SchemaVersion:     airwallexConfig.SchemaVersion,
-					EventVersion:      airwallexConfig.EventVersion,
-					PageSize:          companyFundPositiveIntOrDefault(config.AirwallexFinancialPageSize, defaultCompanyFundAirwallexFinancialPageSize),
-					MaxPages:          companyFundPositiveIntOrDefault(config.AirwallexFinancialMaxPages, defaultCompanyFundAirwallexFinancialMaxPages),
-					PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
-					PayloadRetention:  config.PayloadRetention,
-				},
+		if readerErr != nil {
+			log.Printf("company-fund provider-event worker disabled: source reader could not be initialized")
+		} else {
+			worker, err = companyfund.NewProviderEventWorker(
+				c.CompanyFundRepository,
+				payloadReader,
+				normalizers,
+				companyFundProviderEventWorkerConfig(config, valuator, func() {
+					notifyCompanyFundValuationWork(c)
+				}),
 			)
 			if err != nil {
-				log.Printf("company-fund Airwallex REST reconciliation disabled: configuration is invalid")
-				airwallexReconciler = nil
-				airwallexClient = nil
+				log.Printf("company-fund provider-event worker disabled: configuration is invalid")
+				worker = nil
 			}
 		}
 	}
+
+	reconciliation := newCompanyFundReconciliationRuntime(
+		c,
+		config,
+		safeHistoryClient,
+		airBundle,
+		airwallexConfig,
+		configuredAirwallexClient,
+	)
+	syncAdapter := reconciliation.syncAdapter
+	safeReconciler := reconciliation.safeheron
+	airwallexClient := reconciliation.airwallexClient
+	airwallexReconciler := reconciliation.airwallex
 
 	runtimeDependencies := companyfund.CompanyFundRuntimeDependencies{
 		ProviderEventWorker: worker,
+	}
+	lifecycleValidationClient := airwallexClient
+	if lifecycleValidationClient == nil {
+		lifecycleValidationClient, err = newCompanyFundAirwallexClient(config)
+		if err != nil {
+			log.Printf("company-fund Airwallex lifecycle validation disabled: client configuration is invalid")
+			lifecycleValidationClient = nil
+		}
+	}
+	lifecycleWorker, lifecycleErr := companyfund.NewAccountLifecycleCommandWorker(
+		c.CompanyFundRepository,
+		lifecycleValidationClient,
+		c.CompanyFundAccountRegistry,
+		companyfund.AccountLifecycleCommandWorkerConfig{
+			Owner: companyFundLeaseOwner(
+				"company-fund-account-lifecycle",
+				config.AccountLifecycleLeaseOwner,
+			),
+			LeaseDuration: companyFundDurationOrDefault(
+				config.AccountLifecycleLease,
+				defaultCompanyFundAccountLifecycleLeaseDuration,
+			),
+			RetryDelay: companyFundDurationOrDefault(
+				config.AccountLifecycleRetryDelay,
+				defaultCompanyFundAccountLifecycleRetryDelay,
+			),
+		},
+	)
+	if lifecycleErr != nil {
+		log.Printf("company-fund Airwallex account lifecycle worker disabled: configuration is invalid")
+	} else {
+		runtimeDependencies.AccountLifecycleProcessor = lifecycleWorker
+		c.CompanyFundAccountLifecycleWorker = lifecycleWorker
+	}
+	if airBundle != nil && airBundle.Enabled {
+		ledgerProcessor, processorErr := companyfund.NewAirwallexLedgerTaskProcessor(
+			c.CompanyFundRepository,
+			companyfund.AirwallexLedgerTaskProcessorConfig{
+				Owner: companyFundLeaseOwner(
+					"company-fund-airwallex-ledger",
+					config.AirwallexLedgerLeaseOwner,
+				),
+				LeaseDuration: companyFundDurationOrDefault(
+					config.AirwallexLedgerLeaseDuration,
+					defaultCompanyFundAirwallexLedgerLeaseDuration,
+				),
+				RetryDelay: companyFundDurationOrDefault(
+					config.AirwallexLedgerRetryDelay,
+					defaultCompanyFundAirwallexLedgerRetryDelay,
+				),
+				FeeClassification: companyfund.AirwallexFeeClassificationPolicy{
+					Level1Code:    config.AirwallexFeeCategoryLevel1Code,
+					Level2Code:    config.AirwallexFeeCategoryLevel2Code,
+					PolicyVersion: config.AirwallexFeeClassificationPolicyVersion,
+				},
+				ReversalPolicyVersion:      config.AirwallexReversalPolicyVersion,
+				PayoutCounterpartyBackfill: true,
+				MaintenanceBatch: companyFundPositiveIntOrDefault(
+					config.AirwallexLedgerMaintenanceBatch,
+					defaultCompanyFundAirwallexLedgerMaintenanceBatch,
+				),
+				TaskSLA: companyFundDurationOrDefault(
+					config.AirwallexLedgerTaskSLA,
+					defaultCompanyFundAirwallexLedgerTaskSLA,
+				),
+			},
+		)
+		if processorErr != nil {
+			log.Printf("company-fund Airwallex Phase 2 ledger maintenance disabled: worker configuration is invalid")
+		} else {
+			runtimeDependencies.LedgerTaskProcessor = ledgerProcessor
+		}
 	}
 	if safeReconciler != nil || airwallexReconciler != nil {
 		runtimeDependencies.AccountSnapshots = c.CompanyFundAccountRegistry
@@ -420,10 +466,12 @@ func finalizeCompanyFundRuntime(c *Container) {
 		runtimeDependencies.AirwallexReconciler = airwallexReconciler
 	}
 	runtime, err := companyfund.NewCompanyFundRuntime(runtimeDependencies, companyfund.CompanyFundRuntimeConfig{
-		EventPollInterval:          config.EventPollInterval,
-		EventMaxIdleInterval:       config.EventMaxIdleInterval,
-		EventDrainLimit:            config.EventDrainLimit,
-		ReconciliationPollInterval: config.ReconciliationPoll,
+		EventPollInterval:               config.EventPollInterval,
+		EventMaxIdleInterval:            config.EventMaxIdleInterval,
+		EventDrainLimit:                 config.EventDrainLimit,
+		AccountLifecyclePollInterval:    config.AccountLifecyclePollInterval,
+		AccountLifecycleMaxIdleInterval: config.AccountLifecycleMaxIdle,
+		ReconciliationPollInterval:      config.ReconciliationPoll,
 		ReconciliationSchedule: companyfund.ReconciliationDailyScheduleConfig{
 			TimeZone:    config.ReconciliationZone,
 			DailyTime:   config.ReconciliationTime,
@@ -490,8 +538,119 @@ func finalizeCompanyFundRuntime(c *Container) {
 	c.CompanyFundSafeheronCollector = collector
 	startCompanyFundCoreLoops(c, config, runtime, refresher, valuator)
 
-	log.Printf("company-fund runtime assembled: worker=%t safeheron_history=%t airwallex_reconciliation=%t airwallex_webhook=%t valuation=%t",
-		worker != nil, safeReconciler != nil, airwallexReconciler != nil, c.CompanyFundAirwallexWebhookHandler != nil, valuator != nil)
+	log.Printf("company-fund runtime assembled: worker=%t safeheron_history=%t airwallex_reconciliation=%t airwallex_webhook=%t airwallex_ledger=%t valuation=%t",
+		worker != nil, safeReconciler != nil, airwallexReconciler != nil, c.CompanyFundAirwallexWebhookHandler != nil,
+		runtimeDependencies.LedgerTaskProcessor != nil, valuator != nil)
+}
+
+type companyFundReconciliationRuntime struct {
+	syncAdapter     *companyfund.CompanyFundReconciliationSyncRunAdapter
+	safeheron       *companyfund.SafeheronTransactionHistoryReconciler
+	airwallexClient *companyfund.AirwallexClient
+	airwallex       *companyfund.AirwallexFinancialTransactionsReconciler
+}
+
+func newCompanyFundReconciliationRuntime(
+	c *Container,
+	config companyFundRuntimeConfig,
+	safeHistoryClient safeheron.TransactionHistoryClient,
+	airBundle *companyfund.AirwallexFinancialTransactionsRuntimeBundle,
+	airwallexConfig companyfund.AirwallexFinancialTransactionsRuntimeConfig,
+	airwallexClient *companyfund.AirwallexClient,
+) companyFundReconciliationRuntime {
+	result := companyFundReconciliationRuntime{}
+	if safeHistoryClient != nil || (airBundle != nil && airBundle.Enabled) {
+		var err error
+		result.syncAdapter, err = companyfund.NewCompanyFundReconciliationSyncRunAdapter(
+			c.CompanyFundRepository,
+			companyfund.CompanyFundReconciliationSyncRunAdapterConfig{
+				LeaseOwner: companyFundLeaseOwner(
+					"company-fund-reconcile",
+					config.ReconciliationLeaseOwner,
+				),
+				LeaseDuration: companyFundDurationOrDefault(
+					config.ReconciliationLeaseDuration,
+					defaultCompanyFundReconciliationLeaseDuration,
+				),
+			},
+		)
+		if err != nil {
+			log.Printf("company-fund REST reconciliation disabled: sync-run lease configuration is invalid")
+			result.syncAdapter = nil
+		}
+	}
+
+	if safeHistoryClient != nil && result.syncAdapter != nil {
+		historyIngester := companyfund.SafeheronHistoryOwnedProviderEventIngestor(
+			c.CompanyFundOwnedPayloadService,
+		)
+		if c.SafeheronRoutingMode == fundrouting.ModeCaptureOnly ||
+			c.SafeheronRoutingMode == fundrouting.ModeRoutingAuthoritative {
+			routingHistoryIngester, err := fundrouting.NewHistoryInboxIngester(c.DB)
+			if err != nil {
+				log.Printf("company-fund Safeheron routing history inbox disabled: %v", err)
+			} else {
+				historyIngester = routingHistoryIngester
+			}
+		}
+		var err error
+		result.safeheron, err = companyfund.NewSafeheronTransactionHistoryReconciler(
+			safeHistoryClient,
+			historyIngester,
+			result.syncAdapter,
+			companyfund.SafeheronTransactionHistoryReconcilerConfig{
+				PageSize: int32(companyFundPositiveIntOrDefault(
+					config.SafeheronHistoryPageSize,
+					defaultCompanyFundSafeheronHistoryPageSize,
+				)),
+				MaxPages: companyFundPositiveIntOrDefault(
+					config.SafeheronHistoryMaxPages,
+					defaultCompanyFundSafeheronHistoryMaxPages,
+				),
+				PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
+				PayloadRetention:  config.PayloadRetention,
+			},
+		)
+		if err != nil {
+			log.Printf("company-fund Safeheron REST reconciliation disabled: configuration is invalid")
+			result.safeheron = nil
+		}
+	}
+
+	if airBundle == nil || !airBundle.Enabled || result.syncAdapter == nil {
+		return result
+	}
+	if airwallexClient == nil {
+		return result
+	}
+	result.airwallexClient = airwallexClient
+	var err error
+	result.airwallex, err = companyfund.NewAirwallexFinancialTransactionsReconciler(
+		result.airwallexClient,
+		c.CompanyFundOwnedPayloadService,
+		result.syncAdapter,
+		companyfund.AirwallexFinancialTransactionsReconcilerConfig{
+			APIVersion:    airwallexConfig.APIVersion,
+			SchemaVersion: airwallexConfig.SchemaVersion,
+			EventVersion:  airwallexConfig.EventVersion,
+			PageSize: companyFundPositiveIntOrDefault(
+				config.AirwallexFinancialPageSize,
+				defaultCompanyFundAirwallexFinancialPageSize,
+			),
+			MaxPages: companyFundPositiveIntOrDefault(
+				config.AirwallexFinancialMaxPages,
+				defaultCompanyFundAirwallexFinancialMaxPages,
+			),
+			PayloadKeyVersion: c.companyFundPayloadKeyVersion(),
+			PayloadRetention:  config.PayloadRetention,
+		},
+	)
+	if err != nil {
+		log.Printf("company-fund Airwallex REST reconciliation disabled: configuration is invalid")
+		result.airwallex = nil
+		result.airwallexClient = nil
+	}
+	return result
 }
 
 func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time.Duration) (*companyfund.SafeheronProviderEventNormalizer, safeheron.TransactionHistoryClient) {
@@ -548,32 +707,41 @@ func newCompanyFundSafeheronNormalizer(c *Container, catalogRefreshInterval time
 	return normalizer, historyClient
 }
 
-func newCompanyFundAirwallexRuntimeBundle(registry *companyfund.AccountRegistry, config companyFundRuntimeConfig) (*companyfund.AirwallexFinancialTransactionsRuntimeBundle, companyfund.AirwallexFinancialTransactionsRuntimeConfig) {
+func newCompanyFundAirwallexRuntimeBundle(
+	registry *companyfund.AccountRegistry,
+	config companyFundRuntimeConfig,
+) (
+	*companyfund.AirwallexFinancialTransactionsRuntimeBundle,
+	companyfund.AirwallexFinancialTransactionsRuntimeConfig,
+	*companyfund.AirwallexClient,
+) {
 	runtimeConfig, err := companyfund.ParseAirwallexFinancialTransactionsRuntimeConfigJSON([]byte(config.AirwallexRuntimeConfigJSON))
 	if err != nil {
 		log.Printf("company-fund Airwallex runtime disabled: strict mapping configuration is invalid")
-		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}
+		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}, nil
 	}
 	if !runtimeConfig.Enabled {
-		return nil, runtimeConfig
+		return nil, runtimeConfig, nil
 	}
 	if registry == nil {
 		log.Printf("company-fund Airwallex runtime disabled: configured account scope is not eligible")
-		return nil, runtimeConfig
+		return nil, runtimeConfig, nil
 	}
-	if _, eligible := companyfund.ResolveAirwallexSingleAccountScope(registry.Snapshot(), config.AirwallexLoginAs); !eligible {
-		// The official Financial Transactions response has no account ownership
-		// proof. Never enable its worker, REST reconciler, or webhook route
-		// unless one configured account exactly matches x-login-as.
-		log.Printf("company-fund Airwallex runtime disabled: configured account scope is not eligible")
-		return nil, runtimeConfig
+	client, err := newCompanyFundAirwallexClient(config)
+	if err != nil || client == nil {
+		log.Printf("company-fund Airwallex runtime disabled: REST client configuration is invalid")
+		return nil, runtimeConfig, nil
 	}
-	bundle, err := companyfund.NewAirwallexFinancialTransactionsScopedRuntimeBundle(runtimeConfig, registry, config.AirwallexLoginAs)
+	bundle, err := companyfund.NewAirwallexFinancialTransactionsRuntimeBundleWithTransferDetailsClient(
+		runtimeConfig,
+		registry,
+		client,
+	)
 	if err != nil {
 		log.Printf("company-fund Airwallex runtime disabled: strict mapping configuration is invalid")
-		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}
+		return nil, companyfund.AirwallexFinancialTransactionsRuntimeConfig{}, nil
 	}
-	return bundle, runtimeConfig
+	return bundle, runtimeConfig, client
 }
 
 func newCompanyFundCurrentValuationRuntime(c *Container, config companyFundRuntimeConfig) (*companyfund.CurrentRateCache, *companyfund.CoinGeckoCurrentRateRefresher, *companyfund.CompanyFundCurrentValuator) {
@@ -715,16 +883,20 @@ func newCompanyFundAirwallexClient(config companyFundRuntimeConfig) (*companyfun
 	if !configured {
 		return nil, nil
 	}
-	if strings.TrimSpace(config.AirwallexClientID) == "" || strings.TrimSpace(config.AirwallexAPIKey) == "" || strings.TrimSpace(config.AirwallexAPIVersion) == "" ||
-		config.AirwallexLoginAs == "" || config.AirwallexLoginAs != strings.TrimSpace(config.AirwallexLoginAs) {
-		return nil, fmt.Errorf("Airwallex client credentials, API version, and exact login scope are required together")
+	if strings.TrimSpace(config.AirwallexClientID) == "" || strings.TrimSpace(config.AirwallexAPIKey) == "" ||
+		strings.TrimSpace(config.AirwallexAPIVersion) == "" ||
+		(config.AirwallexLoginAs != "" && config.AirwallexLoginAs != strings.TrimSpace(config.AirwallexLoginAs)) {
+		return nil, fmt.Errorf("Airwallex client credentials and API version are required together")
 	}
 	return companyfund.NewAirwallexClient(companyfund.AirwallexClientConfig{
 		BaseURL:    config.AirwallexBaseURL,
 		ClientID:   config.AirwallexClientID,
 		APIKey:     config.AirwallexAPIKey,
 		APIVersion: config.AirwallexAPIVersion,
-		LoginAs:    config.AirwallexLoginAs,
+		// Company-fund business requests create a fresh immutable scope from
+		// the database CURRENT account. AIRWALLEX_LOGIN_AS is accepted only as
+		// a legacy startup setting and is deliberately not pinned here.
+		LoginAs: "",
 	})
 }
 
