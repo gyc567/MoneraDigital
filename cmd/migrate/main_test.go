@@ -48,8 +48,8 @@ func TestCurrentArtifactPrintReleaseSequenceIncludesEveryRequiredExactMigration(
 	if err != nil {
 		t.Fatalf("release sequence CLI failed: %v\n%s", err, out)
 	}
-	if got := strings.TrimSpace(string(out)); got != "063" {
-		t.Fatalf("release sequence = %q, want 063", got)
+	if got := strings.TrimSpace(string(out)); got != "064" {
+		t.Fatalf("release sequence = %q, want 064", got)
 	}
 }
 
@@ -73,12 +73,12 @@ func TestArtifactReleaseSequenceMustBeContiguousExactAndEndAtCeiling(t *testing.
 		})
 	}
 
-	ceiling, err := validateArtifactMigrationReleaseSequence([]string{"063"})
+	ceiling, err := validateArtifactMigrationReleaseSequence([]string{"064"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ceiling != "063" {
-		t.Fatalf("release sequence ceiling = %q, want 063", ceiling)
+	if ceiling != "064" {
+		t.Fatalf("release sequence ceiling = %q, want 064", ceiling)
 	}
 }
 
@@ -127,6 +127,8 @@ func TestExactMigrationOptionsRequireImmediatePredecessor(t *testing.T) {
 		{version: "060", predecessor: "059"},
 		{version: "061", predecessor: "060"},
 		{version: "062", predecessor: "061"},
+		{version: "063", predecessor: "062"},
+		{version: "064", predecessor: "063"},
 	} {
 		got, err := validateExactMigrationOptions(testCase.version, testCase.version, false)
 		if err != nil {
@@ -204,7 +206,7 @@ func TestRequireAppliedMigrationPropagatesLookupFailure(t *testing.T) {
 
 func TestExactMigrationRegistrationContainsOnlyRequestedVersion(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063"} {
+	for _, version := range []string{"050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063", "064"} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerSelectedMigrations(migrator, version); err != nil {
 			t.Fatalf("register %s: %v", version, err)
@@ -218,7 +220,7 @@ func TestExactMigrationRegistrationContainsOnlyRequestedVersion(t *testing.T) {
 
 func TestExactMigrationRegistrationRejectsHistoricalAndUnknownVersions(t *testing.T) {
 	t.Parallel()
-	for _, version := range []string{"049", "064", "latest"} {
+	for _, version := range []string{"049", "065", "latest"} {
 		if err := registerSelectedMigrations(migration.NewMigrator(nil), version); err == nil {
 			t.Fatalf("exact migration %q accepted", version)
 		}
@@ -236,12 +238,12 @@ func TestDefaultMigrationSelectionRegistersCurrentArtifact(t *testing.T) {
 	}
 }
 
-func TestCurrentArtifactCeilingIs063(t *testing.T) {
+func TestCurrentArtifactCeilingIs064(t *testing.T) {
 	t.Parallel()
 	migrator := migration.NewMigrator(nil)
 	registerMigrations(migrator)
-	if got := migrator.Ceiling(); got != "063" {
-		t.Fatalf("registered migration ceiling = %q, want 063", got)
+	if got := migrator.Ceiling(); got != "064" {
+		t.Fatalf("registered migration ceiling = %q, want 064", got)
 	}
 }
 
@@ -263,6 +265,7 @@ func TestArtifactMigrationCeilingControlsRegistrationAndCannotBeRuntimeExpanded(
 		{ceiling: "061", want: "061"},
 		{ceiling: "062", want: "062"},
 		{ceiling: "063", want: "063"},
+		{ceiling: "064", want: "064"},
 	} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerMigrationsForArtifact(migrator, testCase.ceiling); err != nil {
@@ -275,7 +278,7 @@ func TestArtifactMigrationCeilingControlsRegistrationAndCannotBeRuntimeExpanded(
 	if err := registerMigrationsForArtifact(migration.NewMigrator(nil), "051"); err == nil {
 		t.Fatal("unsupported artifact migration ceiling accepted")
 	}
-	if artifactMigrationCeiling() != "063" {
+	if artifactMigrationCeiling() != "064" {
 		t.Fatalf("current tree compiled ceiling = %q", artifactMigrationCeiling())
 	}
 }
@@ -298,6 +301,7 @@ func TestArtifactMigrationRegistrationManifestIsCompleteOrderedAndImmutable(t *t
 		{ceiling: "061", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061")},
 		{ceiling: "062", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061", "062")},
 		{ceiling: "063", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063")},
+		{ceiling: "064", want: append(append([]string(nil), wantA...), "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063", "064")},
 	} {
 		migrator := migration.NewMigrator(nil)
 		if err := registerMigrationsForArtifact(migrator, testCase.ceiling); err != nil {

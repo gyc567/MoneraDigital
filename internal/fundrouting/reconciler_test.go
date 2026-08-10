@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,8 +37,8 @@ func TestReconcilerReservesCompanyProjectionForNewlyEnabledAccount(t *testing.T)
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT clock_timestamp").WillReturnRows(sqlmock.NewRows([]string{"clock_timestamp"}).AddRow(scanCutoff))
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
-	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, "TRANSACTION_STATUS_CHANGED", payload))
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
+	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, ReasonCompanyAccountDisabled, "TRANSACTION_STATUS_CHANGED", payload))
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xsource").WillReturnRows(ownershipRows())
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xdest").WillReturnRows(
 		ownershipRows().AddRow("COMPANY_ACCOUNT", nil, nil, int64(7), true, monitoring),
@@ -85,8 +86,8 @@ func TestReconcilerCountsUnresolvedCaseAsScannedWork(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT clock_timestamp").WillReturnRows(sqlmock.NewRows([]string{"clock_timestamp"}).AddRow(scanCutoff))
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
-	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, "TRANSACTION_STATUS_CHANGED", payload))
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
+	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, ReasonOwnershipUnknown, "TRANSACTION_STATUS_CHANGED", payload))
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xsource").WillReturnRows(ownershipRows())
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xdest").WillReturnRows(ownershipRows())
 	mock.ExpectExec("UPDATE safeheron_transaction_routing_cases").WillReturnResult(sqlmock.NewResult(0, 1))
@@ -94,7 +95,7 @@ func TestReconcilerCountsUnresolvedCaseAsScannedWork(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
 	}))
 	mock.ExpectRollback()
 
@@ -110,6 +111,34 @@ func TestReconcilerCountsUnresolvedCaseAsScannedWork(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestRecoveryAlertRequiresPriorSLAAndUsesVersionedIdempotency(t *testing.T) {
+	sqlText := reconciledRecoveryAlertSQL()
+	for _, fragment := range []string{
+		"'RECOVERY_SUMMARY'",
+		"'sla:recovered:version:'",
+		"$2::integer::text",
+		"alert_type='SLA_ESCALATION'",
+		"prior.payload->>'reason_code'='STATUS_NOT_TERMINAL'",
+		"'safeheron_tx_key'",
+		"'source_address'",
+		"'destination_address'",
+		"'transaction_status'",
+		"'transaction_sub_status'",
+		"'tx_hash'",
+		"'stuck_seconds'",
+		"'last_source_event_type'",
+		"'last_source_received_at'",
+		"'last_api_checked_at'",
+		"'last_api_check_outcome'",
+		"'last_api_error_code'",
+		"ON CONFLICT (case_id,alert_type,transition_key) DO NOTHING",
+	} {
+		if !strings.Contains(sqlText, fragment) {
+			t.Errorf("recovery alert SQL is missing %q", fragment)
+		}
 	}
 }
 
@@ -137,8 +166,8 @@ func TestReconcilerDrainContinuesPastUnresolvedCaseToTerminalCase(t *testing.T) 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT clock_timestamp").WillReturnRows(sqlmock.NewRows([]string{"clock_timestamp"}).AddRow(scanCutoff))
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
-	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, "TRANSACTION_STATUS_CHANGED", payload))
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
+	}).AddRow(11, candidates[0].RoutingIdentityKey, "EVM", 1, ReasonOwnershipUnknown, "TRANSACTION_STATUS_CHANGED", payload))
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xsource").WillReturnRows(ownershipRows())
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xdest").WillReturnRows(ownershipRows())
 	mock.ExpectExec("UPDATE safeheron_transaction_routing_cases").WillReturnResult(sqlmock.NewResult(0, 1))
@@ -146,8 +175,8 @@ func TestReconcilerDrainContinuesPastUnresolvedCaseToTerminalCase(t *testing.T) 
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
-	}).AddRow(12, candidates[0].RoutingIdentityKey, "EVM", 1, "TRANSACTION_STATUS_CHANGED", payload))
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
+	}).AddRow(12, candidates[0].RoutingIdentityKey, "EVM", 1, ReasonStatusNotTerminal, "TRANSACTION_STATUS_CHANGED", payload))
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xsource").WillReturnRows(ownershipRows())
 	mock.ExpectQuery("FROM safeheron_address_ownerships").WithArgs("EVM", "0xdest").WillReturnRows(
 		ownershipRows().AddRow("COMPANY_ACCOUNT", nil, nil, int64(7), true, monitoring),
@@ -155,11 +184,12 @@ func TestReconcilerDrainContinuesPastUnresolvedCaseToTerminalCase(t *testing.T) 
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO safeheron_transaction_routing_case_commands")).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(21)))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO safeheron_transaction_routing_case_actions")).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("UPDATE safeheron_transaction_routing_cases").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO safeheron_transaction_routing_alerts").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).WillReturnRows(sqlmock.NewRows([]string{
-		"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
+		"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
 	}))
 	mock.ExpectRollback()
 
@@ -195,7 +225,7 @@ func TestReconcilerNotifyWakesIdleRun(t *testing.T) {
 		mock.ExpectQuery("SELECT clock_timestamp").WillReturnRows(sqlmock.NewRows([]string{"clock_timestamp"}).AddRow(scanCutoff))
 		mock.ExpectQuery("FOR UPDATE OF routing SKIP LOCKED").WithArgs(scanCutoff).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id", "routing_identity_key", "network_family", "version", "event_type", "raw_payload",
+				"id", "routing_identity_key", "network_family", "version", "reason_code", "event_type", "raw_payload",
 			}))
 		mock.ExpectRollback()
 	}

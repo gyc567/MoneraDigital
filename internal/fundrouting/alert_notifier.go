@@ -3,8 +3,6 @@ package fundrouting
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -12,13 +10,30 @@ import (
 	"monera-digital/internal/alert"
 )
 
+const (
+	routingLarkBatchWindow = 5 * time.Minute
+	routingLarkBatchLimit  = 20
+	// Payload bytes are capped below Lark's final rendered-message boundary;
+	// full txKey and address fields remain intact in every selected alert.
+	routingLarkBatchMaxPayloadBytes = 8 * 1024
+	routingFanoutLimit              = 100
+)
+
 type RoutingAlertSender interface {
 	RoutingSinks() []alert.RoutingSink
 	SendRouting(context.Context, string, string, string, string, map[string]string) alert.RoutingDeliveryOutcome
 }
 
+type routingAlertQueue interface {
+	NextDue(context.Context) (time.Time, error)
+	SweepExpired(context.Context) error
+	EnsureDeliveries(context.Context, []alert.RoutingSink, time.Duration) (bool, error)
+	Claim(context.Context, string, int) ([]claimedDelivery, error)
+	Finish(context.Context, string, []claimedDelivery, alert.RoutingDeliveryOutcome) error
+}
+
 type AlertNotifier struct {
-	db       *sql.DB
+	queue    routingAlertQueue
 	sender   RoutingAlertSender
 	workerID string
 	runner   *adaptiveRunner
@@ -26,6 +41,8 @@ type AlertNotifier struct {
 
 type claimedDelivery struct {
 	ID                    int64
+	AlertID               int64
+	CaseID                int64
 	AttemptID             int64
 	Attempt               int
 	AutomaticAttemptCount int
@@ -34,35 +51,37 @@ type claimedDelivery struct {
 	Severity              string
 	AlertType             string
 	Payload               []byte
+	AlertCreatedAt        time.Time
 }
 
 func NewAlertNotifier(db *sql.DB, sender RoutingAlertSender) (*AlertNotifier, error) {
-	if db == nil || sender == nil {
-		return nil, fmt.Errorf("routing alert database and sender are required")
+	if db == nil {
+		return nil, fmt.Errorf("routing alert database is required")
 	}
-	n := &AlertNotifier{db: db, sender: sender, workerID: newProjectionWorkerID()}
+	queue, err := newPostgresRoutingAlertQueue(db)
+	if err != nil {
+		return nil, err
+	}
+	return newAlertNotifierWithQueue(queue, sender)
+}
+
+func newAlertNotifierWithQueue(queue routingAlertQueue, sender RoutingAlertSender) (*AlertNotifier, error) {
+	if queue == nil || sender == nil {
+		return nil, fmt.Errorf("routing alert queue and sender are required")
+	}
+	n := &AlertNotifier{queue: queue, sender: sender, workerID: newProjectionWorkerID()}
 	n.runner = newAdaptiveRunner("fund routing alert notifier", time.Second, adaptiveschedule.DefaultMaxIdle, n.ProcessOne)
 	n.runner.setNextDue(n.NextDue)
 	return n, nil
 }
 
-// NextDue returns the earliest durable delivery retry or lease recovery deadline.
+// NextDue returns the earliest durable initial batch, delivery retry, or lease
+// recovery deadline.
 func (n *AlertNotifier) NextDue(ctx context.Context) (time.Time, error) {
-	var due sql.NullTime
-	err := n.db.QueryRowContext(ctx, `
-SELECT min(due_at) FROM (
-  SELECT next_attempt_at AS due_at
-  FROM safeheron_transaction_routing_alert_deliveries
-  WHERE status='FAILED_DEFINITE' AND next_attempt_at > now()
-  UNION ALL
-  SELECT lease_expires_at AS due_at
-  FROM safeheron_transaction_routing_alert_deliveries
-  WHERE status='DISPATCHING' AND lease_expires_at > now()
-) deadlines`).Scan(&due)
-	if err != nil || !due.Valid {
-		return time.Time{}, err
+	if n == nil || n.queue == nil {
+		return time.Time{}, nil
 	}
-	return due.Time, nil
+	return n.queue.NextDue(ctx)
 }
 
 // Notify wakes alert delivery after durable alert rows are written.
@@ -74,199 +93,51 @@ func (n *AlertNotifier) Notify() bool {
 }
 
 func (n *AlertNotifier) ProcessOne(ctx context.Context) (bool, error) {
-	if err := n.sweepExpired(ctx); err != nil {
+	if n == nil || n.queue == nil || n.sender == nil {
+		return false, fmt.Errorf("routing alert notifier is not configured")
+	}
+	if err := n.queue.SweepExpired(ctx); err != nil {
 		return false, err
 	}
-	if err := n.ensureDeliveries(ctx); err != nil {
-		return false, err
+	materialized := false
+	for range routingFanoutLimit {
+		created, err := n.queue.EnsureDeliveries(ctx, n.sender.RoutingSinks(), routingLarkBatchWindow)
+		if err != nil {
+			return materialized, err
+		}
+		if !created {
+			break
+		}
+		materialized = true
 	}
-	delivery, err := n.claim(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+	batch, err := n.queue.Claim(ctx, n.workerID, routingLarkBatchLimit)
 	if err != nil {
-		return false, err
+		return materialized, err
 	}
-	fields := map[string]string{}
-	if len(delivery.Payload) > 0 {
-		var raw map[string]any
-		if err := json.Unmarshal(delivery.Payload, &raw); err == nil {
-			for key, value := range raw {
-				fields[key] = fmt.Sprint(value)
-			}
+	if len(batch) == 0 {
+		return materialized, nil
+	}
+	for _, delivery := range batch[1:] {
+		if delivery.SinkKind != batch[0].SinkKind || delivery.Fingerprint != batch[0].Fingerprint {
+			return true, fmt.Errorf("routing alert queue returned a mixed sink batch")
 		}
 	}
-	outcome := n.sender.SendRouting(ctx, delivery.SinkKind, delivery.Fingerprint, delivery.Severity, "Safeheron routing "+delivery.AlertType, fields)
-	return true, n.finish(ctx, delivery, outcome)
+	severity, title, fields := routingAlertPresentation(batch)
+	outcome := n.sender.SendRouting(
+		ctx, batch[0].SinkKind, batch[0].Fingerprint, severity, title, fields,
+	)
+	return true, n.queue.Finish(ctx, n.workerID, batch, outcome)
 }
 
-func (n *AlertNotifier) ensureDeliveries(ctx context.Context) (err error) {
-	sinks := n.sender.RoutingSinks()
-	if len(sinks) == 0 {
-		return nil
+func larkRoutingBatchDue(createdAt time.Time, window time.Duration) time.Time {
+	if window <= 0 {
+		window = routingLarkBatchWindow
 	}
-	tx, err := n.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	var alertID int64
-	err = tx.QueryRowContext(ctx, `SELECT alert.id
-FROM safeheron_transaction_routing_alerts alert
-WHERE NOT EXISTS (
-  SELECT 1 FROM safeheron_transaction_routing_alert_deliveries delivery WHERE delivery.alert_id=alert.id
-)
-ORDER BY alert.id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&alertID)
-	if errors.Is(err, sql.ErrNoRows) {
-		_ = tx.Rollback()
-		err = nil
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, sink := range sinks {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO safeheron_transaction_routing_alert_deliveries
-  (alert_id,sink_kind,recipient_fingerprint) VALUES ($1,$2,$3)
-ON CONFLICT (alert_id,sink_kind,recipient_fingerprint) DO NOTHING`, alertID, sink.Kind, sink.Fingerprint); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
-func (n *AlertNotifier) claim(ctx context.Context) (_ claimedDelivery, err error) {
-	tx, err := n.db.BeginTx(ctx, nil)
-	if err != nil {
-		return claimedDelivery{}, err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	var delivery claimedDelivery
-	err = tx.QueryRowContext(ctx, `WITH candidate AS (
-  SELECT id FROM safeheron_transaction_routing_alert_deliveries
-  WHERE status='PENDING'
-     OR (status='FAILED_DEFINITE' AND next_attempt_at IS NOT NULL AND next_attempt_at<=now())
-  ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1
-)
-UPDATE safeheron_transaction_routing_alert_deliveries delivery
-SET status='DISPATCHING',
-    lease_owner=$1, lease_expires_at=now()+interval '30 seconds', next_attempt_at=NULL, updated_at=now()
-FROM candidate WHERE delivery.id=candidate.id
-RETURNING delivery.id`, n.workerID).Scan(&delivery.ID)
-	if err != nil {
-		return claimedDelivery{}, err
-	}
-	err = tx.QueryRowContext(ctx, `SELECT id,attempt_number
-FROM safeheron_transaction_routing_alert_delivery_attempts
-WHERE delivery_id=$1 AND attempt_kind='MANUAL_REPLAY' AND outcome='IN_PROGRESS'
-ORDER BY attempt_number DESC LIMIT 1 FOR UPDATE`, delivery.ID).Scan(&delivery.AttemptID, &delivery.Attempt)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = tx.QueryRowContext(ctx, `UPDATE safeheron_transaction_routing_alert_deliveries
-SET automatic_attempt_count=automatic_attempt_count+1 WHERE id=$1
-	RETURNING automatic_attempt_count`, delivery.ID).Scan(&delivery.AutomaticAttemptCount)
-		if err != nil {
-			return claimedDelivery{}, err
-		}
-		err = tx.QueryRowContext(ctx, `INSERT INTO safeheron_transaction_routing_alert_delivery_attempts
-  (delivery_id,attempt_number,attempt_kind,outcome)
-SELECT $1,COALESCE(max(attempt_number),0)+1,'AUTO','IN_PROGRESS'
-FROM safeheron_transaction_routing_alert_delivery_attempts WHERE delivery_id=$1
-RETURNING id,attempt_number`, delivery.ID).Scan(&delivery.AttemptID, &delivery.Attempt)
-	} else if err == nil {
-		err = tx.QueryRowContext(ctx, `SELECT automatic_attempt_count
-FROM safeheron_transaction_routing_alert_deliveries WHERE id=$1 FOR UPDATE`, delivery.ID).Scan(&delivery.AutomaticAttemptCount)
-	}
-	if err != nil {
-		return claimedDelivery{}, err
-	}
-	err = tx.QueryRowContext(ctx, `SELECT delivery.sink_kind,delivery.recipient_fingerprint,
-  alert.severity,alert.alert_type,alert.payload
-FROM safeheron_transaction_routing_alert_deliveries delivery
-JOIN safeheron_transaction_routing_alerts alert ON alert.id=delivery.alert_id
-WHERE delivery.id=$1 AND delivery.lease_owner=$2`, delivery.ID, n.workerID).Scan(
-		&delivery.SinkKind, &delivery.Fingerprint, &delivery.Severity, &delivery.AlertType, &delivery.Payload)
-	if err != nil {
-		return claimedDelivery{}, err
-	}
-	if err = tx.Commit(); err != nil {
-		return claimedDelivery{}, err
-	}
-	return delivery, nil
-}
-
-func (n *AlertNotifier) finish(ctx context.Context, delivery claimedDelivery, outcome alert.RoutingDeliveryOutcome) (err error) {
-	tx, err := n.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	status, attemptOutcome, completed, nextAttempt := "AMBIGUOUS", "DELIVERY_UNKNOWN", true, false
-	switch outcome {
-	case alert.RoutingDeliverySent:
-		status, attemptOutcome = "SENT", "SENT"
-	case alert.RoutingDeliveryDefinitelyNotSent:
-		status, attemptOutcome, completed = "FAILED_DEFINITE", "DEFINITELY_NOT_SENT", false
-		nextAttempt = delivery.AutomaticAttemptCount < 3
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_alert_delivery_attempts
-SET outcome=$2,finished_at=now() WHERE id=$1 AND outcome='IN_PROGRESS'`, delivery.AttemptID, attemptOutcome); err != nil {
-		return err
-	}
-	result, err := tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_alert_deliveries
-SET status=$2,lease_owner=NULL,lease_expires_at=NULL,updated_at=now(),
-    completed_at=CASE WHEN $3 THEN now() ELSE NULL END,
-    next_attempt_at=CASE WHEN $4 THEN now()+interval '30 seconds' ELSE NULL END
-WHERE id=$1 AND lease_owner=$5`, delivery.ID, status, completed, nextAttempt, n.workerID)
-	if err != nil {
-		return err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil || rows != 1 {
-		return fmt.Errorf("routing alert delivery %d lease lost", delivery.ID)
-	}
-	return tx.Commit()
-}
-
-func (n *AlertNotifier) sweepExpired(ctx context.Context) (err error) {
-	tx, err := n.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	if _, err = tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_alert_delivery_attempts attempt
-SET outcome='DELIVERY_UNKNOWN',finished_at=now()
-FROM safeheron_transaction_routing_alert_deliveries delivery
-WHERE delivery.id=attempt.delivery_id AND delivery.status='DISPATCHING'
-  AND delivery.lease_expires_at<=now() AND attempt.outcome='IN_PROGRESS'`); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE safeheron_transaction_routing_alert_deliveries
-SET status='AMBIGUOUS',lease_owner=NULL,lease_expires_at=NULL,completed_at=now(),updated_at=now()
-WHERE status='DISPATCHING' AND lease_expires_at<=now()`); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return createdAt.UTC().Truncate(window).Add(window)
 }
 
 func (n *AlertNotifier) Run(ctx context.Context) {
-	if n == nil || n.runner == nil {
-		return
+	if n != nil && n.runner != nil {
+		n.runner.Run(ctx)
 	}
-	n.runner.Run(ctx)
 }
