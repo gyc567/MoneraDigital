@@ -4,13 +4,152 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"monera-digital/internal/adaptiveschedule"
+	"monera-digital/internal/logger"
 )
+
+func observeCompanyFundRuntimeLogs(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	previousLogger := logger.Logger
+	core, observed := observer.New(zap.DebugLevel)
+	logger.Logger = zap.New(core).Sugar()
+	t.Cleanup(func() { logger.Logger = previousLogger })
+	return observed
+}
+
+func TestProviderEventCycleLogUsesSeverityOnlyForActionableOutcomes(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		outcome adaptiveschedule.CycleOutcome
+		elapsed time.Duration
+		level   zapcore.Level
+		entries int
+	}{
+		{
+			name: "normal work is debug",
+			outcome: adaptiveschedule.CycleOutcome{
+				Worked: true,
+			},
+			elapsed: 3 * time.Second,
+			level:   zap.DebugLevel,
+			entries: 1,
+		},
+		{
+			name: "backlog is info",
+			outcome: adaptiveschedule.CycleOutcome{
+				Worked: true, MoreWork: true,
+			},
+			elapsed: 3 * time.Second,
+			level:   zap.InfoLevel,
+			entries: 1,
+		},
+		{
+			name: "slow cycle is warning",
+			outcome: adaptiveschedule.CycleOutcome{
+				Worked: true,
+			},
+			elapsed: providerEventSlowCycleThreshold + time.Millisecond,
+			level:   zap.WarnLevel,
+			entries: 1,
+		},
+		{
+			name:    "idle is silent",
+			outcome: adaptiveschedule.CycleOutcome{},
+			elapsed: time.Millisecond,
+			entries: 0,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			observed := observeCompanyFundRuntimeLogs(t)
+			logProviderEventCycle(testCase.outcome, testCase.elapsed)
+			entries := observed.All()
+			if len(entries) != testCase.entries {
+				t.Fatalf("log entries = %d, want %d: %#v", len(entries), testCase.entries, entries)
+			}
+			if testCase.entries == 0 {
+				return
+			}
+			entry := entries[0]
+			if entry.Level != testCase.level || entry.Message != "company-fund provider event cycle" {
+				t.Fatalf("cycle log = %s %q, want %s", entry.Level, entry.Message, testCase.level)
+			}
+			fields := entry.ContextMap()
+			if fields["worked"] != testCase.outcome.Worked || fields["moreWork"] != testCase.outcome.MoreWork {
+				t.Fatalf("cycle fields = %#v", fields)
+			}
+		})
+	}
+}
+
+func TestProviderEventCycleFailureEmitsOneStructuredError(t *testing.T) {
+	observed := observeCompanyFundRuntimeLogs(t)
+	worker := &companyFundRuntimeEventWorkerStub{results: []companyFundRuntimeEventWorkerCall{{
+		result: ProviderEventWorkerResult{Claimed: true, EventID: 9},
+		err:    errors.New("provider payload and database details must not appear"),
+	}}}
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{ProviderEventWorker: worker}, CompanyFundRuntimeConfig{})
+
+	_, _ = runtime.providerEventCycle(context.Background())
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("failure log entries = %d, want exactly one: %#v", len(entries), entries)
+	}
+	entry := entries[0]
+	fields := entry.ContextMap()
+	if entry.Level != zap.ErrorLevel || entry.Message != "company-fund provider event drain deferred" ||
+		fields["errKind"] != "processing_error" || fields["claimed"] != int64(1) || fields["attempts"] != int64(1) {
+		t.Fatalf("failure log = %s %q %#v", entry.Level, entry.Message, fields)
+	}
+	if strings.Contains(entry.Message+fmt.Sprint(fields), "provider payload") ||
+		strings.Contains(entry.Message+fmt.Sprint(fields), "database details") {
+		t.Fatal("provider-event failure log leaked underlying error text")
+	}
+}
+
+func TestProviderEventLoopPanicEmitsStructuredErrorWithoutRecoveredValue(t *testing.T) {
+	observed := observeCompanyFundRuntimeLogs(t)
+	runtime := newCompanyFundRuntimeForTest(t, CompanyFundRuntimeDependencies{
+		ProviderEventWorker: companyFundRuntimePanickingEventWorker{},
+	}, CompanyFundRuntimeConfig{
+		EventPollInterval:    time.Hour,
+		EventMaxIdleInterval: time.Hour,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runtime.Start(ctx)
+	deadline := time.Now().Add(time.Second)
+	for observed.FilterMessage("company-fund provider event cycle panicked").Len() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	runtime.Stop()
+
+	entries := observed.FilterMessage("company-fund provider event cycle panicked").All()
+	if len(entries) != 1 {
+		t.Fatalf("panic log entries = %d, want exactly one: %#v", len(entries), entries)
+	}
+	entry := entries[0]
+	fields := entry.ContextMap()
+	if entry.Level != zap.ErrorLevel || fields["kind"] != "company-fund-provider-event" ||
+		fields["worked"] != false || fields["moreWork"] != false || fields["errKind"] != "cycle_panicked" {
+		t.Fatalf("panic log = %s %q %#v", entry.Level, entry.Message, fields)
+	}
+	if strings.Contains(entry.Message+fmt.Sprint(fields), "provider payload secret") {
+		t.Fatal("panic log leaked recovered value")
+	}
+}
 
 func TestCompanyFundRuntime_DrainProviderEventsIsBoundedAndStopsAtConfiguredLimit(t *testing.T) {
 	worker := &companyFundRuntimeEventWorkerStub{results: []companyFundRuntimeEventWorkerCall{
@@ -707,6 +846,12 @@ func TestCompanyFundRuntime_AirwallexWebhookWakeQueuesBeforeStartWithoutProvider
 type companyFundRuntimeEventWorkerCall struct {
 	result ProviderEventWorkerResult
 	err    error
+}
+
+type companyFundRuntimePanickingEventWorker struct{}
+
+func (companyFundRuntimePanickingEventWorker) ProcessNext(context.Context) (ProviderEventWorkerResult, error) {
+	panic("provider payload secret must not appear")
 }
 
 type companyFundRuntimeEventWorkerStub struct {

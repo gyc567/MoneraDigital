@@ -9,6 +9,7 @@ package adaptiveschedule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -19,6 +20,11 @@ const (
 	DefaultMinIdle = time.Second
 	DefaultMaxIdle = 10 * time.Minute
 )
+
+// ErrCyclePanicked lets instrumentation distinguish an isolated recovered
+// panic from ordinary cycle failures without inspecting error text or the
+// recovered value.
+var ErrCyclePanicked = errors.New("adaptive schedule cycle panicked")
 
 // MaxIdleAtLeast keeps the aggregate maintenance floor without allowing a
 // task's normal cadence to exceed its configured MaxIdle bound.
@@ -312,7 +318,7 @@ func (loop *Loop) runCycle(ctx context.Context) (outcome CycleOutcome, err error
 			// Never format rv: it may carry provider or database values.
 			log.Printf("adaptive schedule cycle panic recovered: kind=%s", loop.config.Name)
 			outcome = CycleOutcome{}
-			err = fmt.Errorf("adaptive schedule cycle panicked")
+			err = ErrCyclePanicked
 		}
 	}()
 	return loop.cycle(ctx)

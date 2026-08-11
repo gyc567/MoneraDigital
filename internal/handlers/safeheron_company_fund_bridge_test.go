@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"go.uber.org/zap"
 
 	"monera-digital/internal/companyfund"
 	"monera-digital/internal/safeheron"
@@ -271,6 +272,7 @@ func TestSafeheronCompanyFundBridge_DigestConflictReturnsRetryableFailure(t *tes
 }
 
 func TestSafeheronCompanyFundBridge_FailureDefersToCollectorAndAcknowledges(t *testing.T) {
+	observed, legacy := observeSafeheronWebhookLogs(t)
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -293,6 +295,19 @@ func TestSafeheronCompanyFundBridge_FailureDefersToCollectorAndAcknowledges(t *t
 	assertSafeheronCompanyFundAck(t, w.Code, w.Body.String())
 	if len(bridge.inputs) != 1 {
 		t.Fatalf("bridge failure calls = %d, want 1", len(bridge.inputs))
+	}
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("bridge-deferred log entries = %d, want exactly one", len(entries))
+	}
+	entry := entries[0]
+	fields := entry.ContextMap()
+	if entry.Level != zap.WarnLevel || entry.Message != "safeheron webhook processed" || fields["result"] != "stored" ||
+		fields["companyFundEligibility"] != "candidate" || fields["bridgeResult"] != "deferred" {
+		t.Fatalf("bridge-deferred log = %q %#v", entry.Message, fields)
+	}
+	if strings.TrimSpace(legacy.String()) != "" {
+		t.Fatalf("bridge-deferred path emitted legacy process logs:\n%s", legacy.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

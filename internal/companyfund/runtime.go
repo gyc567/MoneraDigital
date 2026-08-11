@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"monera-digital/internal/adaptiveschedule"
+	"monera-digital/internal/logger"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 	defaultCompanyFundReconciliationFinalizeTimeout = 10 * time.Second
 	defaultCompanyFundAirwallexWebhookLookback      = 24 * time.Hour
 	maxCompanyFundAirwallexWebhookLookback          = 7 * 24 * time.Hour
+	providerEventSlowCycleThreshold                 = 10 * time.Second
 )
 
 // CompanyFundProviderEventProcessor is satisfied by ProviderEventWorker. The
@@ -231,19 +233,14 @@ func NewCompanyFundRuntime(dependencies CompanyFundRuntimeDependencies, config C
 			MaxIdle: normalized.EventMaxIdleInterval,
 			Now:     normalized.Now,
 			OnCycle: func(outcome adaptiveschedule.CycleOutcome, err error, elapsed time.Duration) {
-				if err != nil {
-					// Keep provider payloads and database details out of process logs.
-					log.Printf(
-						"adaptive schedule cycle: kind=company-fund-provider-event worked=%t moreWork=%t elapsed=%s errKind=%s",
-						outcome.Worked, outcome.MoreWork, elapsed.Round(time.Millisecond), providerEventDrainFailureKind(err),
-					)
-					return
-				}
-				if outcome.Worked || outcome.MoreWork {
-					log.Printf(
-						"adaptive schedule cycle: kind=company-fund-provider-event worked=%t moreWork=%t elapsed=%s",
-						outcome.Worked, outcome.MoreWork, elapsed.Round(time.Millisecond),
-					)
+				// providerEventCycle owns the single sanitized ERROR for ordinary
+				// processing failures. A recovered panic is identified by a sentinel
+				// so this domain can add structured context without logging its value.
+				switch {
+				case errors.Is(err, adaptiveschedule.ErrCyclePanicked):
+					logProviderEventCyclePanic(outcome, elapsed)
+				case err == nil:
+					logProviderEventCycle(outcome, elapsed)
 				}
 			},
 		}, runtime.providerEventCycle)
@@ -520,12 +517,51 @@ func (runtime *CompanyFundRuntime) providerEventCycle(ctx context.Context) (adap
 		// Keep provider payloads and database details out of process logs.
 		// The durable lease owns retries; this metadata-only signal exposes
 		// a repeatedly deferred event without leaking its contents.
-		log.Printf(
-			"company-fund provider event drain deferred: kind=%s claimed=%d attempts=%d",
-			providerEventDrainFailureKind(err), result.Claimed, result.Attempts,
-		)
+		if applicationLogger := logger.GetLogger(); applicationLogger != nil {
+			applicationLogger.Errorw(
+				"company-fund provider event drain deferred",
+				"errKind", providerEventDrainFailureKind(err),
+				"claimed", result.Claimed,
+				"attempts", result.Attempts,
+			)
+		}
 	}
 	return outcome, err
+}
+
+func logProviderEventCycle(outcome adaptiveschedule.CycleOutcome, elapsed time.Duration) {
+	applicationLogger := logger.GetLogger()
+	if applicationLogger == nil || (!outcome.Worked && !outcome.MoreWork && elapsed < providerEventSlowCycleThreshold) {
+		return
+	}
+	fields := []any{
+		"worked", outcome.Worked,
+		"moreWork", outcome.MoreWork,
+		"elapsedMs", elapsed.Milliseconds(),
+	}
+	switch {
+	case elapsed >= providerEventSlowCycleThreshold:
+		applicationLogger.Warnw("company-fund provider event cycle", fields...)
+	case outcome.MoreWork:
+		applicationLogger.Infow("company-fund provider event cycle", fields...)
+	default:
+		applicationLogger.Debugw("company-fund provider event cycle", fields...)
+	}
+}
+
+func logProviderEventCyclePanic(outcome adaptiveschedule.CycleOutcome, elapsed time.Duration) {
+	applicationLogger := logger.GetLogger()
+	if applicationLogger == nil {
+		return
+	}
+	applicationLogger.Errorw(
+		"company-fund provider event cycle panicked",
+		"kind", "company-fund-provider-event",
+		"worked", outcome.Worked,
+		"moreWork", outcome.MoreWork,
+		"elapsedMs", elapsed.Milliseconds(),
+		"errKind", "cycle_panicked",
+	)
 }
 
 func (runtime *CompanyFundRuntime) ledgerTaskCycle(ctx context.Context) (adaptiveschedule.CycleOutcome, error) {
