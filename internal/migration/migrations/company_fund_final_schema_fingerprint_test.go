@@ -57,6 +57,31 @@ func TestBuildFinalCompanyFundSchemaFingerprintRejectsEveryMissingInvariant(t *t
 		{name: "occurrence key column", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			delete(value.OccurrenceColumns, "provider_occurrence_key")
 		}},
+		{name: "missing import column", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			delete(value.ManualImportContract.Columns, "company_fund_transaction_import_rows.principal_transaction_id")
+		}},
+		{name: "missing import provenance columns", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			delete(value.ManualImportContract.Columns, "company_fund_transaction_import_rows.external_transaction_reference")
+			delete(value.ManualImportContract.Columns, "company_fund_transaction_import_rows.finance_category_level1_id")
+		}},
+		{name: "external reference becomes unique", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			index := value.ManualImportContract.Indexes["idx_company_fund_transactions_external_reference"]
+			index.Unique = true
+			value.ManualImportContract.Indexes["idx_company_fund_transactions_external_reference"] = index
+		}},
+		{name: "missing import lineage constraint", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			delete(value.ManualImportContract.Constraints, "company_fund_transaction_import_batches_lifecycle_check")
+		}},
+		{name: "wrong import trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			trigger := value.ManualImportContract.Triggers["company_fund_validate_import_batch_lineage_trigger"]
+			trigger.Constraint = false
+			value.ManualImportContract.Triggers["company_fund_validate_import_batch_lineage_trigger"] = trigger
+		}},
+		{name: "wrong import ownership function source", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			function := value.ManualImportContract.Functions["company_fund_enforce_import_row_transaction_ownership"]
+			function.Source += "\nPERFORM 1;"
+			value.ManualImportContract.Functions["company_fund_enforce_import_row_transaction_ownership"] = function
+		}},
 		{name: "occurrence version column", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			value.OccurrenceColumns["provider_occurrence_algorithm_version"] = "text"
 		}},
@@ -136,6 +161,7 @@ func TestBuildFinalCompanyFundSchemaFingerprintRejectsEveryMissingInvariant(t *t
 			candidate := validFinalCompanyFundSchemaSnapshot()
 			candidate.OccurrenceColumns = cloneFinalSchemaColumns(candidate.OccurrenceColumns)
 			candidate.ManualConstraintNames = append([]string(nil), candidate.ManualConstraintNames...)
+			candidate.ManualImportContract = normalizeFinalManualImportContract(candidate.ManualImportContract)
 			testCase.mutate(&candidate)
 			if _, err := BuildFinalCompanyFundSchemaFingerprint(candidate); err == nil {
 				t.Fatal("invalid final schema accepted")
@@ -207,6 +233,42 @@ func validFinalCompanyFundSchemaSnapshot() FinalCompanyFundSchemaSnapshot {
 		ManualProjectionTriggerEnabled:        "O",
 		ManualProjectionTriggerType:           finalManualProjectionTriggerType,
 		ManualProjectionTriggerColumns:        append([]string(nil), migration052ProtectedProjectionColumns...),
+		ManualImportContract:                  validFinalManualImportContract(),
+	}
+}
+
+func validFinalManualImportContract() FinalCompanyFundManualImportContract {
+	columns := make(map[string]FinalCompanyFundManualImportColumn, len(finalManualImportColumns))
+	for key, value := range finalManualImportColumns {
+		columns[key] = value
+	}
+	indexes := make(map[string]FinalCompanyFundManualImportIndex, len(finalManualImportIndexes))
+	for name, expected := range finalManualImportIndexes {
+		indexes[name] = FinalCompanyFundManualImportIndex{
+			Schema: "public", Table: expected.Table, Unique: expected.Unique, Valid: true, Ready: true,
+			Columns: append([]string(nil), expected.Columns...), Predicate: expected.Predicate,
+			Definition: "CREATE INDEX " + name + " ON public." + expected.Table,
+		}
+	}
+	constraints := make(map[string]FinalCompanyFundManualImportConstraint, len(finalManualImportConstraints))
+	for name, expected := range finalManualImportConstraints {
+		constraints[name] = FinalCompanyFundManualImportConstraint{
+			Schema: "public", Table: expected.Table, Type: expected.Type, Validated: true,
+			Definition: strings.Join(expected.Tokens, " "),
+		}
+	}
+	return FinalCompanyFundManualImportContract{
+		Columns:     columns,
+		Indexes:     indexes,
+		Constraints: constraints,
+		Functions: map[string]FinalCompanyFundManualImportFunction{
+			"company_fund_validate_import_batch_lineage":            {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportLineageFunctionSource},
+			"company_fund_enforce_import_row_transaction_ownership": {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportOwnershipFunctionSource},
+		},
+		Triggers: map[string]FinalCompanyFundManualImportTrigger{
+			"company_fund_validate_import_batch_lineage_trigger":            {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_lineage", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
+			"company_fund_enforce_import_row_transaction_ownership_trigger": {Schema: "public", Table: "company_fund_transaction_import_rows", FunctionSchema: "public", FunctionName: "company_fund_enforce_import_row_transaction_ownership", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
+		},
 	}
 }
 
@@ -287,5 +349,9 @@ func TestFinalCatalogCanonicalizationAcceptsPostgresFormattingWithoutErasingGrou
 	}
 	if got := normalizeFinalIndexDefinition("CREATE INDEX plain ON public.t (id)"); got != "CREATE INDEX plain ON public.t (id)" {
 		t.Fatalf("index without predicate changed: %s", got)
+	}
+	postgresImportIndexPredicate := `((status)::text = ANY ((ARRAY['PROCESSING'::character varying, 'SUCCEEDED'::character varying])::text[]))`
+	if normalizeFinalCatalogExpression(postgresImportIndexPredicate) != normalizeFinalCatalogExpression("status IN ('PROCESSING', 'SUCCEEDED')") {
+		t.Fatalf("PostgreSQL nested ANY/cast index predicate did not canonicalize:\n%s", normalizeFinalCatalogExpression(postgresImportIndexPredicate))
 	}
 }

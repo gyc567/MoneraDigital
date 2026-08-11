@@ -3,6 +3,7 @@ package migrations
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"regexp"
@@ -34,6 +35,7 @@ func TestLiveSchemaInspectorNeverTrustsSearchPath(t *testing.T) {
 		"constraints": companyFundConstraintsCatalogSQL,
 		"function":    companyFundFunctionCatalogSQL,
 		"trigger":     companyFundTriggerCatalogSQL,
+		"import":      companyFundManualImportContractCatalogSQL,
 		"provenance":  companyFundMigrationProvenanceCatalogSQL,
 	} {
 		if strings.Contains(query, "current_schema()") {
@@ -156,7 +158,7 @@ func TestInspectLiveCompanyFundSchemaClassifiesCatalogDriftAsPartial(t *testing.
 }
 
 func TestInspectLiveCompanyFundSchemaFailsClosedOnEveryCatalogQueryError(t *testing.T) {
-	for _, step := range []string{"columns", "index", "constraints", "function", "trigger", "provenance"} {
+	for _, step := range []string{"columns", "index", "constraints", "function", "trigger", "import", "provenance"} {
 		t.Run(step, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			if err != nil {
@@ -187,8 +189,13 @@ func TestInspectLiveCompanyFundSchemaFailsClosedOnEveryCatalogQueryError(t *test
 			}
 			if step == "trigger" {
 				mock.ExpectQuery(regexp.QuoteMeta(companyFundTriggerCatalogSQL)).WillReturnError(failure)
-			} else if step == "provenance" {
+			} else if step == "import" || step == "provenance" {
 				mock.ExpectQuery(regexp.QuoteMeta(companyFundTriggerCatalogSQL)).WillReturnRows(triggerCatalogRows(validFinalCompanyFundSchemaSnapshot()))
+			}
+			if step == "import" {
+				mock.ExpectQuery(regexp.QuoteMeta(companyFundManualImportContractCatalogSQL)).WillReturnError(failure)
+			} else if step == "provenance" {
+				expectManualImportContract(mock)
 			}
 			if step == "provenance" {
 				mock.ExpectQuery(regexp.QuoteMeta(companyFundMigrationProvenanceCatalogSQL)).WillReturnError(failure)
@@ -272,7 +279,19 @@ func expectFunctionTriggerAndProvenance(mock sqlmock.Sqlmock, recorded052, recor
 	valid := validFinalCompanyFundSchemaSnapshot()
 	mock.ExpectQuery(regexp.QuoteMeta(companyFundFunctionCatalogSQL)).WillReturnRows(functionCatalogRows(valid))
 	mock.ExpectQuery(regexp.QuoteMeta(companyFundTriggerCatalogSQL)).WillReturnRows(triggerCatalogRows(valid))
+	expectManualImportContract(mock)
 	mock.ExpectQuery(regexp.QuoteMeta(companyFundMigrationProvenanceCatalogSQL)).WillReturnRows(sqlmock.NewRows([]string{"migration_052_recorded", "migration_053_recorded"}).AddRow(recorded052, recorded053))
+}
+
+func expectManualImportContract(mock sqlmock.Sqlmock) {
+	valid := validFinalCompanyFundSchemaSnapshot()
+	data, err := json.Marshal(valid.ManualImportContract)
+	if err != nil {
+		panic(err)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(companyFundManualImportContractCatalogSQL)).WillReturnRows(
+		sqlmock.NewRows([]string{"contract"}).AddRow(data),
+	)
 }
 
 func functionCatalogRows(valid FinalCompanyFundSchemaSnapshot) *sqlmock.Rows {

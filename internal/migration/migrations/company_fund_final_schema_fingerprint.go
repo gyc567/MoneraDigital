@@ -17,6 +17,7 @@ const finalCompanyFundTransactionsTable = "company_fund_transactions"
 const finalCompanyFundHistoryTable = "company_fund_transaction_valuation_history"
 const finalManualProjectionFunctionName = "company_fund_enforce_manual_valuation_projection"
 const finalManualProjectionTriggerType int64 = 19 // ROW | BEFORE | UPDATE
+const finalManualImportTriggerType int64 = 21     // ROW | AFTER | INSERT | UPDATE
 
 var finalManualConstraintNames = []string{
 	"company_fund_transactions_usd_valuation_source_check",
@@ -33,49 +34,107 @@ var finalConstraintTables = map[string]string{
 
 var finalManualConstraintDefinitions = mustExtractMigration052ConstraintDefinitions(migration052SchemaDDL)
 var finalManualProjectionFunctionSource = mustExtractMigration052FunctionSource(migration052SchemaDDL)
+var finalManualImportLineageFunctionSource = mustExtractMigration065FunctionSource(migration065SchemaSQL, "company_fund_validate_import_batch_lineage")
+var finalManualImportOwnershipFunctionSource = mustExtractMigration065FunctionSource(migration065SchemaSQL, "company_fund_enforce_import_row_transaction_ownership")
 
 type FinalCompanyFundSchemaSnapshot struct {
-	OccurrenceSchema                      string            `json:"occurrence_schema"`
-	OccurrenceTable                       string            `json:"occurrence_table"`
-	OccurrenceColumns                     map[string]string `json:"occurrence_columns"`
-	OccurrenceColumnLengths               map[string]int64  `json:"occurrence_column_lengths"`
-	OccurrenceColumnsNullable             map[string]bool   `json:"occurrence_columns_nullable"`
-	SafeheronOccurrenceIndexSchema        string            `json:"safeheron_occurrence_index_schema"`
-	SafeheronOccurrenceIndexTable         string            `json:"safeheron_occurrence_index_table"`
-	SafeheronOccurrenceIndexName          string            `json:"safeheron_occurrence_index_name"`
-	SafeheronOccurrenceIndexUnique        bool              `json:"safeheron_occurrence_index_unique"`
-	SafeheronOccurrenceIndexValid         bool              `json:"safeheron_occurrence_index_valid"`
-	SafeheronOccurrenceIndexReady         bool              `json:"safeheron_occurrence_index_ready"`
-	SafeheronOccurrenceIndexColumns       []string          `json:"safeheron_occurrence_index_columns"`
-	SafeheronOccurrenceIndexPredicate     string            `json:"safeheron_occurrence_index_predicate"`
-	SafeheronOccurrenceIndexDefinition    string            `json:"safeheron_occurrence_index_definition"`
-	SafeheronRequiredConstraintName       string            `json:"safeheron_required_constraint_name"`
-	SafeheronRequiredConstraintDefinition string            `json:"safeheron_required_constraint_definition"`
-	SafeheronRequiredConstraintValidated  bool              `json:"safeheron_required_constraint_validated"`
-	ManualConstraintNames                 []string          `json:"manual_constraint_names"`
-	ConstraintSchemas                     map[string]string `json:"constraint_schemas"`
-	ConstraintTables                      map[string]string `json:"constraint_tables"`
-	ConstraintTypes                       map[string]string `json:"constraint_types"`
-	ConstraintOccurrences                 map[string]int64  `json:"constraint_occurrences"`
-	ManualConstraintDefinitions           map[string]string `json:"manual_constraint_definitions"`
-	ManualConstraintsValidated            map[string]bool   `json:"manual_constraints_validated"`
-	ManualProjectionFunctionSchema        string            `json:"manual_projection_function_schema"`
-	ManualProjectionFunctionName          string            `json:"manual_projection_function_name"`
-	ManualProjectionFunctionArgumentCount int64             `json:"manual_projection_function_argument_count"`
-	ManualProjectionFunctionResult        string            `json:"manual_projection_function_result"`
-	ManualProjectionFunctionLanguage      string            `json:"manual_projection_function_language"`
-	ManualProjectionFunctionKind          string            `json:"manual_projection_function_kind"`
-	ManualProjectionFunctionOID           int64             `json:"manual_projection_function_oid"`
-	ManualProjectionFunctionSource        string            `json:"manual_projection_function_source"`
-	ManualProjectionTriggerSchema         string            `json:"manual_projection_trigger_schema"`
-	ManualProjectionTriggerTable          string            `json:"manual_projection_trigger_table"`
-	ManualProjectionTriggerFunctionSchema string            `json:"manual_projection_trigger_function_schema"`
-	ManualProjectionTriggerFunctionName   string            `json:"manual_projection_trigger_function_name"`
-	ManualProjectionTriggerFunctionOID    int64             `json:"manual_projection_trigger_function_oid"`
-	ManualProjectionTriggerInternal       bool              `json:"manual_projection_trigger_internal"`
-	ManualProjectionTriggerEnabled        string            `json:"manual_projection_trigger_enabled"`
-	ManualProjectionTriggerType           int64             `json:"manual_projection_trigger_type"`
-	ManualProjectionTriggerColumns        []string          `json:"manual_projection_trigger_columns"`
+	OccurrenceSchema                      string                               `json:"occurrence_schema"`
+	OccurrenceTable                       string                               `json:"occurrence_table"`
+	OccurrenceColumns                     map[string]string                    `json:"occurrence_columns"`
+	OccurrenceColumnLengths               map[string]int64                     `json:"occurrence_column_lengths"`
+	OccurrenceColumnsNullable             map[string]bool                      `json:"occurrence_columns_nullable"`
+	SafeheronOccurrenceIndexSchema        string                               `json:"safeheron_occurrence_index_schema"`
+	SafeheronOccurrenceIndexTable         string                               `json:"safeheron_occurrence_index_table"`
+	SafeheronOccurrenceIndexName          string                               `json:"safeheron_occurrence_index_name"`
+	SafeheronOccurrenceIndexUnique        bool                                 `json:"safeheron_occurrence_index_unique"`
+	SafeheronOccurrenceIndexValid         bool                                 `json:"safeheron_occurrence_index_valid"`
+	SafeheronOccurrenceIndexReady         bool                                 `json:"safeheron_occurrence_index_ready"`
+	SafeheronOccurrenceIndexColumns       []string                             `json:"safeheron_occurrence_index_columns"`
+	SafeheronOccurrenceIndexPredicate     string                               `json:"safeheron_occurrence_index_predicate"`
+	SafeheronOccurrenceIndexDefinition    string                               `json:"safeheron_occurrence_index_definition"`
+	SafeheronRequiredConstraintName       string                               `json:"safeheron_required_constraint_name"`
+	SafeheronRequiredConstraintDefinition string                               `json:"safeheron_required_constraint_definition"`
+	SafeheronRequiredConstraintValidated  bool                                 `json:"safeheron_required_constraint_validated"`
+	ManualConstraintNames                 []string                             `json:"manual_constraint_names"`
+	ConstraintSchemas                     map[string]string                    `json:"constraint_schemas"`
+	ConstraintTables                      map[string]string                    `json:"constraint_tables"`
+	ConstraintTypes                       map[string]string                    `json:"constraint_types"`
+	ConstraintOccurrences                 map[string]int64                     `json:"constraint_occurrences"`
+	ManualConstraintDefinitions           map[string]string                    `json:"manual_constraint_definitions"`
+	ManualConstraintsValidated            map[string]bool                      `json:"manual_constraints_validated"`
+	ManualProjectionFunctionSchema        string                               `json:"manual_projection_function_schema"`
+	ManualProjectionFunctionName          string                               `json:"manual_projection_function_name"`
+	ManualProjectionFunctionArgumentCount int64                                `json:"manual_projection_function_argument_count"`
+	ManualProjectionFunctionResult        string                               `json:"manual_projection_function_result"`
+	ManualProjectionFunctionLanguage      string                               `json:"manual_projection_function_language"`
+	ManualProjectionFunctionKind          string                               `json:"manual_projection_function_kind"`
+	ManualProjectionFunctionOID           int64                                `json:"manual_projection_function_oid"`
+	ManualProjectionFunctionSource        string                               `json:"manual_projection_function_source"`
+	ManualProjectionTriggerSchema         string                               `json:"manual_projection_trigger_schema"`
+	ManualProjectionTriggerTable          string                               `json:"manual_projection_trigger_table"`
+	ManualProjectionTriggerFunctionSchema string                               `json:"manual_projection_trigger_function_schema"`
+	ManualProjectionTriggerFunctionName   string                               `json:"manual_projection_trigger_function_name"`
+	ManualProjectionTriggerFunctionOID    int64                                `json:"manual_projection_trigger_function_oid"`
+	ManualProjectionTriggerInternal       bool                                 `json:"manual_projection_trigger_internal"`
+	ManualProjectionTriggerEnabled        string                               `json:"manual_projection_trigger_enabled"`
+	ManualProjectionTriggerType           int64                                `json:"manual_projection_trigger_type"`
+	ManualProjectionTriggerColumns        []string                             `json:"manual_projection_trigger_columns"`
+	ManualImportContract                  FinalCompanyFundManualImportContract `json:"manual_import_contract"`
+}
+
+type FinalCompanyFundManualImportContract struct {
+	Columns     map[string]FinalCompanyFundManualImportColumn     `json:"columns"`
+	Indexes     map[string]FinalCompanyFundManualImportIndex      `json:"indexes"`
+	Constraints map[string]FinalCompanyFundManualImportConstraint `json:"constraints"`
+	Functions   map[string]FinalCompanyFundManualImportFunction   `json:"functions"`
+	Triggers    map[string]FinalCompanyFundManualImportTrigger    `json:"triggers"`
+}
+
+type FinalCompanyFundManualImportColumn struct {
+	Schema   string `json:"schema"`
+	Table    string `json:"table"`
+	DataType string `json:"data_type"`
+	Length   int64  `json:"length"`
+	Nullable bool   `json:"nullable"`
+}
+
+type FinalCompanyFundManualImportIndex struct {
+	Schema     string   `json:"schema"`
+	Table      string   `json:"table"`
+	Unique     bool     `json:"unique"`
+	Valid      bool     `json:"valid"`
+	Ready      bool     `json:"ready"`
+	Columns    []string `json:"columns"`
+	Predicate  string   `json:"predicate"`
+	Definition string   `json:"definition"`
+}
+
+type FinalCompanyFundManualImportConstraint struct {
+	Schema     string `json:"schema"`
+	Table      string `json:"table"`
+	Type       string `json:"type"`
+	Validated  bool   `json:"validated"`
+	Definition string `json:"definition"`
+}
+
+type FinalCompanyFundManualImportFunction struct {
+	Schema    string `json:"schema"`
+	Arguments int64  `json:"arguments"`
+	Result    string `json:"result"`
+	Language  string `json:"language"`
+	Kind      string `json:"kind"`
+	Source    string `json:"source"`
+}
+
+type FinalCompanyFundManualImportTrigger struct {
+	Schema         string `json:"schema"`
+	Table          string `json:"table"`
+	FunctionSchema string `json:"function_schema"`
+	FunctionName   string `json:"function_name"`
+	Constraint     bool   `json:"constraint"`
+	Internal       bool   `json:"internal"`
+	Enabled        string `json:"enabled"`
+	Type           int64  `json:"type"`
 }
 
 type FinalCompanyFundSchemaFingerprint struct {
@@ -105,6 +164,7 @@ func normalizeFinalCompanyFundSchemaSnapshot(snapshot FinalCompanyFundSchemaSnap
 	normalized.ConstraintOccurrences = cloneFinalSchemaInt64s(snapshot.ConstraintOccurrences)
 	normalized.ManualConstraintDefinitions = cloneFinalSchemaColumns(snapshot.ManualConstraintDefinitions)
 	normalized.ManualConstraintsValidated = cloneFinalSchemaBools(snapshot.ManualConstraintsValidated)
+	normalized.ManualImportContract = normalizeFinalManualImportContract(snapshot.ManualImportContract)
 	sort.Strings(normalized.ManualConstraintNames)
 	normalized.SafeheronOccurrenceIndexPredicate = normalizeFinalSchemaSQL(snapshot.SafeheronOccurrenceIndexPredicate)
 	normalized.SafeheronOccurrenceIndexDefinition = normalizeFinalSchemaSQL(snapshot.SafeheronOccurrenceIndexDefinition)
@@ -112,6 +172,31 @@ func normalizeFinalCompanyFundSchemaSnapshot(snapshot FinalCompanyFundSchemaSnap
 	normalized.ManualProjectionFunctionSource = normalizeFinalSchemaSQL(snapshot.ManualProjectionFunctionSource)
 	for name, definition := range normalized.ManualConstraintDefinitions {
 		normalized.ManualConstraintDefinitions[name] = normalizeFinalSchemaSQL(definition)
+	}
+	return normalized
+}
+
+func normalizeFinalManualImportContract(contract FinalCompanyFundManualImportContract) FinalCompanyFundManualImportContract {
+	normalized := FinalCompanyFundManualImportContract{
+		Columns:     cloneFinalManualImportColumns(contract.Columns),
+		Indexes:     cloneFinalManualImportIndexes(contract.Indexes),
+		Constraints: cloneFinalManualImportConstraints(contract.Constraints),
+		Functions:   cloneFinalManualImportFunctions(contract.Functions),
+		Triggers:    cloneFinalManualImportTriggers(contract.Triggers),
+	}
+	for name, index := range normalized.Indexes {
+		index.Columns = append([]string(nil), index.Columns...)
+		index.Predicate = normalizeFinalSchemaSQL(index.Predicate)
+		index.Definition = normalizeFinalSchemaSQL(index.Definition)
+		normalized.Indexes[name] = index
+	}
+	for name, constraint := range normalized.Constraints {
+		constraint.Definition = normalizeFinalSchemaSQL(constraint.Definition)
+		normalized.Constraints[name] = constraint
+	}
+	for name, function := range normalized.Functions {
+		function.Source = normalizeFinalSchemaSQL(function.Source)
+		normalized.Functions[name] = function
 	}
 	return normalized
 }
@@ -125,6 +210,127 @@ func validateFinalCompanyFundSchema(snapshot FinalCompanyFundSchemaSnapshot) err
 	}
 	if snapshot.SafeheronRequiredConstraintName != migration053ConstraintName {
 		return fmt.Errorf("final schema requires exact Migration B check name")
+	}
+	return validateFinalManualImportContract(snapshot.ManualImportContract)
+}
+
+var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
+	"company_fund_transactions.external_transaction_reference":                {Schema: "public", Table: finalCompanyFundTransactionsTable, DataType: "character varying", Length: 256, Nullable: true},
+	"company_fund_transaction_import_batches.id":                              {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.content_digest":                  {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: false},
+	"company_fund_transaction_import_batches.request_digest":                  {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: false},
+	"company_fund_transaction_import_batches.template_version":                {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 32, Nullable: false},
+	"company_fund_transaction_import_batches.original_file_name":              {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 255, Nullable: false},
+	"company_fund_transaction_import_batches.status":                          {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 16, Nullable: false},
+	"company_fund_transaction_import_batches.requested_by":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.idempotency_key":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 128, Nullable: false},
+	"company_fund_transaction_import_batches.source_row_count":                {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.principal_transaction_count":     {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.fee_transaction_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.voided_movement_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.warning_count":                   {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.duplicate_override_acknowledged": {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "boolean", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.duplicate_override_reason":       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.duplicate_warning_evidence":      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "jsonb", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.predecessor_batch_id":            {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.reimport_reason":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.failure_code":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: true},
+	"company_fund_transaction_import_batches.failure_summary":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 512, Nullable: true},
+	"company_fund_transaction_import_batches.completed_at":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.voided_at":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.voided_by":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.void_reason":                     {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
+	"company_fund_transaction_import_batches.created_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.updated_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.id":                                 {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.batch_id":                           {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.source_row_number":                  {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "integer", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.row_digest":                         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "character varying", Length: 64, Nullable: false},
+	"company_fund_transaction_import_rows.external_transaction_reference":     {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "character varying", Length: 256, Nullable: true},
+	"company_fund_transaction_import_rows.company_fund_account_id":            {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.finance_category_level1_id":         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: true},
+	"company_fund_transaction_import_rows.finance_category_level2_id":         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: true},
+	"company_fund_transaction_import_rows.principal_transaction_id":           {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.fee_transaction_id":                 {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: true},
+	"company_fund_transaction_import_rows.created_at":                         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "timestamp with time zone", Length: 0, Nullable: false},
+}
+
+var finalManualImportIndexes = map[string]struct {
+	Table     string
+	Unique    bool
+	Columns   []string
+	Predicate string
+}{
+	"idx_company_fund_transactions_external_reference":             {Table: finalCompanyFundTransactionsTable, Unique: false, Columns: []string{"external_transaction_reference"}, Predicate: "external_transaction_reference IS NOT NULL"},
+	"uq_company_fund_transaction_import_batches_effective_content": {Table: "company_fund_transaction_import_batches", Unique: true, Columns: []string{"content_digest"}, Predicate: "status IN ('PROCESSING', 'SUCCEEDED')"},
+}
+
+var finalManualImportConstraints = map[string]struct {
+	Table  string
+	Type   string
+	Tokens []string
+}{
+	"company_fund_transactions_external_reference_source_check":  {Table: finalCompanyFundTransactionsTable, Type: "c", Tokens: []string{"external_transaction_reference", "channel", "'MANUAL'", "btrim"}},
+	"company_fund_transaction_import_batches_status_check":       {Table: "company_fund_transaction_import_batches", Type: "c", Tokens: []string{"'PROCESSING'", "'SUCCEEDED'", "'FAILED'", "'VOIDED'"}},
+	"company_fund_transaction_import_batches_lifecycle_check":    {Table: "company_fund_transaction_import_batches", Type: "c", Tokens: []string{"completed_at", "voided_at", "failure_code"}},
+	"company_fund_transaction_import_batches_predecessor_fk":     {Table: "company_fund_transaction_import_batches", Type: "f", Tokens: []string{"predecessor_batch_id", "ON DELETE RESTRICT"}},
+	"company_fund_transaction_import_batches_idempotency_unique": {Table: "company_fund_transaction_import_batches", Type: "u", Tokens: []string{"requested_by", "idempotency_key"}},
+	"company_fund_transaction_import_rows_batch_fk":              {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"batch_id", "ON DELETE RESTRICT"}},
+	"company_fund_transaction_import_rows_account_fk":            {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"company_fund_account_id", "ON DELETE RESTRICT"}},
+	"company_fund_transaction_import_rows_principal_fk":          {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"principal_transaction_id", "ON DELETE RESTRICT"}},
+	"company_fund_transaction_import_rows_fee_fk":                {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"fee_transaction_id", "ON DELETE RESTRICT"}},
+	"company_fund_transaction_import_rows_principal_unique":      {Table: "company_fund_transaction_import_rows", Type: "u", Tokens: []string{"principal_transaction_id"}},
+	"company_fund_transaction_import_rows_fee_unique":            {Table: "company_fund_transaction_import_rows", Type: "u", Tokens: []string{"fee_transaction_id"}},
+	"company_fund_import_rows_principal_fee_distinct_check":      {Table: "company_fund_transaction_import_rows", Type: "c", Tokens: []string{"fee_transaction_id", "principal_transaction_id"}},
+}
+
+func validateFinalManualImportContract(contract FinalCompanyFundManualImportContract) error {
+	if len(contract.Columns) != len(finalManualImportColumns) {
+		return fmt.Errorf("final schema requires all migration 065 import columns")
+	}
+	for key, expected := range finalManualImportColumns {
+		if actual, ok := contract.Columns[key]; !ok || actual != expected {
+			return fmt.Errorf("final schema requires exact migration 065 column %s", key)
+		}
+	}
+	if len(contract.Indexes) != len(finalManualImportIndexes) {
+		return fmt.Errorf("final schema requires all migration 065 import indexes")
+	}
+	for name, expected := range finalManualImportIndexes {
+		actual, ok := contract.Indexes[name]
+		if !ok || actual.Schema != "public" || actual.Table != expected.Table || actual.Unique != expected.Unique || !actual.Valid || !actual.Ready || !equalStringSlices(actual.Columns, expected.Columns) || normalizeFinalCatalogExpression(actual.Predicate) != normalizeFinalCatalogExpression(expected.Predicate) {
+			return fmt.Errorf("final schema requires exact migration 065 import index %s", name)
+		}
+	}
+	if len(contract.Constraints) != len(finalManualImportConstraints) {
+		return fmt.Errorf("final schema requires all migration 065 import constraints")
+	}
+	for name, expected := range finalManualImportConstraints {
+		actual, ok := contract.Constraints[name]
+		if !ok || actual.Schema != "public" || actual.Table != expected.Table || actual.Type != expected.Type || !actual.Validated {
+			return fmt.Errorf("final schema requires valid migration 065 constraint %s", name)
+		}
+		definition := normalizeFinalSchemaSQL(actual.Definition)
+		for _, token := range expected.Tokens {
+			if !strings.Contains(definition, token) {
+				return fmt.Errorf("final schema migration 065 constraint %s is missing %s", name, token)
+			}
+		}
+	}
+	if len(contract.Functions) != 2 || len(contract.Triggers) != 2 {
+		return fmt.Errorf("final schema requires migration 065 import lineage and ownership triggers")
+	}
+	for name, expected := range map[string]struct {
+		table, source string
+	}{
+		"company_fund_validate_import_batch_lineage":            {table: "company_fund_transaction_import_batches", source: finalManualImportLineageFunctionSource},
+		"company_fund_enforce_import_row_transaction_ownership": {table: "company_fund_transaction_import_rows", source: finalManualImportOwnershipFunctionSource},
+	} {
+		function, functionOK := contract.Functions[name]
+		trigger, triggerOK := contract.Triggers[name+"_trigger"]
+		if !functionOK || function.Schema != "public" || function.Arguments != 0 || function.Result != "trigger" || function.Language != "plpgsql" || function.Kind != "f" || normalizeFinalSchemaSQL(function.Source) != normalizeFinalSchemaSQL(expected.source) || !triggerOK || trigger.Schema != "public" || trigger.Table != expected.table || trigger.FunctionSchema != "public" || trigger.FunctionName != name || !trigger.Constraint || trigger.Internal || trigger.Enabled != "O" || trigger.Type != finalManualImportTriggerType {
+			return fmt.Errorf("final schema requires migration 065 trigger contract for %s", name)
+		}
 	}
 	return nil
 }
@@ -244,6 +450,23 @@ func mustExtractMigration052FunctionSource(ddl string) string {
 	return source
 }
 
+func mustExtractMigration065FunctionSource(ddl, name string) string {
+	prefix := "CREATE OR REPLACE FUNCTION public." + name + "()"
+	_, after, found := strings.Cut(ddl, prefix)
+	if !found {
+		panic(fmt.Sprintf("function %s declaration not found in migration 065 DDL", name))
+	}
+	_, source, found := strings.Cut(after, "AS $$")
+	if !found {
+		panic(fmt.Sprintf("function %s body start not found in migration 065 DDL", name))
+	}
+	source, _, found = strings.Cut(source, "$$;")
+	if !found {
+		panic(fmt.Sprintf("function %s body end not found in migration 065 DDL", name))
+	}
+	return strings.TrimSpace(source)
+}
+
 func cloneFinalSchemaColumns(columns map[string]string) map[string]string {
 	cloned := make(map[string]string, len(columns))
 	for name, value := range columns {
@@ -262,6 +485,46 @@ func cloneFinalSchemaBools(values map[string]bool) map[string]bool {
 
 func cloneFinalSchemaInt64s(values map[string]int64) map[string]int64 {
 	cloned := make(map[string]int64, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneFinalManualImportColumns(values map[string]FinalCompanyFundManualImportColumn) map[string]FinalCompanyFundManualImportColumn {
+	cloned := make(map[string]FinalCompanyFundManualImportColumn, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneFinalManualImportIndexes(values map[string]FinalCompanyFundManualImportIndex) map[string]FinalCompanyFundManualImportIndex {
+	cloned := make(map[string]FinalCompanyFundManualImportIndex, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneFinalManualImportConstraints(values map[string]FinalCompanyFundManualImportConstraint) map[string]FinalCompanyFundManualImportConstraint {
+	cloned := make(map[string]FinalCompanyFundManualImportConstraint, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneFinalManualImportFunctions(values map[string]FinalCompanyFundManualImportFunction) map[string]FinalCompanyFundManualImportFunction {
+	cloned := make(map[string]FinalCompanyFundManualImportFunction, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func cloneFinalManualImportTriggers(values map[string]FinalCompanyFundManualImportTrigger) map[string]FinalCompanyFundManualImportTrigger {
+	cloned := make(map[string]FinalCompanyFundManualImportTrigger, len(values))
 	for name, value := range values {
 		cloned[name] = value
 	}
@@ -292,6 +555,7 @@ func normalizeFinalCatalogSyntax(value string) string {
 	typePattern := `(?i)(?:text|character varying|varchar|bpchar)(?:\[\])?`
 	value = regexp.MustCompile(`\(([A-Za-z_][A-Za-z0-9_.]*)\)::`+typePattern).ReplaceAllString(value, "$1")
 	value = regexp.MustCompile(`::`+typePattern).ReplaceAllString(value, "")
+	value = regexp.MustCompile(`(?i)=\s*ANY\s*\(\s*\(\s*ARRAY\s*\[(.*?)\]\s*\)\s*\)`).ReplaceAllString(value, " IN ($1)")
 	value = regexp.MustCompile(`(?i)=\s*ANY\s*\(\s*ARRAY\s*\[(.*?)\]\s*\)`).ReplaceAllString(value, " IN ($1)")
 	return normalizeFinalSchemaSQL(value)
 }

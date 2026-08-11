@@ -153,7 +153,7 @@ func TestMigrationRunnerRegistersVersionsInOrder(t *testing.T) {
 			t.Fatalf("migration registry is not ordered: %v", versions)
 		}
 	}
-	wantTail := []string{"046", "047", "048", "049", "050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063", "064"}
+	wantTail := []string{"046", "047", "048", "049", "050", "051", "052", "053", "054", "055", "056", "057", "058", "059", "060", "061", "062", "063", "064", "065", "066"}
 	if len(versions) < len(wantTail) {
 		t.Fatalf("migration registry is incomplete: %v", versions)
 	}
