@@ -36,6 +36,7 @@ var finalManualConstraintDefinitions = mustExtractMigration052ConstraintDefiniti
 var finalManualProjectionFunctionSource = mustExtractMigration052FunctionSource(migration052SchemaDDL)
 var finalManualImportLineageFunctionSource = mustExtractMigration065FunctionSource(migration065SchemaSQL, "company_fund_validate_import_batch_lineage")
 var finalManualImportOwnershipFunctionSource = mustExtractMigration065FunctionSource(migration065SchemaSQL, "company_fund_enforce_import_row_transaction_ownership")
+var finalManualImportCountFunctionSource = mustExtractMigration065FunctionSource(migration065SchemaSQL, "company_fund_validate_import_batch_counts")
 
 type FinalCompanyFundSchemaSnapshot struct {
 	OccurrenceSchema                      string                               `json:"occurrence_schema"`
@@ -236,6 +237,7 @@ var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
 	"company_fund_transaction_import_batches.reimport_reason":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.failure_code":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: true},
 	"company_fund_transaction_import_batches.failure_summary":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 512, Nullable: true},
+	"company_fund_transaction_import_batches.started_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
 	"company_fund_transaction_import_batches.completed_at":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.voided_at":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.voided_by":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: true},
@@ -256,32 +258,84 @@ var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
 }
 
 var finalManualImportIndexes = map[string]struct {
-	Table     string
-	Unique    bool
-	Columns   []string
-	Predicate string
+	Table      string
+	Unique     bool
+	Columns    []string
+	Predicate  string
+	Definition string
 }{
-	"idx_company_fund_transactions_external_reference":             {Table: finalCompanyFundTransactionsTable, Unique: false, Columns: []string{"external_transaction_reference"}, Predicate: "external_transaction_reference IS NOT NULL"},
-	"uq_company_fund_transaction_import_batches_effective_content": {Table: "company_fund_transaction_import_batches", Unique: true, Columns: []string{"content_digest"}, Predicate: "status IN ('PROCESSING', 'SUCCEEDED')"},
+	"idx_company_fund_transactions_external_reference": {
+		Table: finalCompanyFundTransactionsTable, Columns: []string{"external_transaction_reference"},
+		Predicate:  "external_transaction_reference IS NOT NULL",
+		Definition: "CREATE INDEX idx_company_fund_transactions_external_reference ON public.company_fund_transactions USING btree (external_transaction_reference) WHERE (external_transaction_reference IS NOT NULL)",
+	},
+	"uq_company_fund_transaction_import_batches_effective_content": {
+		Table: "company_fund_transaction_import_batches", Unique: true, Columns: []string{"content_digest"},
+		Predicate:  "status IN ('PROCESSING', 'SUCCEEDED')",
+		Definition: "CREATE UNIQUE INDEX uq_company_fund_transaction_import_batches_effective_content ON public.company_fund_transaction_import_batches USING btree (content_digest) WHERE (status IN ('PROCESSING', 'SUCCEEDED'))",
+	},
+	"idx_company_fund_transaction_import_batches_created": {
+		Table: "company_fund_transaction_import_batches", Columns: []string{"created_at", "id"},
+		Definition: "CREATE INDEX idx_company_fund_transaction_import_batches_created ON public.company_fund_transaction_import_batches USING btree (created_at DESC, id DESC)",
+	},
+	"idx_company_fund_transaction_import_batches_predecessor": {
+		Table: "company_fund_transaction_import_batches", Columns: []string{"predecessor_batch_id"},
+		Predicate:  "predecessor_batch_id IS NOT NULL",
+		Definition: "CREATE INDEX idx_company_fund_transaction_import_batches_predecessor ON public.company_fund_transaction_import_batches USING btree (predecessor_batch_id) WHERE (predecessor_batch_id IS NOT NULL)",
+	},
+	"idx_company_fund_transaction_import_rows_principal": {
+		Table: "company_fund_transaction_import_rows", Columns: []string{"principal_transaction_id"},
+		Definition: "CREATE INDEX idx_company_fund_transaction_import_rows_principal ON public.company_fund_transaction_import_rows USING btree (principal_transaction_id)",
+	},
+	"idx_company_fund_transaction_import_rows_fee": {
+		Table: "company_fund_transaction_import_rows", Columns: []string{"fee_transaction_id"},
+		Predicate:  "fee_transaction_id IS NOT NULL",
+		Definition: "CREATE INDEX idx_company_fund_transaction_import_rows_fee ON public.company_fund_transaction_import_rows USING btree (fee_transaction_id) WHERE (fee_transaction_id IS NOT NULL)",
+	},
 }
 
 var finalManualImportConstraints = map[string]struct {
-	Table  string
-	Type   string
-	Tokens []string
+	Table      string
+	Type       string
+	Definition string
 }{
-	"company_fund_transactions_external_reference_source_check":  {Table: finalCompanyFundTransactionsTable, Type: "c", Tokens: []string{"external_transaction_reference", "channel", "'MANUAL'", "btrim"}},
-	"company_fund_transaction_import_batches_status_check":       {Table: "company_fund_transaction_import_batches", Type: "c", Tokens: []string{"'PROCESSING'", "'SUCCEEDED'", "'FAILED'", "'VOIDED'"}},
-	"company_fund_transaction_import_batches_lifecycle_check":    {Table: "company_fund_transaction_import_batches", Type: "c", Tokens: []string{"completed_at", "voided_at", "failure_code"}},
-	"company_fund_transaction_import_batches_predecessor_fk":     {Table: "company_fund_transaction_import_batches", Type: "f", Tokens: []string{"predecessor_batch_id", "ON DELETE RESTRICT"}},
-	"company_fund_transaction_import_batches_idempotency_unique": {Table: "company_fund_transaction_import_batches", Type: "u", Tokens: []string{"requested_by", "idempotency_key"}},
-	"company_fund_transaction_import_rows_batch_fk":              {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"batch_id", "ON DELETE RESTRICT"}},
-	"company_fund_transaction_import_rows_account_fk":            {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"company_fund_account_id", "ON DELETE RESTRICT"}},
-	"company_fund_transaction_import_rows_principal_fk":          {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"principal_transaction_id", "ON DELETE RESTRICT"}},
-	"company_fund_transaction_import_rows_fee_fk":                {Table: "company_fund_transaction_import_rows", Type: "f", Tokens: []string{"fee_transaction_id", "ON DELETE RESTRICT"}},
-	"company_fund_transaction_import_rows_principal_unique":      {Table: "company_fund_transaction_import_rows", Type: "u", Tokens: []string{"principal_transaction_id"}},
-	"company_fund_transaction_import_rows_fee_unique":            {Table: "company_fund_transaction_import_rows", Type: "u", Tokens: []string{"fee_transaction_id"}},
-	"company_fund_import_rows_principal_fee_distinct_check":      {Table: "company_fund_transaction_import_rows", Type: "c", Tokens: []string{"fee_transaction_id", "principal_transaction_id"}},
+	"company_fund_transactions_external_reference_source_check":       {Table: finalCompanyFundTransactionsTable, Type: "c", Definition: "CHECK (external_transaction_reference IS NULL OR (channel = 'MANUAL' AND btrim(external_transaction_reference) <> ''))"},
+	"company_fund_transaction_import_batches_pkey":                    {Table: "company_fund_transaction_import_batches", Type: "p", Definition: "PRIMARY KEY (id)"},
+	"company_fund_transaction_import_batches_content_digest_check":    {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (content_digest ~ '^[0-9a-f]{64}$')"},
+	"company_fund_transaction_import_batches_request_digest_check":    {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (request_digest ~ '^[0-9a-f]{64}$')"},
+	"company_fund_transaction_import_batches_template_version_check":  {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (btrim(template_version) <> '')"},
+	"company_fund_import_batches_original_file_name_check":            {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (btrim(original_file_name) <> '')"},
+	"company_fund_transaction_import_batches_status_check":            {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (status IN ('PROCESSING', 'SUCCEEDED', 'FAILED', 'VOIDED'))"},
+	"company_fund_transaction_import_batches_idempotency_key_check":   {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (btrim(idempotency_key) <> '')"},
+	"company_fund_transaction_import_batches_source_row_count_check":  {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (source_row_count >= 1 AND source_row_count <= 500)"},
+	"company_fund_import_batches_principal_tx_count_check":            {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (principal_transaction_count >= 0)"},
+	"company_fund_import_batches_fee_tx_count_check":                  {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (fee_transaction_count >= 0)"},
+	"company_fund_import_batches_voided_count_nonnegative_check":      {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (voided_movement_count >= 0)"},
+	"company_fund_transaction_import_batches_warning_count_check":     {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (warning_count >= 0)"},
+	"company_fund_import_batches_duplicate_warning_evidence_check":    {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (jsonb_typeof(duplicate_warning_evidence) = 'array')"},
+	"company_fund_transaction_import_batches_predecessor_fk":          {Table: "company_fund_transaction_import_batches", Type: "f", Definition: "FOREIGN KEY (predecessor_batch_id) REFERENCES company_fund_transaction_import_batches(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_batches_idempotency_unique":      {Table: "company_fund_transaction_import_batches", Type: "u", Definition: "UNIQUE (requested_by, idempotency_key)"},
+	"company_fund_transaction_import_batches_predecessor_self_check":  {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (predecessor_batch_id IS NULL OR predecessor_batch_id <> id)"},
+	"company_fund_import_batches_voided_count_check":                  {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK (voided_movement_count <= (principal_transaction_count + fee_transaction_count))"},
+	"company_fund_transaction_import_batches_reimport_check":          {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK ((predecessor_batch_id IS NULL AND reimport_reason IS NULL) OR (predecessor_batch_id IS NOT NULL AND reimport_reason IS NOT NULL AND btrim(reimport_reason) <> ''))"},
+	"company_fund_import_batches_duplicate_override_check":            {Table: "company_fund_transaction_import_batches", Type: "c", Definition: "CHECK ((duplicate_override_acknowledged AND duplicate_override_reason IS NOT NULL AND btrim(duplicate_override_reason) <> '') OR (NOT duplicate_override_acknowledged AND duplicate_override_reason IS NULL))"},
+	"company_fund_transaction_import_batches_lifecycle_check":         {Table: "company_fund_transaction_import_batches", Type: "c", Definition: mustExtractMigration065NamedCheck(migration065SchemaSQL, "company_fund_transaction_import_batches_lifecycle_check")},
+	"company_fund_transaction_import_rows_pkey":                       {Table: "company_fund_transaction_import_rows", Type: "p", Definition: "PRIMARY KEY (id)"},
+	"company_fund_transaction_import_rows_batch_fk":                   {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (batch_id) REFERENCES company_fund_transaction_import_batches(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_source_row_number_check":    {Table: "company_fund_transaction_import_rows", Type: "c", Definition: "CHECK (source_row_number >= 2)"},
+	"company_fund_transaction_import_rows_row_digest_check":           {Table: "company_fund_transaction_import_rows", Type: "c", Definition: "CHECK (row_digest ~ '^[0-9a-f]{64}$')"},
+	"company_fund_transaction_import_rows_account_fk":                 {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (company_fund_account_id) REFERENCES company_fund_accounts(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_category_level1_fk":         {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (finance_category_level1_id) REFERENCES finance_categories(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_category_level2_fk":         {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (finance_category_level2_id) REFERENCES finance_categories(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_principal_fk":               {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (principal_transaction_id) REFERENCES company_fund_transactions(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_fee_fk":                     {Table: "company_fund_transaction_import_rows", Type: "f", Definition: "FOREIGN KEY (fee_transaction_id) REFERENCES company_fund_transactions(id) ON DELETE RESTRICT"},
+	"company_fund_transaction_import_rows_source_row_unique":          {Table: "company_fund_transaction_import_rows", Type: "u", Definition: "UNIQUE (batch_id, source_row_number)"},
+	"company_fund_transaction_import_rows_row_digest_unique":          {Table: "company_fund_transaction_import_rows", Type: "u", Definition: "UNIQUE (batch_id, row_digest)"},
+	"company_fund_transaction_import_rows_principal_unique":           {Table: "company_fund_transaction_import_rows", Type: "u", Definition: "UNIQUE (principal_transaction_id)"},
+	"company_fund_transaction_import_rows_fee_unique":                 {Table: "company_fund_transaction_import_rows", Type: "u", Definition: "UNIQUE (fee_transaction_id)"},
+	"company_fund_transaction_import_rows_movement_ownership_exclude": {Table: "company_fund_transaction_import_rows", Type: "x", Definition: "EXCLUDE USING gist (int8multirange(VARIADIC ARRAY[int8range(principal_transaction_id, principal_transaction_id, '[]'::text), CASE WHEN fee_transaction_id IS NULL THEN 'empty'::int8range ELSE int8range(fee_transaction_id, fee_transaction_id, '[]'::text) END]) WITH &&)"},
+	"company_fund_import_rows_principal_fee_distinct_check":           {Table: "company_fund_transaction_import_rows", Type: "c", Definition: "CHECK (fee_transaction_id IS NULL OR fee_transaction_id <> principal_transaction_id)"},
+	"company_fund_transaction_import_rows_category_hierarchy_check":   {Table: "company_fund_transaction_import_rows", Type: "c", Definition: "CHECK (finance_category_level2_id IS NULL OR finance_category_level1_id IS NOT NULL)"},
 }
 
 func validateFinalManualImportContract(contract FinalCompanyFundManualImportContract) error {
@@ -298,7 +352,7 @@ func validateFinalManualImportContract(contract FinalCompanyFundManualImportCont
 	}
 	for name, expected := range finalManualImportIndexes {
 		actual, ok := contract.Indexes[name]
-		if !ok || actual.Schema != "public" || actual.Table != expected.Table || actual.Unique != expected.Unique || !actual.Valid || !actual.Ready || !equalStringSlices(actual.Columns, expected.Columns) || normalizeFinalCatalogExpression(actual.Predicate) != normalizeFinalCatalogExpression(expected.Predicate) {
+		if !ok || actual.Schema != "public" || actual.Table != expected.Table || actual.Unique != expected.Unique || !actual.Valid || !actual.Ready || !equalStringSlices(actual.Columns, expected.Columns) || normalizeFinalCatalogExpression(actual.Predicate) != normalizeFinalCatalogExpression(expected.Predicate) || normalizeFinalIndexDefinition(actual.Definition) != normalizeFinalIndexDefinition(expected.Definition) {
 			return fmt.Errorf("final schema requires exact migration 065 import index %s", name)
 		}
 	}
@@ -310,25 +364,24 @@ func validateFinalManualImportContract(contract FinalCompanyFundManualImportCont
 		if !ok || actual.Schema != "public" || actual.Table != expected.Table || actual.Type != expected.Type || !actual.Validated {
 			return fmt.Errorf("final schema requires valid migration 065 constraint %s", name)
 		}
-		definition := normalizeFinalSchemaSQL(actual.Definition)
-		for _, token := range expected.Tokens {
-			if !strings.Contains(definition, token) {
-				return fmt.Errorf("final schema migration 065 constraint %s is missing %s", name, token)
-			}
+		if normalizeFinalCatalogExpression(actual.Definition) != normalizeFinalCatalogExpression(expected.Definition) {
+			return fmt.Errorf("final schema migration 065 constraint %s definition differs", name)
 		}
 	}
-	if len(contract.Functions) != 2 || len(contract.Triggers) != 2 {
-		return fmt.Errorf("final schema requires migration 065 import lineage and ownership triggers")
+	if len(contract.Functions) != 3 || len(contract.Triggers) != 3 {
+		return fmt.Errorf("final schema requires migration 065 import lineage, ownership, and count triggers")
 	}
 	for name, expected := range map[string]struct {
 		table, source string
+		triggerType   int64
 	}{
-		"company_fund_validate_import_batch_lineage":            {table: "company_fund_transaction_import_batches", source: finalManualImportLineageFunctionSource},
-		"company_fund_enforce_import_row_transaction_ownership": {table: "company_fund_transaction_import_rows", source: finalManualImportOwnershipFunctionSource},
+		"company_fund_validate_import_batch_lineage":            {table: "company_fund_transaction_import_batches", source: finalManualImportLineageFunctionSource, triggerType: finalManualImportTriggerType},
+		"company_fund_enforce_import_row_transaction_ownership": {table: "company_fund_transaction_import_rows", source: finalManualImportOwnershipFunctionSource, triggerType: finalManualImportTriggerType | 8},
+		"company_fund_validate_import_batch_counts":             {table: "company_fund_transaction_import_batches", source: finalManualImportCountFunctionSource, triggerType: finalManualImportTriggerType},
 	} {
 		function, functionOK := contract.Functions[name]
 		trigger, triggerOK := contract.Triggers[name+"_trigger"]
-		if !functionOK || function.Schema != "public" || function.Arguments != 0 || function.Result != "trigger" || function.Language != "plpgsql" || function.Kind != "f" || normalizeFinalSchemaSQL(function.Source) != normalizeFinalSchemaSQL(expected.source) || !triggerOK || trigger.Schema != "public" || trigger.Table != expected.table || trigger.FunctionSchema != "public" || trigger.FunctionName != name || !trigger.Constraint || trigger.Internal || trigger.Enabled != "O" || trigger.Type != finalManualImportTriggerType {
+		if !functionOK || function.Schema != "public" || function.Arguments != 0 || function.Result != "trigger" || function.Language != "plpgsql" || function.Kind != "f" || normalizeFinalSchemaSQL(function.Source) != normalizeFinalSchemaSQL(expected.source) || !triggerOK || trigger.Schema != "public" || trigger.Table != expected.table || trigger.FunctionSchema != "public" || trigger.FunctionName != name || !trigger.Constraint || trigger.Internal || trigger.Enabled != "O" || trigger.Type != expected.triggerType {
 			return fmt.Errorf("final schema requires migration 065 trigger contract for %s", name)
 		}
 	}
@@ -465,6 +518,44 @@ func mustExtractMigration065FunctionSource(ddl, name string) string {
 		panic(fmt.Sprintf("function %s body end not found in migration 065 DDL", name))
 	}
 	return strings.TrimSpace(source)
+}
+
+func mustExtractMigration065NamedCheck(ddl, name string) string {
+	marker := "CONSTRAINT " + name
+	start := strings.Index(ddl, marker)
+	if start < 0 {
+		panic(fmt.Sprintf("constraint %s declaration not found in migration 065 DDL", name))
+	}
+	checkOffset := strings.Index(ddl[start+len(marker):], "CHECK")
+	if checkOffset < 0 {
+		panic(fmt.Sprintf("constraint %s check not found in migration 065 DDL", name))
+	}
+	checkStart := start + len(marker) + checkOffset
+	openOffset := strings.IndexByte(ddl[checkStart:], '(')
+	if openOffset < 0 {
+		panic(fmt.Sprintf("constraint %s check body not found in migration 065 DDL", name))
+	}
+	open := checkStart + openOffset
+	depth := 0
+	inQuote := false
+	for index := open; index < len(ddl); index++ {
+		switch ddl[index] {
+		case '\'':
+			inQuote = !inQuote
+		case '(':
+			if !inQuote {
+				depth++
+			}
+		case ')':
+			if !inQuote {
+				depth--
+				if depth == 0 {
+					return "CHECK " + strings.TrimSpace(ddl[open:index+1])
+				}
+			}
+		}
+	}
+	panic(fmt.Sprintf("constraint %s check body is incomplete in migration 065 DDL", name))
 }
 
 func cloneFinalSchemaColumns(columns map[string]string) map[string]string {

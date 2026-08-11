@@ -69,8 +69,21 @@ func TestBuildFinalCompanyFundSchemaFingerprintRejectsEveryMissingInvariant(t *t
 			index.Unique = true
 			value.ManualImportContract.Indexes["idx_company_fund_transactions_external_reference"] = index
 		}},
+		{name: "import index definition drift", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			index := value.ManualImportContract.Indexes["idx_company_fund_transactions_external_reference"]
+			index.Definition += " INCLUDE (channel)"
+			value.ManualImportContract.Indexes["idx_company_fund_transactions_external_reference"] = index
+		}},
 		{name: "missing import lineage constraint", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			delete(value.ManualImportContract.Constraints, "company_fund_transaction_import_batches_lifecycle_check")
+		}},
+		{name: "missing import row digest uniqueness", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			delete(value.ManualImportContract.Constraints, "company_fund_transaction_import_rows_row_digest_unique")
+		}},
+		{name: "weakened import lifecycle constraint", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			constraint := value.ManualImportContract.Constraints["company_fund_transaction_import_batches_lifecycle_check"]
+			constraint.Definition = "CHECK (TRUE OR " + constraint.Definition + ")"
+			value.ManualImportContract.Constraints["company_fund_transaction_import_batches_lifecycle_check"] = constraint
 		}},
 		{name: "wrong import trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			trigger := value.ManualImportContract.Triggers["company_fund_validate_import_batch_lineage_trigger"]
@@ -81,6 +94,9 @@ func TestBuildFinalCompanyFundSchemaFingerprintRejectsEveryMissingInvariant(t *t
 			function := value.ManualImportContract.Functions["company_fund_enforce_import_row_transaction_ownership"]
 			function.Source += "\nPERFORM 1;"
 			value.ManualImportContract.Functions["company_fund_enforce_import_row_transaction_ownership"] = function
+		}},
+		{name: "missing import batch count trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			delete(value.ManualImportContract.Triggers, "company_fund_validate_import_batch_counts_trigger")
 		}},
 		{name: "occurrence version column", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			value.OccurrenceColumns["provider_occurrence_algorithm_version"] = "text"
@@ -247,14 +263,14 @@ func validFinalManualImportContract() FinalCompanyFundManualImportContract {
 		indexes[name] = FinalCompanyFundManualImportIndex{
 			Schema: "public", Table: expected.Table, Unique: expected.Unique, Valid: true, Ready: true,
 			Columns: append([]string(nil), expected.Columns...), Predicate: expected.Predicate,
-			Definition: "CREATE INDEX " + name + " ON public." + expected.Table,
+			Definition: expected.Definition,
 		}
 	}
 	constraints := make(map[string]FinalCompanyFundManualImportConstraint, len(finalManualImportConstraints))
 	for name, expected := range finalManualImportConstraints {
 		constraints[name] = FinalCompanyFundManualImportConstraint{
 			Schema: "public", Table: expected.Table, Type: expected.Type, Validated: true,
-			Definition: strings.Join(expected.Tokens, " "),
+			Definition: expected.Definition,
 		}
 	}
 	return FinalCompanyFundManualImportContract{
@@ -264,10 +280,12 @@ func validFinalManualImportContract() FinalCompanyFundManualImportContract {
 		Functions: map[string]FinalCompanyFundManualImportFunction{
 			"company_fund_validate_import_batch_lineage":            {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportLineageFunctionSource},
 			"company_fund_enforce_import_row_transaction_ownership": {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportOwnershipFunctionSource},
+			"company_fund_validate_import_batch_counts":             {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportCountFunctionSource},
 		},
 		Triggers: map[string]FinalCompanyFundManualImportTrigger{
 			"company_fund_validate_import_batch_lineage_trigger":            {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_lineage", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
-			"company_fund_enforce_import_row_transaction_ownership_trigger": {Schema: "public", Table: "company_fund_transaction_import_rows", FunctionSchema: "public", FunctionName: "company_fund_enforce_import_row_transaction_ownership", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
+			"company_fund_enforce_import_row_transaction_ownership_trigger": {Schema: "public", Table: "company_fund_transaction_import_rows", FunctionSchema: "public", FunctionName: "company_fund_enforce_import_row_transaction_ownership", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType | 8},
+			"company_fund_validate_import_batch_counts_trigger":             {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_counts", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
 		},
 	}
 }

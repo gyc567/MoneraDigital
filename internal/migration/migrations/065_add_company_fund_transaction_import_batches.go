@@ -111,6 +111,7 @@ CREATE TABLE public.company_fund_transaction_import_batches (
   reimport_reason TEXT,
   failure_code VARCHAR(64),
   failure_summary VARCHAR(512),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
   completed_at TIMESTAMPTZ,
   voided_at TIMESTAMPTZ,
   voided_by BIGINT,
@@ -284,6 +285,16 @@ CREATE TABLE public.company_fund_transaction_import_rows (
   CONSTRAINT company_fund_transaction_import_rows_row_digest_unique UNIQUE (batch_id, row_digest),
   CONSTRAINT company_fund_transaction_import_rows_principal_unique UNIQUE (principal_transaction_id),
   CONSTRAINT company_fund_transaction_import_rows_fee_unique UNIQUE (fee_transaction_id),
+  CONSTRAINT company_fund_transaction_import_rows_movement_ownership_exclude
+    EXCLUDE USING gist (
+      int8multirange(
+        int8range(principal_transaction_id, principal_transaction_id, '[]'),
+        CASE WHEN fee_transaction_id IS NULL
+          THEN 'empty'::int8range
+          ELSE int8range(fee_transaction_id, fee_transaction_id, '[]')
+        END
+      ) WITH &&
+    ),
   CONSTRAINT company_fund_import_rows_principal_fee_distinct_check CHECK (fee_transaction_id IS NULL OR fee_transaction_id <> principal_transaction_id),
   CONSTRAINT company_fund_transaction_import_rows_category_hierarchy_check CHECK (finance_category_level2_id IS NULL OR finance_category_level1_id IS NOT NULL)
 );
@@ -300,9 +311,32 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
+  import_batch public.company_fund_transaction_import_batches%ROWTYPE;
   principal_tx public.company_fund_transactions%ROWTYPE;
   fee_tx public.company_fund_transactions%ROWTYPE;
+  target_batch_id BIGINT;
 BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.batch_id IS DISTINCT FROM OLD.batch_id THEN
+    RAISE EXCEPTION 'an import row cannot move between batches';
+  END IF;
+  target_batch_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.batch_id ELSE NEW.batch_id END;
+  SELECT * INTO import_batch
+  FROM public.company_fund_transaction_import_batches
+  WHERE id = target_batch_id
+  FOR UPDATE;
+  IF NOT FOUND OR import_batch.status <> 'PROCESSING' THEN
+    RAISE EXCEPTION 'import rows can be changed only while the batch is processing';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+
+  PERFORM 1
+  FROM public.company_fund_transactions AS transaction_row
+  WHERE transaction_row.id IN (NEW.principal_transaction_id, NEW.fee_transaction_id)
+  ORDER BY transaction_row.id
+  FOR UPDATE;
+
   SELECT * INTO principal_tx
   FROM public.company_fund_transactions
   WHERE id = NEW.principal_transaction_id;
@@ -358,10 +392,51 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER company_fund_enforce_import_row_transaction_ownership_trigger
-AFTER INSERT OR UPDATE OF principal_transaction_id, fee_transaction_id,
-  company_fund_account_id, external_transaction_reference
+AFTER INSERT OR UPDATE OR DELETE
 ON public.company_fund_transaction_import_rows
 DEFERRABLE INITIALLY IMMEDIATE
 FOR EACH ROW
 EXECUTE FUNCTION public.company_fund_enforce_import_row_transaction_ownership();
+
+CREATE OR REPLACE FUNCTION public.company_fund_validate_import_batch_counts()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  actual_source_rows INTEGER;
+  actual_principal_transactions INTEGER;
+  actual_fee_transactions INTEGER;
+BEGIN
+  IF TG_OP = 'UPDATE'
+    AND OLD.status IN ('SUCCEEDED', 'FAILED', 'VOIDED')
+    AND NEW.status IS DISTINCT FROM OLD.status THEN
+    RAISE EXCEPTION 'terminal import batch status is immutable';
+  END IF;
+  IF NEW.status NOT IN ('SUCCEEDED', 'VOIDED') THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT count(*)::integer, count(principal_transaction_id)::integer,
+    count(fee_transaction_id)::integer
+  INTO actual_source_rows, actual_principal_transactions, actual_fee_transactions
+  FROM public.company_fund_transaction_import_rows
+  WHERE batch_id = NEW.id;
+
+  IF actual_source_rows = 0
+    OR actual_source_rows <> NEW.source_row_count
+    OR actual_principal_transactions <> NEW.principal_transaction_count
+    OR actual_fee_transactions <> NEW.fee_transaction_count THEN
+    RAISE EXCEPTION 'terminal import batch counts must match its durable import rows';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_counts_trigger
+AFTER INSERT OR UPDATE OF status, source_row_count,
+  principal_transaction_count, fee_transaction_count
+ON public.company_fund_transaction_import_batches
+DEFERRABLE INITIALLY IMMEDIATE
+FOR EACH ROW
+EXECUTE FUNCTION public.company_fund_validate_import_batch_counts();
 `

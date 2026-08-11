@@ -100,3 +100,72 @@ func TestMigration066WrapsSessionFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMigration066WrapsEveryCatalogAndDDLFailure(t *testing.T) {
+	testCases := []struct {
+		name        string
+		prepare     func(sqlmock.Sqlmock)
+		wantMessage string
+	}{
+		{
+			name: "prior index inspection",
+			prepare: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(regexp.QuoteMeta(migration066TimeoutsSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(regexp.QuoteMeta(migration066InvalidIndexSQL)).WillReturnError(errors.New("catalog unavailable"))
+			},
+			wantMessage: "inspect migration 066 prior index state",
+		},
+		{
+			name: "invalid index removal",
+			prepare: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(regexp.QuoteMeta(migration066TimeoutsSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(regexp.QuoteMeta(migration066InvalidIndexSQL)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+				mock.ExpectExec(regexp.QuoteMeta(migration066DropInvalidIndexSQL)).WillReturnError(errors.New("drop failed"))
+			},
+			wantMessage: "remove invalid migration 066 index",
+		},
+		{
+			name: "concurrent index creation",
+			prepare: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(regexp.QuoteMeta(migration066TimeoutsSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(regexp.QuoteMeta(migration066InvalidIndexSQL)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+				mock.ExpectExec(regexp.QuoteMeta(migration066CreateIndexSQL)).WillReturnError(errors.New("create failed"))
+			},
+			wantMessage: "create migration 066 index concurrently",
+		},
+		{
+			name: "postcondition inspection",
+			prepare: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(regexp.QuoteMeta(migration066TimeoutsSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(regexp.QuoteMeta(migration066InvalidIndexSQL)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+				mock.ExpectExec(regexp.QuoteMeta(migration066CreateIndexSQL)).WillReturnResult(sqlmock.NewResult(0, 0))
+				mock.ExpectQuery(regexp.QuoteMeta(migration066ValidateIndexSQL)).WillReturnError(errors.New("validate failed"))
+			},
+			wantMessage: "validate migration 066 index",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			conn, err := db.Conn(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+			testCase.prepare(mock)
+
+			err = (&AddCompanyFundExternalReferenceIndexOnline{}).UpConn(context.Background(), conn)
+			if err == nil || !strings.Contains(err.Error(), testCase.wantMessage) {
+				t.Fatalf("UpConn() = %v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

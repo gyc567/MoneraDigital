@@ -40,7 +40,7 @@ func TestMigration065PostgresPreservesManualImportIdentityAndLineageContract(t *
 		t.Fatal("provider transaction accepted a manual external reference")
 	}
 
-	parent := insertMigration065Batch(t, db, schema, digest065("parent"), "VOIDED", nil)
+	parent := insertMigration065VoidedBatch(t, db, schema, digest065("parent"), accountID, nil)
 	child := insertMigration065Batch(t, db, schema, digest065("parent"), "PROCESSING", &parent)
 	if child == parent {
 		t.Fatal("fixture batch IDs unexpectedly collided")
@@ -55,15 +55,40 @@ func TestMigration065PostgresPreservesManualImportIdentityAndLineageContract(t *
 	if _, err := db.Exec(migration065BatchInsertSQL(schema), digest065("parent"), digest065("request-second-child"), "PROCESSING", parent, "retry"); err == nil {
 		t.Fatal("ambiguous effective predecessor replacement was accepted")
 	}
-	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
-SET status='VOIDED', completed_at=clock_timestamp(), voided_at=clock_timestamp(), voided_by=1, void_reason='test'
-WHERE id=$1`, child); err != nil {
-		t.Fatalf("void child batch: %v", err)
-	}
+	childPrincipal := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, "parent")
+	insertMigration065ImportRow(t, db, schema, child, 2, "parent", childPrincipal, nil, accountID)
+	markMigration065BatchVoided(t, db, schema, child, 1, 0)
 	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
 SET predecessor_batch_id=$2, reimport_reason='cycle'
 WHERE id=$1`, parent, child); err == nil {
 		t.Fatal("cyclic predecessor chain was accepted")
+	}
+
+	countBatch := insertMigration065Batch(t, db, schema, digest065("counts"), "PROCESSING", nil)
+	countPrincipal := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, "count-001")
+	countFee := insertMigration065Transaction(t, db, schema, "MANUAL", "FEE", "OUTFLOW", accountID, nil, "count-001")
+	insertMigration065ImportRow(t, db, schema, countBatch, 2, "count-001", countPrincipal, countFee, accountID)
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='SUCCEEDED', completed_at=clock_timestamp(), principal_transaction_count=1, fee_transaction_count=0
+WHERE id=$1`, countBatch); err == nil {
+		t.Fatal("terminal batch accepted counts that do not match its durable rows")
+	}
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='SUCCEEDED', completed_at=clock_timestamp(), principal_transaction_count=1, fee_transaction_count=1
+WHERE id=$1`, countBatch); err != nil {
+		t.Fatalf("complete valid import batch: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='PROCESSING', completed_at=NULL
+WHERE id=$1`, countBatch); err == nil {
+		t.Fatal("a terminal import batch returned to processing")
+	}
+	latePrincipal := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, "count-002")
+	if _, err := db.Exec(migration065ImportRowInsertSQL(schema), countBatch, 3, digest065("count-row-3"), "count-002", accountID, latePrincipal, nil); err == nil {
+		t.Fatal("a terminal import batch accepted another row")
+	}
+	if _, err := db.Exec(`DELETE FROM "`+schema+`".company_fund_transaction_import_rows WHERE batch_id=$1`, countBatch); err == nil {
+		t.Fatal("a terminal import batch allowed its durable rows to be deleted")
 	}
 
 	rowBatch := insertMigration065Batch(t, db, schema, digest065("rows"), "PROCESSING", nil)
@@ -184,10 +209,35 @@ func insertMigration065Batch(t *testing.T, db *sql.DB, schema, contentDigest, st
   requested_by, idempotency_key, source_row_count, predecessor_batch_id,
   reimport_reason, completed_at, voided_at, voided_by, void_reason
 ) VALUES ($1, $2, 'v2', 'import.xlsx', $3, 1, $4, 1, $5, $6, $7, $8, $9, $10)
-RETURNING id`, contentDigest, digest065("request-"+contentDigest+status), status, "key-"+contentDigest+status, predecessor, reimportReason, completedAt, voidedAt, voidedBy, voidReason).Scan(&id); err != nil {
+RETURNING id`, contentDigest, digest065(fmt.Sprintf("request-%s-%s-%v", contentDigest, status, predecessor)), status, fmt.Sprintf("key-%s-%s-%v", contentDigest[:8], status, predecessor), predecessor, reimportReason, completedAt, voidedAt, voidedBy, voidReason).Scan(&id); err != nil {
 		t.Fatalf("insert %s batch: %v", status, err)
 	}
 	return id
+}
+
+func insertMigration065VoidedBatch(
+	t *testing.T,
+	db *sql.DB,
+	schema, contentDigest string,
+	accountID int64,
+	predecessor *int64,
+) int64 {
+	t.Helper()
+	batchID := insertMigration065Batch(t, db, schema, contentDigest, "PROCESSING", predecessor)
+	principalID := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, contentDigest)
+	insertMigration065ImportRow(t, db, schema, batchID, 2, contentDigest, principalID, nil, accountID)
+	markMigration065BatchVoided(t, db, schema, batchID, 1, 0)
+	return batchID
+}
+
+func markMigration065BatchVoided(t *testing.T, db *sql.DB, schema string, batchID int64, principalCount, feeCount int) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='VOIDED', completed_at=clock_timestamp(), voided_at=clock_timestamp(),
+  voided_by=1, void_reason='test', principal_transaction_count=$2, fee_transaction_count=$3
+WHERE id=$1`, batchID, principalCount, feeCount); err != nil {
+		t.Fatalf("void valid import batch: %v", err)
+	}
 }
 
 func migration065BatchInsertSQL(schema string) string {
@@ -204,7 +254,7 @@ func migration065ImportRowInsertSQL(schema string) string {
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 }
 
-func insertMigration065ImportRow(t *testing.T, db *sql.DB, schema string, batchID int64, sourceRow int, reference any, principal, fee, accountID int64) {
+func insertMigration065ImportRow(t *testing.T, db *sql.DB, schema string, batchID int64, sourceRow int, reference any, principal int64, fee any, accountID int64) {
 	t.Helper()
 	if _, err := db.Exec(migration065ImportRowInsertSQL(schema), batchID, sourceRow, digest065(fmt.Sprintf("row-%d", sourceRow)), reference, accountID, principal, fee); err != nil {
 		t.Fatalf("insert valid import row: %v", err)

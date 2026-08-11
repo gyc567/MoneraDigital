@@ -341,6 +341,7 @@ SELECT jsonb_build_object(
         ('company_fund_transaction_import_batches', 'reimport_reason'),
         ('company_fund_transaction_import_batches', 'failure_code'),
         ('company_fund_transaction_import_batches', 'failure_summary'),
+        ('company_fund_transaction_import_batches', 'started_at'),
         ('company_fund_transaction_import_batches', 'completed_at'),
         ('company_fund_transaction_import_batches', 'voided_at'),
         ('company_fund_transaction_import_batches', 'voided_by'),
@@ -383,7 +384,11 @@ SELECT jsonb_build_object(
     WHERE namespace.nspname = 'public'
       AND index_class.relname IN (
         'idx_company_fund_transactions_external_reference',
-        'uq_company_fund_transaction_import_batches_effective_content'
+        'uq_company_fund_transaction_import_batches_effective_content',
+        'idx_company_fund_transaction_import_batches_created',
+        'idx_company_fund_transaction_import_batches_predecessor',
+        'idx_company_fund_transaction_import_rows_principal',
+        'idx_company_fund_transaction_import_rows_fee'
       )
   ), '{}'::jsonb),
   'constraints', COALESCE((
@@ -400,17 +405,42 @@ SELECT jsonb_build_object(
     WHERE namespace.nspname = 'public'
       AND con.conname IN (
         'company_fund_transactions_external_reference_source_check',
+        'company_fund_transaction_import_batches_pkey',
+        'company_fund_transaction_import_batches_content_digest_check',
+        'company_fund_transaction_import_batches_request_digest_check',
+        'company_fund_transaction_import_batches_template_version_check',
+        'company_fund_import_batches_original_file_name_check',
         'company_fund_transaction_import_batches_status_check',
+        'company_fund_transaction_import_batches_idempotency_key_check',
+        'company_fund_transaction_import_batches_source_row_count_check',
+        'company_fund_import_batches_principal_tx_count_check',
+        'company_fund_import_batches_fee_tx_count_check',
+        'company_fund_import_batches_voided_count_nonnegative_check',
+        'company_fund_transaction_import_batches_warning_count_check',
+        'company_fund_import_batches_duplicate_warning_evidence_check',
         'company_fund_transaction_import_batches_lifecycle_check',
         'company_fund_transaction_import_batches_predecessor_fk',
         'company_fund_transaction_import_batches_idempotency_unique',
+        'company_fund_transaction_import_batches_predecessor_self_check',
+        'company_fund_import_batches_voided_count_check',
+        'company_fund_transaction_import_batches_reimport_check',
+        'company_fund_import_batches_duplicate_override_check',
+        'company_fund_transaction_import_rows_pkey',
         'company_fund_transaction_import_rows_batch_fk',
+        'company_fund_transaction_import_rows_source_row_number_check',
+        'company_fund_transaction_import_rows_row_digest_check',
         'company_fund_transaction_import_rows_account_fk',
+        'company_fund_transaction_import_rows_category_level1_fk',
+        'company_fund_transaction_import_rows_category_level2_fk',
         'company_fund_transaction_import_rows_principal_fk',
         'company_fund_transaction_import_rows_fee_fk',
+        'company_fund_transaction_import_rows_source_row_unique',
+        'company_fund_transaction_import_rows_row_digest_unique',
         'company_fund_transaction_import_rows_principal_unique',
         'company_fund_transaction_import_rows_fee_unique',
-        'company_fund_import_rows_principal_fee_distinct_check'
+        'company_fund_transaction_import_rows_movement_ownership_exclude',
+        'company_fund_import_rows_principal_fee_distinct_check',
+        'company_fund_transaction_import_rows_category_hierarchy_check'
       )
   ), '{}'::jsonb),
   'functions', COALESCE((
@@ -428,7 +458,8 @@ SELECT jsonb_build_object(
     WHERE namespace.nspname = 'public'
       AND proc.proname IN (
         'company_fund_validate_import_batch_lineage',
-        'company_fund_enforce_import_row_transaction_ownership'
+        'company_fund_enforce_import_row_transaction_ownership',
+        'company_fund_validate_import_batch_counts'
       )
   ), '{}'::jsonb),
   'triggers', COALESCE((
@@ -451,7 +482,8 @@ SELECT jsonb_build_object(
       AND NOT trg.tgisinternal
       AND trg.tgname IN (
         'company_fund_validate_import_batch_lineage_trigger',
-        'company_fund_enforce_import_row_transaction_ownership_trigger'
+        'company_fund_enforce_import_row_transaction_ownership_trigger',
+        'company_fund_validate_import_batch_counts_trigger'
       )
   ), '{}'::jsonb)
 )`
