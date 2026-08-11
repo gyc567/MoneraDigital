@@ -25,6 +25,12 @@ type plainTestMigration struct {
 	upErr   error
 }
 
+type onlineControlledTestMigration struct {
+	version, prior, ceiling string
+	calls                   *int
+	upConn                  func(context.Context, *sql.Conn) error
+}
+
 func (migration plainTestMigration) Version() string     { return migration.version }
 func (migration plainTestMigration) Description() string { return migration.version }
 func (migration plainTestMigration) Down(*sql.DB) error  { return nil }
@@ -52,6 +58,27 @@ func (migration controlledTestMigration) UpTx(tx *sql.Tx) error {
 		return migration.upTx(tx)
 	}
 	return nil
+}
+
+func (migration onlineControlledTestMigration) Version() string     { return migration.version }
+func (migration onlineControlledTestMigration) Description() string { return migration.version }
+func (migration onlineControlledTestMigration) Down(*sql.DB) error  { return nil }
+func (migration onlineControlledTestMigration) RequiredPreexistingVersion() string {
+	return migration.prior
+}
+func (migration onlineControlledTestMigration) RequiredExpectedCeiling() string {
+	return migration.ceiling
+}
+func (migration onlineControlledTestMigration) Up(*sql.DB) error {
+	return fmt.Errorf("online controlled migrations require a dedicated session")
+}
+func (migration onlineControlledTestMigration) UpConn(ctx context.Context, conn *sql.Conn) error {
+	*migration.calls++
+	if migration.upConn != nil {
+		return migration.upConn(ctx, conn)
+	}
+	_, err := conn.ExecContext(ctx, `CREATE INDEX CONCURRENTLY online_controlled_test_index ON controlled (id)`)
+	return err
 }
 
 func TestControlledMigrationRequiresExactArtifactCeilingBeforeDatabaseAccess(t *testing.T) {
@@ -134,6 +161,57 @@ func TestControlledMigrationRequiresExplicitCeilingButAllowsExactCheckpointedRun
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestOnlineControlledMigrationUsesDedicatedSessionWithoutTransactionAndRecordsAfterSuccess(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	calls := 0
+	migrator := NewMigrator(db)
+	migrator.Register(onlineControlledTestMigration{version: "066", prior: "065", ceiling: "066", calls: &calls})
+	expectMigratorStart(mock, []MigrationRecord{{ID: 1, Version: "065", Name: "A", ExecutedAt: time.Now()}})
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE INDEX CONCURRENTLY online_controlled_test_index ON controlled (id)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO public.migrations (version, name) VALUES ($1, $2)`)).WithArgs("066", "066").WillReturnResult(sqlmock.NewResult(2, 1))
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_unlock($1)`)).WithArgs(int64(8675309)).WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := migrator.MigrateWithExpectedCeiling("066"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("online controlled migration calls = %d", calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOnlineControlledMigrationRecordFailureIsIndeterminateAndDoesNotRunInsideTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	calls := 0
+	migrator := NewMigrator(db)
+	migrator.Register(onlineControlledTestMigration{version: "066", prior: "065", ceiling: "066", calls: &calls})
+	expectMigratorStart(mock, []MigrationRecord{{ID: 1, Version: "065", Name: "A", ExecutedAt: time.Now()}})
+	mock.ExpectExec(regexp.QuoteMeta(`CREATE INDEX CONCURRENTLY online_controlled_test_index ON controlled (id)`)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO public.migrations (version, name) VALUES ($1, $2)`)).WithArgs("066", "066").WillReturnError(sql.ErrConnDone)
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_unlock($1)`)).WithArgs(int64(8675309)).WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = migrator.MigrateWithExpectedCeiling("066")
+	if err == nil || !IsControlledOnlineOutcomeIndeterminate(err) {
+		t.Fatalf("online record failure = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("online controlled migration calls = %d", calls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

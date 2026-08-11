@@ -45,6 +45,13 @@ func InspectLiveCompanyFundSchema(ctx context.Context, catalog companyFundCatalo
 		ConstraintOccurrences:       make(map[string]int64),
 		ManualConstraintDefinitions: make(map[string]string),
 		ManualConstraintsValidated:  make(map[string]bool),
+		ManualImportContract: FinalCompanyFundManualImportContract{
+			Columns:     make(map[string]FinalCompanyFundManualImportColumn),
+			Indexes:     make(map[string]FinalCompanyFundManualImportIndex),
+			Constraints: make(map[string]FinalCompanyFundManualImportConstraint),
+			Functions:   make(map[string]FinalCompanyFundManualImportFunction),
+			Triggers:    make(map[string]FinalCompanyFundManualImportTrigger),
+		},
 	}
 	if err := inspectOccurrenceColumns(ctx, catalog, &snapshot); err != nil {
 		return LiveCompanyFundSchemaReport{}, err
@@ -60,6 +67,9 @@ func InspectLiveCompanyFundSchema(ctx context.Context, catalog companyFundCatalo
 	}
 	if err := inspectManualProjectionTrigger(ctx, catalog, &snapshot); err != nil {
 		return LiveCompanyFundSchemaReport{}, fmt.Errorf("inspect MANUAL projection trigger: %w", err)
+	}
+	if err := inspectManualImportContract(ctx, catalog, &snapshot); err != nil {
+		return LiveCompanyFundSchemaReport{}, fmt.Errorf("inspect migration 065 manual import contract: %w", err)
 	}
 	var recorded052, recorded053 bool
 	if err := catalog.QueryRowContext(ctx, companyFundMigrationProvenanceCatalogSQL).Scan(&recorded052, &recorded053); err != nil {
@@ -87,6 +97,25 @@ func InspectLiveCompanyFundSchema(ctx context.Context, catalog companyFundCatalo
 	report.State = CompanyFundSchemaStateB
 	report.Fingerprint = &fingerprint
 	return report, nil
+}
+
+func inspectManualImportContract(ctx context.Context, catalog companyFundCatalog, snapshot *FinalCompanyFundSchemaSnapshot) error {
+	var raw []byte
+	if err := catalog.QueryRowContext(ctx, companyFundManualImportContractCatalogSQL).Scan(&raw); err != nil {
+		return err
+	}
+	if len(raw) == 0 {
+		return fmt.Errorf("manual import contract catalog returned no data")
+	}
+	var contract FinalCompanyFundManualImportContract
+	if err := json.Unmarshal(raw, &contract); err != nil {
+		return fmt.Errorf("decode manual import contract: %w", err)
+	}
+	if contract.Columns == nil || contract.Indexes == nil || contract.Constraints == nil || contract.Functions == nil || contract.Triggers == nil {
+		return fmt.Errorf("manual import contract is incomplete")
+	}
+	snapshot.ManualImportContract = contract
+	return nil
 }
 
 func inspectOccurrenceColumns(ctx context.Context, catalog companyFundCatalog, snapshot *FinalCompanyFundSchemaSnapshot) error {
@@ -274,3 +303,195 @@ WHERE namespace.nspname = 'public'
 const companyFundMigrationProvenanceCatalogSQL = `SELECT
   EXISTS (SELECT 1 FROM public.migrations WHERE version = '052'),
   EXISTS (SELECT 1 FROM public.migrations WHERE version = '053')`
+
+const companyFundManualImportContractCatalogSQL = `
+SELECT jsonb_build_object(
+  'columns', COALESCE((
+    SELECT jsonb_object_agg(
+      columns.table_name || '.' || columns.column_name,
+      jsonb_build_object(
+        'schema', columns.table_schema,
+        'table', columns.table_name,
+          'data_type', columns.data_type,
+          'length', COALESCE(columns.character_maximum_length, 0),
+          'nullable', columns.is_nullable = 'YES',
+          'default', COALESCE(columns.column_default, '')
+      )
+    )
+    FROM information_schema.columns AS columns
+    WHERE columns.table_schema = 'public'
+      AND (columns.table_name, columns.column_name) IN (
+        ('company_fund_transactions', 'external_transaction_reference'),
+        ('company_fund_transaction_import_batches', 'id'),
+        ('company_fund_transaction_import_batches', 'content_digest'),
+        ('company_fund_transaction_import_batches', 'request_digest'),
+        ('company_fund_transaction_import_batches', 'template_version'),
+        ('company_fund_transaction_import_batches', 'original_file_name'),
+        ('company_fund_transaction_import_batches', 'status'),
+        ('company_fund_transaction_import_batches', 'requested_by'),
+        ('company_fund_transaction_import_batches', 'idempotency_key'),
+        ('company_fund_transaction_import_batches', 'source_row_count'),
+        ('company_fund_transaction_import_batches', 'principal_transaction_count'),
+        ('company_fund_transaction_import_batches', 'fee_transaction_count'),
+        ('company_fund_transaction_import_batches', 'voided_movement_count'),
+        ('company_fund_transaction_import_batches', 'warning_count'),
+        ('company_fund_transaction_import_batches', 'duplicate_override_acknowledged'),
+        ('company_fund_transaction_import_batches', 'duplicate_override_reason'),
+        ('company_fund_transaction_import_batches', 'duplicate_warning_evidence'),
+        ('company_fund_transaction_import_batches', 'predecessor_batch_id'),
+        ('company_fund_transaction_import_batches', 'reimport_reason'),
+        ('company_fund_transaction_import_batches', 'failure_code'),
+        ('company_fund_transaction_import_batches', 'failure_summary'),
+        ('company_fund_transaction_import_batches', 'started_at'),
+        ('company_fund_transaction_import_batches', 'completed_at'),
+        ('company_fund_transaction_import_batches', 'voided_at'),
+        ('company_fund_transaction_import_batches', 'voided_by'),
+        ('company_fund_transaction_import_batches', 'void_reason'),
+        ('company_fund_transaction_import_batches', 'created_at'),
+        ('company_fund_transaction_import_batches', 'updated_at'),
+        ('company_fund_transaction_import_rows', 'id'),
+        ('company_fund_transaction_import_rows', 'batch_id'),
+        ('company_fund_transaction_import_rows', 'source_row_number'),
+        ('company_fund_transaction_import_rows', 'row_digest'),
+        ('company_fund_transaction_import_rows', 'external_transaction_reference'),
+        ('company_fund_transaction_import_rows', 'company_fund_account_id'),
+        ('company_fund_transaction_import_rows', 'finance_category_level1_id'),
+        ('company_fund_transaction_import_rows', 'finance_category_level2_id'),
+        ('company_fund_transaction_import_rows', 'principal_transaction_id'),
+        ('company_fund_transaction_import_rows', 'fee_transaction_id'),
+        ('company_fund_transaction_import_rows', 'created_at')
+      )
+  ), '{}'::jsonb),
+  'indexes', COALESCE((
+    SELECT jsonb_object_agg(index_class.relname, jsonb_build_object(
+      'schema', namespace.nspname,
+      'table', table_class.relname,
+      'unique', idx.indisunique,
+      'valid', idx.indisvalid,
+      'ready', idx.indisready,
+      'columns', COALESCE((
+        SELECT jsonb_agg(
+          CASE WHEN indexed_key.attnum = 0
+            THEN pg_get_indexdef(idx.indexrelid, indexed_key.ordinal::integer, true)
+            ELSE attribute.attname
+          END
+          ORDER BY indexed_key.ordinal
+        )
+        FROM unnest(idx.indkey) WITH ORDINALITY AS indexed_key(attnum, ordinal)
+        LEFT JOIN pg_attribute AS attribute ON attribute.attrelid = idx.indrelid AND attribute.attnum = indexed_key.attnum
+        WHERE indexed_key.ordinal <= idx.indnkeyatts
+      ), '[]'::jsonb),
+      'predicate', COALESCE(pg_get_expr(idx.indpred, idx.indrelid), ''),
+      'definition', pg_get_indexdef(idx.indexrelid)
+    ))
+    FROM pg_index AS idx
+    JOIN pg_class AS index_class ON index_class.oid = idx.indexrelid
+    JOIN pg_class AS table_class ON table_class.oid = idx.indrelid
+    JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND index_class.relname IN (
+        'idx_company_fund_transactions_external_reference',
+        'uq_company_fund_transaction_import_batches_effective_content',
+        'idx_company_fund_transaction_import_batches_created',
+          'idx_company_fund_transaction_import_batches_predecessor'
+      )
+  ), '{}'::jsonb),
+  'constraints', COALESCE((
+    SELECT jsonb_object_agg(con.conname, jsonb_build_object(
+      'schema', namespace.nspname,
+      'table', table_class.relname,
+      'type', con.contype::text,
+      'validated', con.convalidated,
+      'definition', pg_get_constraintdef(con.oid, true)
+    ))
+    FROM pg_constraint AS con
+    JOIN pg_class AS table_class ON table_class.oid = con.conrelid
+    JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+    WHERE namespace.nspname = 'public'
+      AND con.conname IN (
+        'company_fund_transactions_external_reference_source_check',
+        'company_fund_transaction_import_batches_pkey',
+        'company_fund_transaction_import_batches_content_digest_check',
+        'company_fund_transaction_import_batches_request_digest_check',
+        'company_fund_transaction_import_batches_template_version_check',
+        'company_fund_import_batches_original_file_name_check',
+        'company_fund_transaction_import_batches_status_check',
+        'company_fund_transaction_import_batches_idempotency_key_check',
+        'company_fund_transaction_import_batches_source_row_count_check',
+        'company_fund_import_batches_principal_tx_count_check',
+        'company_fund_import_batches_fee_tx_count_check',
+        'company_fund_import_batches_voided_count_nonnegative_check',
+        'company_fund_transaction_import_batches_warning_count_check',
+        'company_fund_import_batches_duplicate_warning_evidence_check',
+        'company_fund_transaction_import_batches_lifecycle_check',
+        'company_fund_transaction_import_batches_predecessor_fk',
+        'company_fund_transaction_import_batches_idempotency_unique',
+        'company_fund_transaction_import_batches_predecessor_self_check',
+        'company_fund_import_batches_voided_count_check',
+        'company_fund_transaction_import_batches_reimport_check',
+        'company_fund_import_batches_duplicate_override_check',
+        'company_fund_transaction_import_rows_pkey',
+        'company_fund_transaction_import_rows_batch_fk',
+        'company_fund_transaction_import_rows_source_row_number_check',
+        'company_fund_transaction_import_rows_row_digest_check',
+        'company_fund_transaction_import_rows_account_fk',
+        'company_fund_transaction_import_rows_category_level1_fk',
+        'company_fund_transaction_import_rows_category_level2_fk',
+        'company_fund_transaction_import_rows_principal_fk',
+        'company_fund_transaction_import_rows_fee_fk',
+        'company_fund_transaction_import_rows_source_row_unique',
+        'company_fund_transaction_import_rows_row_digest_unique',
+        'company_fund_transaction_import_rows_principal_unique',
+        'company_fund_transaction_import_rows_fee_unique',
+        'company_fund_transaction_import_rows_movement_ownership_exclude',
+        'company_fund_import_rows_principal_fee_distinct_check',
+        'company_fund_transaction_import_rows_category_hierarchy_check'
+      )
+  ), '{}'::jsonb),
+  'functions', COALESCE((
+    SELECT jsonb_object_agg(proc.proname, jsonb_build_object(
+      'schema', namespace.nspname,
+      'arguments', proc.pronargs,
+      'result', pg_get_function_result(proc.oid),
+      'language', language.lanname,
+      'kind', proc.prokind::text,
+      'source', proc.prosrc
+    ))
+    FROM pg_proc AS proc
+    JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+    JOIN pg_language AS language ON language.oid = proc.prolang
+    WHERE namespace.nspname = 'public'
+      AND proc.proname IN (
+        'company_fund_validate_import_batch_lineage',
+        'company_fund_enforce_import_row_transaction_ownership',
+        'company_fund_validate_import_batch_counts'
+      )
+  ), '{}'::jsonb),
+  'triggers', COALESCE((
+    SELECT jsonb_object_agg(trg.tgname, jsonb_build_object(
+      'schema', namespace.nspname,
+      'table', table_class.relname,
+      'function_schema', function_namespace.nspname,
+      'function_name', function_proc.proname,
+        'constraint', trg.tgconstraint <> 0,
+        'internal', trg.tgisinternal,
+        'enabled', trg.tgenabled::text,
+        'type', trg.tgtype,
+        'deferrable', trg.tgdeferrable,
+        'initially_deferred', trg.tginitdeferred,
+        'definition', pg_get_triggerdef(trg.oid, true)
+    ))
+    FROM pg_trigger AS trg
+    JOIN pg_class AS table_class ON table_class.oid = trg.tgrelid
+    JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+    JOIN pg_proc AS function_proc ON function_proc.oid = trg.tgfoid
+    JOIN pg_namespace AS function_namespace ON function_namespace.oid = function_proc.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND NOT trg.tgisinternal
+      AND trg.tgname IN (
+        'company_fund_validate_import_batch_lineage_trigger',
+        'company_fund_enforce_import_row_transaction_ownership_trigger',
+        'company_fund_validate_import_batch_counts_trigger'
+      )
+  ), '{}'::jsonb)
+)`

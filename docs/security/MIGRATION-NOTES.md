@@ -171,7 +171,10 @@ go run ./cmd/migrate -exact-version 050
 
 For a manual release, repeat with matching values for every version printed by
 the artifact's `monera-migrate -print-release-sequence`, in that exact order.
-The current artifact prints only `064`, whose required predecessor is `063`.
+The current artifact prints `065` followed by `066`; `065` requires `064`, and
+the online index migration `066` requires `065`. Run each as its own exact
+migration with the matching ceiling, and do not enable MGT import writes until
+both versions are recorded and the final schema inspection passes.
 Exact mode has these
 invariants:
 
@@ -217,8 +220,13 @@ local dev can use it but prod stays explicit.
    precheck) so re-runs are safe. A `ControlledMigration` may deliberately use
    strict, non-idempotent DDL when all statements and the provenance insert run
    in the same transaction: pre-existing partial objects are then treated as
-   schema drift and fail closed instead of being silently accepted. Document
-   that exception in the migration and cover its atomic runner contract.
+   schema drift and fail closed instead of being silently accepted. Use
+   `ControlledOnlineMigration` only for PostgreSQL operations that are illegal
+   inside a transaction block (for example `CREATE INDEX CONCURRENTLY`): it
+   must run on the advisory-lock session, verify its physical postcondition,
+   record provenance only after that verification, and treat a provenance-write
+   failure as outcome-indeterminate until the schema and `migrations` row are
+   reconciled. Document either exception and cover its runner contract.
 3. Add a descriptor to `migrationRegistry` in `cmd/migrate/main.go`. For a
    controlled production migration, declare its predecessor and exact-deploy
    eligibility.

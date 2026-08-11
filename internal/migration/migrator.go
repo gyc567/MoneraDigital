@@ -29,6 +29,29 @@ func IsControlledCommitOutcomeIndeterminate(err error) bool {
 	return errors.As(err, &target)
 }
 
+// ControlledOnlineOutcomeIndeterminateError means an online controlled DDL
+// operation may have completed before its migrations provenance row could be
+// recorded. Callers must reconcile the exact live schema before retrying.
+type ControlledOnlineOutcomeIndeterminateError struct {
+	Version string
+	Err     error
+}
+
+func (err *ControlledOnlineOutcomeIndeterminateError) Error() string {
+	return fmt.Sprintf("record online controlled migration %s (outcome indeterminate; reconcile schema and migrations row before retry): %v", err.Version, err.Err)
+}
+
+func (err *ControlledOnlineOutcomeIndeterminateError) Unwrap() error { return err.Err }
+
+func IsControlledOnlineOutcomeIndeterminate(err error) bool {
+	var target *ControlledOnlineOutcomeIndeterminateError
+	return errors.As(err, &target)
+}
+
+func IsControlledMigrationOutcomeIndeterminate(err error) bool {
+	return IsControlledCommitOutcomeIndeterminate(err) || IsControlledOnlineOutcomeIndeterminate(err)
+}
+
 // Migrator manages database migrations
 type Migrator struct {
 	db          *sql.DB
@@ -45,6 +68,17 @@ type ControlledMigration interface {
 	RequiredPreexistingVersion() string
 	RequiredExpectedCeiling() string
 	UpTx(*sql.Tx) error
+}
+
+// ControlledOnlineMigration is for a small, explicit class of release-gated
+// PostgreSQL operations that cannot run inside a transaction, such as CREATE
+// INDEX CONCURRENTLY. Implementations must be idempotent and verify their own
+// postcondition so a retry can safely reconcile an unrecorded completed DDL.
+type ControlledOnlineMigration interface {
+	Migration
+	RequiredPreexistingVersion() string
+	RequiredExpectedCeiling() string
+	UpConn(context.Context, *sql.Conn) error
 }
 
 type migrationSession interface {
@@ -238,6 +272,20 @@ func (m *Migrator) MigrateWithExpectedCeiling(expectedCeiling string) error {
 			log.Printf("Migration %s already applied, skipping\n", version)
 			continue
 		}
+		if controlledOnline, ok := migration.(ControlledOnlineMigration); ok {
+			if required := controlledOnline.RequiredExpectedCeiling(); required != "" && expectedCeiling != required {
+				return fmt.Errorf("migration %s requires explicit expected ceiling %s", version, required)
+			}
+			if required := controlledOnline.RequiredPreexistingVersion(); required != "" && !initialAppliedMap[required] {
+				return fmt.Errorf("migration %s requires migration %s to pre-exist before this invocation", version, required)
+			}
+			if err := m.runControlledOnlineMigration(ctx, conn, controlledOnline); err != nil {
+				return fmt.Errorf("migration %s failed: %w", version, err)
+			}
+			appliedMap[version] = true
+			log.Printf("Migration %s completed successfully\n", version)
+			continue
+		}
 		if controlled, ok := migration.(ControlledMigration); ok {
 			if required := controlled.RequiredExpectedCeiling(); required != "" && expectedCeiling != required {
 				return fmt.Errorf("migration %s requires explicit expected ceiling %s", version, required)
@@ -293,6 +341,16 @@ func (m *Migrator) runControlledMigration(ctx context.Context, conn *sql.Conn, m
 		return &ControlledCommitOutcomeIndeterminateError{Version: migration.Version(), Err: err}
 	}
 	committed = true
+	return nil
+}
+
+func (m *Migrator) runControlledOnlineMigration(ctx context.Context, conn *sql.Conn, migration ControlledOnlineMigration) error {
+	if err := migration.UpConn(ctx, conn); err != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO public.migrations (version, name) VALUES ($1, $2)`, migration.Version(), migration.Description()); err != nil {
+		return &ControlledOnlineOutcomeIndeterminateError{Version: migration.Version(), Err: err}
+	}
 	return nil
 }
 

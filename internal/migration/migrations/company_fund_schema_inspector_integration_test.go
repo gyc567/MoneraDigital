@@ -43,9 +43,21 @@ func TestLiveCompanyFundSchemaInspectorPostgresContract(t *testing.T) {
 	if _, err := tx.Exec(qualifyCompanyFundIntegrationSQL(migration053AddConstraintSQL+`;`+migration053ValidateConstraintSQL, schema) + `; INSERT INTO "` + schema + `".migrations(version, name) VALUES ('052', 'A'), ('053', 'B')`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := tx.Exec(qualifyCompanyFundIntegrationSQL(migration065SchemaSQL, schema)); err != nil {
+		t.Fatalf("apply migration 065 import schema: %v", err)
+	}
+	// The test keeps its disposable catalog fixture inside one transaction, so it
+	// models the final artifact's index shape directly instead of attempting the
+	// production-only CREATE INDEX CONCURRENTLY operation here.
+	if _, err := tx.Exec(`CREATE INDEX idx_company_fund_transactions_external_reference
+ON "` + schema + `".company_fund_transactions (btrim(external_transaction_reference))
+WHERE external_transaction_reference IS NOT NULL`); err != nil {
+		t.Fatalf("apply migration 066 import index fixture: %v", err)
+	}
 	report, err := InspectLiveCompanyFundSchema(context.Background(), schemaBoundInspectorCatalog{tx: tx, schema: schema})
 	if err != nil || report.State != CompanyFundSchemaStateB || !report.Migration052Recorded || !report.Migration053Recorded || report.Fingerprint == nil {
-		t.Fatalf("live report = %#v, %v", report, err)
+		_, fingerprintErr := BuildFinalCompanyFundSchemaFingerprint(report.Snapshot)
+		t.Fatalf("live report = %#v, inspect error = %v, fingerprint error = %v", report, err, fingerprintErr)
 	}
 	publicReport, err := InspectLiveCompanyFundSchema(context.Background(), tx)
 	if err != nil {
@@ -80,6 +92,10 @@ func (catalog schemaBoundInspectorCatalog) query(query string) string {
 	query = strings.Replace(query, "       function_namespace.nspname, function_proc.proname", "       'public' AS function_schema, function_proc.proname", 1)
 	query = strings.Replace(query, "pg_get_indexdef(idx.indexrelid)", "replace(replace(pg_get_indexdef(idx.indexrelid), '"+quotedPrefix+"', 'public.'), '"+catalog.schema+".', 'public.')", 1)
 	query = strings.Replace(query, "proc.oid, proc.prosrc", "proc.oid, replace(replace(proc.prosrc, '"+quotedPrefix+"', 'public.'), '"+catalog.schema+".', 'public.')", 1)
+	query = strings.Replace(query, "'source', proc.prosrc", "'source', replace(replace(proc.prosrc, '"+quotedPrefix+"', 'public.'), '"+catalog.schema+".', 'public.')", 1)
+	query = strings.ReplaceAll(query, "'schema', columns.table_schema", "'schema', 'public'")
+	query = strings.ReplaceAll(query, "'schema', namespace.nspname", "'schema', 'public'")
+	query = strings.ReplaceAll(query, "'function_schema', function_namespace.nspname", "'function_schema', 'public'")
 	return query
 }
 
@@ -104,4 +120,6 @@ CREATE TABLE company_fund_transaction_valuation_history (
   usd_provider_value_scope TEXT, usd_derivation_method TEXT, usd_rate_snapshot_id BIGINT,
   applied_at TIMESTAMPTZ, valuation_policy_version TEXT, valuation_version BIGINT,
   provider_transaction_fact_id BIGINT, transition_trigger TEXT, supersedes_history_id BIGINT
-);`
+);
+CREATE TABLE company_fund_accounts (id BIGINT PRIMARY KEY);
+CREATE TABLE finance_categories (id BIGINT PRIMARY KEY);`
