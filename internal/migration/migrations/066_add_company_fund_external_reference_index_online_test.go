@@ -27,6 +27,17 @@ func TestMigration066DefinesOnlineControlledIndexContract(t *testing.T) {
 	if err := value.Down(nil); err == nil || !strings.Contains(err.Error(), "forward-only") {
 		t.Fatalf("Down() = %v", err)
 	}
+	if !strings.Contains(migration066CreateIndexSQL, "btrim(external_transaction_reference)") {
+		t.Fatalf("migration 066 must index the normalized external reference: %s", migration066CreateIndexSQL)
+	}
+	if !strings.Contains(migration066ValidateIndexSQL, "btrim(external_transaction_reference::text)") {
+		t.Fatalf("migration 066 validation must require the normalized expression: %s", migration066ValidateIndexSQL)
+	}
+	for _, fragment := range []string{"idx.indnatts = 1", "access_method.amname = 'btree'"} {
+		if !strings.Contains(migration066ValidateIndexSQL, fragment) {
+			t.Fatalf("migration 066 validation must reject index shape drift: %s", fragment)
+		}
+	}
 }
 
 func TestMigration066CreatesAndValidatesExternalReferenceIndexOutsideTransaction(t *testing.T) {

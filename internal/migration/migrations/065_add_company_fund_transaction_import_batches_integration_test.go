@@ -79,6 +79,11 @@ WHERE id=$1`, countBatch); err != nil {
 		t.Fatalf("complete valid import batch: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='VOIDED', voided_at=clock_timestamp(), voided_by=1, void_reason='test'
+WHERE id=$1`, countBatch); err != nil {
+		t.Fatalf("void succeeded import batch: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
 SET status='PROCESSING', completed_at=NULL
 WHERE id=$1`, countBatch); err == nil {
 		t.Fatal("a terminal import batch returned to processing")
@@ -89,6 +94,30 @@ WHERE id=$1`, countBatch); err == nil {
 	}
 	if _, err := db.Exec(`DELETE FROM "`+schema+`".company_fund_transaction_import_rows WHERE batch_id=$1`, countBatch); err == nil {
 		t.Fatal("a terminal import batch allowed its durable rows to be deleted")
+	}
+
+	failedBatch := insertMigration065Batch(t, db, schema, digest065("failed"), "PROCESSING", nil)
+	failedPrincipal := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, "failed-001")
+	insertMigration065ImportRow(t, db, schema, failedBatch, 2, "failed-001", failedPrincipal, nil, accountID)
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='FAILED', failure_code='IMPORT_COMMIT_FAILED', failure_summary='failed', completed_at=clock_timestamp()
+WHERE id=$1`, failedBatch); err == nil {
+		t.Fatal("a failed import batch retained durable movement rows")
+	}
+	if _, err := db.Exec(`DELETE FROM "`+schema+`".company_fund_transaction_import_rows WHERE batch_id=$1`, failedBatch); err != nil {
+		t.Fatalf("remove processing import row before failure: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='FAILED', failure_code='IMPORT_COMMIT_FAILED', failure_summary='failed', completed_at=clock_timestamp()
+WHERE id=$1`, failedBatch); err != nil {
+		t.Fatalf("fail empty processing batch: %v", err)
+	}
+
+	directVoidBatch := insertMigration065Batch(t, db, schema, digest065("direct-void"), "PROCESSING", nil)
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='VOIDED', completed_at=clock_timestamp(), voided_at=clock_timestamp(), voided_by=1, void_reason='invalid'
+WHERE id=$1`, directVoidBatch); err == nil {
+		t.Fatal("a processing batch transitioned directly to voided")
 	}
 
 	rowBatch := insertMigration065Batch(t, db, schema, digest065("rows"), "PROCESSING", nil)
@@ -128,6 +157,56 @@ WHERE id=$1`, countBatch); err == nil {
 	feeForDifferentAccount := insertMigration065Transaction(t, db, schema, "MANUAL", "FEE", "OUTFLOW", secondAccountID, nil, nil)
 	if _, err := db.Exec(migration065ImportRowInsertSQL(schema), rowBatch, 11, digest065("row-11"), nil, accountID, principalForFeeAccount, feeForDifferentAccount); err == nil {
 		t.Fatal("an imported fee linked to a different account was accepted")
+	}
+	assertConcurrentMigration065MovementOwnership(t, db, schema, accountID)
+}
+
+func assertConcurrentMigration065MovementOwnership(t *testing.T, db *sql.DB, schema string, accountID int64) {
+	t.Helper()
+	firstBatch := insertMigration065Batch(t, db, schema, digest065("concurrent-a"), "PROCESSING", nil)
+	secondBatch := insertMigration065Batch(t, db, schema, digest065("concurrent-b"), "PROCESSING", nil)
+	movementID := insertMigration065Transaction(t, db, schema, "MANUAL", "ADJUSTMENT", "INFLOW", nil, accountID, "concurrent-001")
+	firstTx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = firstTx.Rollback() })
+	secondTx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = secondTx.Rollback() })
+	if _, err := firstTx.Exec(migration065ImportRowInsertSQL(schema), firstBatch, 2, digest065("concurrent-row-a"), "concurrent-001", accountID, movementID, nil); err != nil {
+		t.Fatalf("insert first concurrent owner: %v", err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, err := secondTx.Exec(migration065ImportRowInsertSQL(schema), secondBatch, 2, digest065("concurrent-row-b"), "concurrent-001", accountID, movementID, nil)
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("competing movement ownership did not wait for the first transaction: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := firstTx.Commit(); err != nil {
+		t.Fatalf("commit first concurrent owner: %v", err)
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("both concurrent movement owners committed")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("competing movement ownership did not resolve after the first commit")
+	}
+	_ = secondTx.Rollback()
+	var owners int
+	if err := db.QueryRow(`SELECT count(*) FROM "`+schema+`".company_fund_transaction_import_rows WHERE principal_transaction_id=$1`, movementID).Scan(&owners); err != nil {
+		t.Fatal(err)
+	}
+	if owners != 1 {
+		t.Fatalf("concurrent movement owner count = %d", owners)
 	}
 }
 
@@ -233,10 +312,15 @@ func insertMigration065VoidedBatch(
 func markMigration065BatchVoided(t *testing.T, db *sql.DB, schema string, batchID int64, principalCount, feeCount int) {
 	t.Helper()
 	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
-SET status='VOIDED', completed_at=clock_timestamp(), voided_at=clock_timestamp(),
-  voided_by=1, void_reason='test', principal_transaction_count=$2, fee_transaction_count=$3
+SET status='SUCCEEDED', completed_at=clock_timestamp(),
+  principal_transaction_count=$2, fee_transaction_count=$3
 WHERE id=$1`, batchID, principalCount, feeCount); err != nil {
-		t.Fatalf("void valid import batch: %v", err)
+		t.Fatalf("complete import batch before void: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE "`+schema+`".company_fund_transaction_import_batches
+SET status='VOIDED', voided_at=clock_timestamp(), voided_by=1, void_reason='test'
+WHERE id=$1`, batchID); err != nil {
+		t.Fatalf("void succeeded import batch: %v", err)
 	}
 }
 

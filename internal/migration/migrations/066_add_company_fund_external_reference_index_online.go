@@ -71,16 +71,28 @@ SELECT EXISTS (
   JOIN pg_class AS index_class ON index_class.oid = idx.indexrelid
   JOIN pg_class AS table_class ON table_class.oid = idx.indrelid
   JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+  JOIN pg_am AS access_method ON access_method.oid = index_class.relam
   WHERE namespace.nspname = 'public'
     AND table_class.relname = 'company_fund_transactions'
     AND index_class.relname = 'idx_company_fund_transactions_external_reference'
-    AND (NOT idx.indisvalid OR NOT idx.indisready)
+    AND (
+      NOT idx.indisvalid
+      OR NOT idx.indisready
+      OR idx.indisunique
+      OR idx.indnkeyatts <> 1
+      OR idx.indnatts <> 1
+      OR access_method.amname <> 'btree'
+      OR regexp_replace(lower(pg_get_indexdef(idx.indexrelid, 1, true)), '[[:space:]]', '', 'g')
+        <> 'btrim(external_transaction_reference::text)'
+      OR regexp_replace(lower(COALESCE(pg_get_expr(idx.indpred, idx.indrelid), '')), '[[:space:]()]', '', 'g')
+        <> 'external_transaction_referenceisnotnull'
+    )
 )`
 
 const migration066DropInvalidIndexSQL = `DROP INDEX CONCURRENTLY IF EXISTS public.idx_company_fund_transactions_external_reference`
 
 const migration066CreateIndexSQL = `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_company_fund_transactions_external_reference
-  ON public.company_fund_transactions (external_transaction_reference)
+  ON public.company_fund_transactions (btrim(external_transaction_reference))
   WHERE external_transaction_reference IS NOT NULL`
 
 const migration066ValidateIndexSQL = `
@@ -90,6 +102,7 @@ SELECT EXISTS (
   JOIN pg_class AS index_class ON index_class.oid = idx.indexrelid
   JOIN pg_class AS table_class ON table_class.oid = idx.indrelid
   JOIN pg_namespace AS namespace ON namespace.oid = table_class.relnamespace
+  JOIN pg_am AS access_method ON access_method.oid = index_class.relam
   WHERE namespace.nspname = 'public'
     AND table_class.relname = 'company_fund_transactions'
     AND index_class.relname = 'idx_company_fund_transactions_external_reference'
@@ -97,12 +110,10 @@ SELECT EXISTS (
     AND idx.indisvalid
     AND idx.indisready
     AND idx.indnkeyatts = 1
-    AND (SELECT count(*)
-         FROM unnest(idx.indkey) WITH ORDINALITY AS indexed_key(attnum, ordinal)
-         JOIN pg_attribute AS attribute
-           ON attribute.attrelid = idx.indrelid AND attribute.attnum = indexed_key.attnum
-         WHERE indexed_key.ordinal <= idx.indnkeyatts
-           AND attribute.attname = 'external_transaction_reference') = 1
+    AND idx.indnatts = 1
+    AND access_method.amname = 'btree'
+    AND regexp_replace(lower(pg_get_indexdef(idx.indexrelid, 1, true)), '[[:space:]]', '', 'g')
+      = 'btrim(external_transaction_reference::text)'
     AND regexp_replace(lower(COALESCE(pg_get_expr(idx.indpred, idx.indrelid), '')), '[[:space:]()]', '', 'g')
       = 'external_transaction_referenceisnotnull'
 )`

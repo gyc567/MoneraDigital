@@ -299,13 +299,6 @@ CREATE TABLE public.company_fund_transaction_import_rows (
   CONSTRAINT company_fund_transaction_import_rows_category_hierarchy_check CHECK (finance_category_level2_id IS NULL OR finance_category_level1_id IS NOT NULL)
 );
 
-CREATE INDEX idx_company_fund_transaction_import_rows_principal
-  ON public.company_fund_transaction_import_rows (principal_transaction_id);
-
-CREATE INDEX idx_company_fund_transaction_import_rows_fee
-  ON public.company_fund_transaction_import_rows (fee_transaction_id)
-  WHERE fee_transaction_id IS NOT NULL;
-
 CREATE OR REPLACE FUNCTION public.company_fund_enforce_import_row_transaction_ownership()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -407,13 +400,15 @@ DECLARE
   actual_principal_transactions INTEGER;
   actual_fee_transactions INTEGER;
 BEGIN
-  IF TG_OP = 'UPDATE'
-    AND OLD.status IN ('SUCCEEDED', 'FAILED', 'VOIDED')
-    AND NEW.status IS DISTINCT FROM OLD.status THEN
-    RAISE EXCEPTION 'terminal import batch status is immutable';
+  IF TG_OP = 'INSERT' AND NEW.status <> 'PROCESSING' THEN
+    RAISE EXCEPTION 'an import batch must start in processing';
   END IF;
-  IF NEW.status NOT IN ('SUCCEEDED', 'VOIDED') THEN
-    RETURN NEW;
+  IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status
+    AND NOT (
+      (OLD.status = 'PROCESSING' AND NEW.status IN ('SUCCEEDED', 'FAILED'))
+      OR (OLD.status = 'SUCCEEDED' AND NEW.status = 'VOIDED')
+    ) THEN
+    RAISE EXCEPTION 'invalid import batch status transition';
   END IF;
 
   SELECT count(*)::integer, count(principal_transaction_id)::integer,
@@ -421,6 +416,18 @@ BEGIN
   INTO actual_source_rows, actual_principal_transactions, actual_fee_transactions
   FROM public.company_fund_transaction_import_rows
   WHERE batch_id = NEW.id;
+
+  IF NEW.status = 'FAILED' THEN
+    IF actual_source_rows <> 0
+      OR NEW.principal_transaction_count <> 0
+      OR NEW.fee_transaction_count <> 0 THEN
+      RAISE EXCEPTION 'failed import batches cannot retain durable movement rows';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.status NOT IN ('SUCCEEDED', 'VOIDED') THEN
+    RETURN NEW;
+  END IF;
 
   IF actual_source_rows = 0
     OR actual_source_rows <> NEW.source_row_count

@@ -50,7 +50,7 @@ func TestLiveCompanyFundSchemaInspectorPostgresContract(t *testing.T) {
 	// models the final artifact's index shape directly instead of attempting the
 	// production-only CREATE INDEX CONCURRENTLY operation here.
 	if _, err := tx.Exec(`CREATE INDEX idx_company_fund_transactions_external_reference
-ON "` + schema + `".company_fund_transactions (external_transaction_reference)
+ON "` + schema + `".company_fund_transactions (btrim(external_transaction_reference))
 WHERE external_transaction_reference IS NOT NULL`); err != nil {
 		t.Fatalf("apply migration 066 import index fixture: %v", err)
 	}

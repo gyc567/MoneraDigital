@@ -98,6 +98,21 @@ func TestBuildFinalCompanyFundSchemaFingerprintRejectsEveryMissingInvariant(t *t
 		{name: "missing import batch count trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			delete(value.ManualImportContract.Triggers, "company_fund_validate_import_batch_counts_trigger")
 		}},
+		{name: "missing import batch start default", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			column := value.ManualImportContract.Columns["company_fund_transaction_import_batches.started_at"]
+			column.Default = ""
+			value.ManualImportContract.Columns["company_fund_transaction_import_batches.started_at"] = column
+		}},
+		{name: "weakened import batch count trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			trigger := value.ManualImportContract.Triggers["company_fund_validate_import_batch_counts_trigger"]
+			trigger.Definition = "CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_counts_trigger AFTER UPDATE OF status ON company_fund_transaction_import_batches DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_validate_import_batch_counts()"
+			value.ManualImportContract.Triggers["company_fund_validate_import_batch_counts_trigger"] = trigger
+		}},
+		{name: "non-deferrable import ownership trigger", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
+			trigger := value.ManualImportContract.Triggers["company_fund_enforce_import_row_transaction_ownership_trigger"]
+			trigger.Deferrable = false
+			value.ManualImportContract.Triggers["company_fund_enforce_import_row_transaction_ownership_trigger"] = trigger
+		}},
 		{name: "occurrence version column", mutate: func(value *FinalCompanyFundSchemaSnapshot) {
 			value.OccurrenceColumns["provider_occurrence_algorithm_version"] = "text"
 		}},
@@ -283,9 +298,12 @@ func validFinalManualImportContract() FinalCompanyFundManualImportContract {
 			"company_fund_validate_import_batch_counts":             {Schema: "public", Arguments: 0, Result: "trigger", Language: "plpgsql", Kind: "f", Source: finalManualImportCountFunctionSource},
 		},
 		Triggers: map[string]FinalCompanyFundManualImportTrigger{
-			"company_fund_validate_import_batch_lineage_trigger":            {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_lineage", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
-			"company_fund_enforce_import_row_transaction_ownership_trigger": {Schema: "public", Table: "company_fund_transaction_import_rows", FunctionSchema: "public", FunctionName: "company_fund_enforce_import_row_transaction_ownership", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType | 8},
-			"company_fund_validate_import_batch_counts_trigger":             {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_counts", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType},
+			"company_fund_validate_import_batch_lineage_trigger": {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_lineage", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType, Deferrable: true,
+				Definition: "CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_lineage_trigger AFTER INSERT OR UPDATE OF status, content_digest, predecessor_batch_id ON company_fund_transaction_import_batches DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_validate_import_batch_lineage()"},
+			"company_fund_enforce_import_row_transaction_ownership_trigger": {Schema: "public", Table: "company_fund_transaction_import_rows", FunctionSchema: "public", FunctionName: "company_fund_enforce_import_row_transaction_ownership", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType | 8, Deferrable: true,
+				Definition: "CREATE CONSTRAINT TRIGGER company_fund_enforce_import_row_transaction_ownership_trigger AFTER INSERT OR DELETE OR UPDATE ON company_fund_transaction_import_rows DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_enforce_import_row_transaction_ownership()"},
+			"company_fund_validate_import_batch_counts_trigger": {Schema: "public", Table: "company_fund_transaction_import_batches", FunctionSchema: "public", FunctionName: "company_fund_validate_import_batch_counts", Constraint: true, Internal: false, Enabled: "O", Type: finalManualImportTriggerType, Deferrable: true,
+				Definition: "CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_counts_trigger AFTER INSERT OR UPDATE OF status, source_row_count, principal_transaction_count, fee_transaction_count ON company_fund_transaction_import_batches DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_validate_import_batch_counts()"},
 		},
 	}
 }

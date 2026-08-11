@@ -97,6 +97,7 @@ type FinalCompanyFundManualImportColumn struct {
 	DataType string `json:"data_type"`
 	Length   int64  `json:"length"`
 	Nullable bool   `json:"nullable"`
+	Default  string `json:"default"`
 }
 
 type FinalCompanyFundManualImportIndex struct {
@@ -128,14 +129,17 @@ type FinalCompanyFundManualImportFunction struct {
 }
 
 type FinalCompanyFundManualImportTrigger struct {
-	Schema         string `json:"schema"`
-	Table          string `json:"table"`
-	FunctionSchema string `json:"function_schema"`
-	FunctionName   string `json:"function_name"`
-	Constraint     bool   `json:"constraint"`
-	Internal       bool   `json:"internal"`
-	Enabled        string `json:"enabled"`
-	Type           int64  `json:"type"`
+	Schema            string `json:"schema"`
+	Table             string `json:"table"`
+	FunctionSchema    string `json:"function_schema"`
+	FunctionName      string `json:"function_name"`
+	Constraint        bool   `json:"constraint"`
+	Internal          bool   `json:"internal"`
+	Enabled           string `json:"enabled"`
+	Type              int64  `json:"type"`
+	Deferrable        bool   `json:"deferrable"`
+	InitiallyDeferred bool   `json:"initially_deferred"`
+	Definition        string `json:"definition"`
 }
 
 type FinalCompanyFundSchemaFingerprint struct {
@@ -185,6 +189,10 @@ func normalizeFinalManualImportContract(contract FinalCompanyFundManualImportCon
 		Functions:   cloneFinalManualImportFunctions(contract.Functions),
 		Triggers:    cloneFinalManualImportTriggers(contract.Triggers),
 	}
+	for name, column := range normalized.Columns {
+		column.Default = normalizeFinalSchemaSQL(column.Default)
+		normalized.Columns[name] = column
+	}
 	for name, index := range normalized.Indexes {
 		index.Columns = append([]string(nil), index.Columns...)
 		index.Predicate = normalizeFinalSchemaSQL(index.Predicate)
@@ -198,6 +206,10 @@ func normalizeFinalManualImportContract(contract FinalCompanyFundManualImportCon
 	for name, function := range normalized.Functions {
 		function.Source = normalizeFinalSchemaSQL(function.Source)
 		normalized.Functions[name] = function
+	}
+	for name, trigger := range normalized.Triggers {
+		trigger.Definition = normalizeFinalSchemaSQL(trigger.Definition)
+		normalized.Triggers[name] = trigger
 	}
 	return normalized
 }
@@ -217,7 +229,7 @@ func validateFinalCompanyFundSchema(snapshot FinalCompanyFundSchemaSnapshot) err
 
 var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
 	"company_fund_transactions.external_transaction_reference":                {Schema: "public", Table: finalCompanyFundTransactionsTable, DataType: "character varying", Length: 256, Nullable: true},
-	"company_fund_transaction_import_batches.id":                              {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.id":                              {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: false, Default: "nextval('company_fund_transaction_import_batches_id_seq'::regclass)"},
 	"company_fund_transaction_import_batches.content_digest":                  {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: false},
 	"company_fund_transaction_import_batches.request_digest":                  {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: false},
 	"company_fund_transaction_import_batches.template_version":                {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 32, Nullable: false},
@@ -226,25 +238,25 @@ var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
 	"company_fund_transaction_import_batches.requested_by":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: false},
 	"company_fund_transaction_import_batches.idempotency_key":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 128, Nullable: false},
 	"company_fund_transaction_import_batches.source_row_count":                {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.principal_transaction_count":     {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.fee_transaction_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.voided_movement_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.warning_count":                   {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.duplicate_override_acknowledged": {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "boolean", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.principal_transaction_count":     {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false, Default: "0"},
+	"company_fund_transaction_import_batches.fee_transaction_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false, Default: "0"},
+	"company_fund_transaction_import_batches.voided_movement_count":           {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false, Default: "0"},
+	"company_fund_transaction_import_batches.warning_count":                   {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "integer", Length: 0, Nullable: false, Default: "0"},
+	"company_fund_transaction_import_batches.duplicate_override_acknowledged": {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "boolean", Length: 0, Nullable: false, Default: "false"},
 	"company_fund_transaction_import_batches.duplicate_override_reason":       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
-	"company_fund_transaction_import_batches.duplicate_warning_evidence":      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "jsonb", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.duplicate_warning_evidence":      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "jsonb", Length: 0, Nullable: false, Default: "'[]'::jsonb"},
 	"company_fund_transaction_import_batches.predecessor_batch_id":            {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.reimport_reason":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.failure_code":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 64, Nullable: true},
 	"company_fund_transaction_import_batches.failure_summary":                 {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "character varying", Length: 512, Nullable: true},
-	"company_fund_transaction_import_batches.started_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.started_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false, Default: "clock_timestamp()"},
 	"company_fund_transaction_import_batches.completed_at":                    {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.voided_at":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.voided_by":                       {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "bigint", Length: 0, Nullable: true},
 	"company_fund_transaction_import_batches.void_reason":                     {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "text", Length: 0, Nullable: true},
-	"company_fund_transaction_import_batches.created_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
-	"company_fund_transaction_import_batches.updated_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false},
-	"company_fund_transaction_import_rows.id":                                 {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
+	"company_fund_transaction_import_batches.created_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false, Default: "clock_timestamp()"},
+	"company_fund_transaction_import_batches.updated_at":                      {Schema: "public", Table: "company_fund_transaction_import_batches", DataType: "timestamp with time zone", Length: 0, Nullable: false, Default: "clock_timestamp()"},
+	"company_fund_transaction_import_rows.id":                                 {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false, Default: "nextval('company_fund_transaction_import_rows_id_seq'::regclass)"},
 	"company_fund_transaction_import_rows.batch_id":                           {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
 	"company_fund_transaction_import_rows.source_row_number":                  {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "integer", Length: 0, Nullable: false},
 	"company_fund_transaction_import_rows.row_digest":                         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "character varying", Length: 64, Nullable: false},
@@ -254,7 +266,7 @@ var finalManualImportColumns = map[string]FinalCompanyFundManualImportColumn{
 	"company_fund_transaction_import_rows.finance_category_level2_id":         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: true},
 	"company_fund_transaction_import_rows.principal_transaction_id":           {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: false},
 	"company_fund_transaction_import_rows.fee_transaction_id":                 {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "bigint", Length: 0, Nullable: true},
-	"company_fund_transaction_import_rows.created_at":                         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "timestamp with time zone", Length: 0, Nullable: false},
+	"company_fund_transaction_import_rows.created_at":                         {Schema: "public", Table: "company_fund_transaction_import_rows", DataType: "timestamp with time zone", Length: 0, Nullable: false, Default: "clock_timestamp()"},
 }
 
 var finalManualImportIndexes = map[string]struct {
@@ -265,9 +277,9 @@ var finalManualImportIndexes = map[string]struct {
 	Definition string
 }{
 	"idx_company_fund_transactions_external_reference": {
-		Table: finalCompanyFundTransactionsTable, Columns: []string{"external_transaction_reference"},
+		Table: finalCompanyFundTransactionsTable, Columns: []string{"btrim(external_transaction_reference::text)"},
 		Predicate:  "external_transaction_reference IS NOT NULL",
-		Definition: "CREATE INDEX idx_company_fund_transactions_external_reference ON public.company_fund_transactions USING btree (external_transaction_reference) WHERE (external_transaction_reference IS NOT NULL)",
+		Definition: "CREATE INDEX idx_company_fund_transactions_external_reference ON public.company_fund_transactions USING btree (btrim((external_transaction_reference)::text)) WHERE (external_transaction_reference IS NOT NULL)",
 	},
 	"uq_company_fund_transaction_import_batches_effective_content": {
 		Table: "company_fund_transaction_import_batches", Unique: true, Columns: []string{"content_digest"},
@@ -282,15 +294,6 @@ var finalManualImportIndexes = map[string]struct {
 		Table: "company_fund_transaction_import_batches", Columns: []string{"predecessor_batch_id"},
 		Predicate:  "predecessor_batch_id IS NOT NULL",
 		Definition: "CREATE INDEX idx_company_fund_transaction_import_batches_predecessor ON public.company_fund_transaction_import_batches USING btree (predecessor_batch_id) WHERE (predecessor_batch_id IS NOT NULL)",
-	},
-	"idx_company_fund_transaction_import_rows_principal": {
-		Table: "company_fund_transaction_import_rows", Columns: []string{"principal_transaction_id"},
-		Definition: "CREATE INDEX idx_company_fund_transaction_import_rows_principal ON public.company_fund_transaction_import_rows USING btree (principal_transaction_id)",
-	},
-	"idx_company_fund_transaction_import_rows_fee": {
-		Table: "company_fund_transaction_import_rows", Columns: []string{"fee_transaction_id"},
-		Predicate:  "fee_transaction_id IS NOT NULL",
-		Definition: "CREATE INDEX idx_company_fund_transaction_import_rows_fee ON public.company_fund_transaction_import_rows USING btree (fee_transaction_id) WHERE (fee_transaction_id IS NOT NULL)",
 	},
 }
 
@@ -372,16 +375,19 @@ func validateFinalManualImportContract(contract FinalCompanyFundManualImportCont
 		return fmt.Errorf("final schema requires migration 065 import lineage, ownership, and count triggers")
 	}
 	for name, expected := range map[string]struct {
-		table, source string
-		triggerType   int64
+		table, source, definition string
+		triggerType               int64
 	}{
-		"company_fund_validate_import_batch_lineage":            {table: "company_fund_transaction_import_batches", source: finalManualImportLineageFunctionSource, triggerType: finalManualImportTriggerType},
-		"company_fund_enforce_import_row_transaction_ownership": {table: "company_fund_transaction_import_rows", source: finalManualImportOwnershipFunctionSource, triggerType: finalManualImportTriggerType | 8},
-		"company_fund_validate_import_batch_counts":             {table: "company_fund_transaction_import_batches", source: finalManualImportCountFunctionSource, triggerType: finalManualImportTriggerType},
+		"company_fund_validate_import_batch_lineage": {table: "company_fund_transaction_import_batches", source: finalManualImportLineageFunctionSource, triggerType: finalManualImportTriggerType,
+			definition: "CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_lineage_trigger AFTER INSERT OR UPDATE OF status, content_digest, predecessor_batch_id ON company_fund_transaction_import_batches DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_validate_import_batch_lineage()"},
+		"company_fund_enforce_import_row_transaction_ownership": {table: "company_fund_transaction_import_rows", source: finalManualImportOwnershipFunctionSource, triggerType: finalManualImportTriggerType | 8,
+			definition: "CREATE CONSTRAINT TRIGGER company_fund_enforce_import_row_transaction_ownership_trigger AFTER INSERT OR DELETE OR UPDATE ON company_fund_transaction_import_rows DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_enforce_import_row_transaction_ownership()"},
+		"company_fund_validate_import_batch_counts": {table: "company_fund_transaction_import_batches", source: finalManualImportCountFunctionSource, triggerType: finalManualImportTriggerType,
+			definition: "CREATE CONSTRAINT TRIGGER company_fund_validate_import_batch_counts_trigger AFTER INSERT OR UPDATE OF status, source_row_count, principal_transaction_count, fee_transaction_count ON company_fund_transaction_import_batches DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION company_fund_validate_import_batch_counts()"},
 	} {
 		function, functionOK := contract.Functions[name]
 		trigger, triggerOK := contract.Triggers[name+"_trigger"]
-		if !functionOK || function.Schema != "public" || function.Arguments != 0 || function.Result != "trigger" || function.Language != "plpgsql" || function.Kind != "f" || normalizeFinalSchemaSQL(function.Source) != normalizeFinalSchemaSQL(expected.source) || !triggerOK || trigger.Schema != "public" || trigger.Table != expected.table || trigger.FunctionSchema != "public" || trigger.FunctionName != name || !trigger.Constraint || trigger.Internal || trigger.Enabled != "O" || trigger.Type != expected.triggerType {
+		if !functionOK || function.Schema != "public" || function.Arguments != 0 || function.Result != "trigger" || function.Language != "plpgsql" || function.Kind != "f" || normalizeFinalSchemaSQL(function.Source) != normalizeFinalSchemaSQL(expected.source) || !triggerOK || trigger.Schema != "public" || trigger.Table != expected.table || trigger.FunctionSchema != "public" || trigger.FunctionName != name || !trigger.Constraint || trigger.Internal || trigger.Enabled != "O" || trigger.Type != expected.triggerType || !trigger.Deferrable || trigger.InitiallyDeferred || normalizeFinalSchemaSQL(trigger.Definition) != normalizeFinalSchemaSQL(expected.definition) {
 			return fmt.Errorf("final schema requires migration 065 trigger contract for %s", name)
 		}
 	}

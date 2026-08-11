@@ -312,9 +312,10 @@ SELECT jsonb_build_object(
       jsonb_build_object(
         'schema', columns.table_schema,
         'table', columns.table_name,
-        'data_type', columns.data_type,
-        'length', COALESCE(columns.character_maximum_length, 0),
-        'nullable', columns.is_nullable = 'YES'
+          'data_type', columns.data_type,
+          'length', COALESCE(columns.character_maximum_length, 0),
+          'nullable', columns.is_nullable = 'YES',
+          'default', COALESCE(columns.column_default, '')
       )
     )
     FROM information_schema.columns AS columns
@@ -369,9 +370,15 @@ SELECT jsonb_build_object(
       'valid', idx.indisvalid,
       'ready', idx.indisready,
       'columns', COALESCE((
-        SELECT jsonb_agg(attribute.attname ORDER BY indexed_key.ordinal)
+        SELECT jsonb_agg(
+          CASE WHEN indexed_key.attnum = 0
+            THEN pg_get_indexdef(idx.indexrelid, indexed_key.ordinal::integer, true)
+            ELSE attribute.attname
+          END
+          ORDER BY indexed_key.ordinal
+        )
         FROM unnest(idx.indkey) WITH ORDINALITY AS indexed_key(attnum, ordinal)
-        JOIN pg_attribute AS attribute ON attribute.attrelid = idx.indrelid AND attribute.attnum = indexed_key.attnum
+        LEFT JOIN pg_attribute AS attribute ON attribute.attrelid = idx.indrelid AND attribute.attnum = indexed_key.attnum
         WHERE indexed_key.ordinal <= idx.indnkeyatts
       ), '[]'::jsonb),
       'predicate', COALESCE(pg_get_expr(idx.indpred, idx.indrelid), ''),
@@ -386,9 +393,7 @@ SELECT jsonb_build_object(
         'idx_company_fund_transactions_external_reference',
         'uq_company_fund_transaction_import_batches_effective_content',
         'idx_company_fund_transaction_import_batches_created',
-        'idx_company_fund_transaction_import_batches_predecessor',
-        'idx_company_fund_transaction_import_rows_principal',
-        'idx_company_fund_transaction_import_rows_fee'
+          'idx_company_fund_transaction_import_batches_predecessor'
       )
   ), '{}'::jsonb),
   'constraints', COALESCE((
@@ -468,10 +473,13 @@ SELECT jsonb_build_object(
       'table', table_class.relname,
       'function_schema', function_namespace.nspname,
       'function_name', function_proc.proname,
-      'constraint', trg.tgconstraint <> 0,
-      'internal', trg.tgisinternal,
-      'enabled', trg.tgenabled::text,
-      'type', trg.tgtype
+        'constraint', trg.tgconstraint <> 0,
+        'internal', trg.tgisinternal,
+        'enabled', trg.tgenabled::text,
+        'type', trg.tgtype,
+        'deferrable', trg.tgdeferrable,
+        'initially_deferred', trg.tginitdeferred,
+        'definition', pg_get_triggerdef(trg.oid, true)
     ))
     FROM pg_trigger AS trg
     JOIN pg_class AS table_class ON table_class.oid = trg.tgrelid
