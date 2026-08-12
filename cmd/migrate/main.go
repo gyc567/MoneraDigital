@@ -34,7 +34,7 @@ import (
 
 var version = "dev"
 
-var artifactMigrationReleaseSequence = []string{"064"}
+var artifactMigrationReleaseSequence = []string{"065", "066"}
 
 type migrationDescriptor struct {
 	version          string
@@ -84,6 +84,12 @@ var migrationRegistry = []migrationDescriptor{
 	}},
 	{version: "064", predecessor: "063", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
 		return &migrations.AddSafeheronRoutingStatusChecks{}
+	}},
+	{version: "065", predecessor: "064", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddCompanyFundTransactionImportBatches{}
+	}},
+	{version: "066", predecessor: "065", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddCompanyFundExternalReferenceIndexOnline{}
 	}},
 }
 
@@ -227,7 +233,7 @@ func requireAppliedMigration(db *sql.DB, version string) error {
 }
 
 func migrationFailureExitCode(err error) int {
-	if migration.IsControlledCommitOutcomeIndeterminate(err) {
+	if migration.IsControlledMigrationOutcomeIndeterminate(err) {
 		return controlledCommitOutcomeIndeterminateExitCode
 	}
 	return 1

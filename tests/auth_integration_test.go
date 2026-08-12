@@ -13,10 +13,14 @@ import (
 	"monera-digital/internal/services"
 	"monera-digital/internal/utils"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 func getTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	if os.Getenv("RUN_AUTH_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set RUN_AUTH_POSTGRES_INTEGRATION=1 to run PostgreSQL auth integration coverage")
+	}
 	// Load DB URL manually since we might not have viper init
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -30,25 +34,83 @@ func getTestDB(t *testing.T) *sql.DB {
 		}
 	}
 	if dbURL == "" {
-		t.Skip("DATABASE_URL not found, skipping integration test")
+		t.Fatal("DATABASE_URL is required when RUN_AUTH_POSTGRES_INTEGRATION=1")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Fatalf("Failed to open DB: %v", err)
 	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		t.Fatalf("Failed to connect to DB: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close DB: %v", err)
+		}
+	})
 	return db
+}
+
+func prepareAuthIntegrationSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	schema := fmt.Sprintf("auth_integration_%d", time.Now().UnixNano())
+	quotedSchema := pq.QuoteIdentifier(schema)
+	if _, err := db.Exec("CREATE SCHEMA " + quotedSchema); err != nil {
+		t.Fatalf("Failed to create isolated auth schema: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := db.Exec("SET search_path TO public"); err != nil {
+			t.Errorf("Failed to reset auth integration search path: %v", err)
+		}
+		if _, err := db.Exec("DROP SCHEMA " + quotedSchema + " CASCADE"); err != nil {
+			t.Errorf("Failed to drop isolated auth schema: %v", err)
+		}
+	})
+
+	if _, err := db.Exec("SET search_path TO " + quotedSchema); err != nil {
+		t.Fatalf("Failed to select isolated auth schema: %v", err)
+	}
+
+	const schemaSQL = `
+CREATE TABLE users (
+    id                    SERIAL PRIMARY KEY,
+    email                 VARCHAR(255) UNIQUE NOT NULL,
+    password              VARCHAR(255) NOT NULL,
+    status                VARCHAR(32) NOT NULL,
+    two_factor_enabled    BOOLEAN NOT NULL DEFAULT FALSE,
+    activation_code       VARCHAR(255),
+    activation_expires_at TIMESTAMP,
+    created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE account (
+    id             SERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES users(id),
+    type           VARCHAR(32) NOT NULL,
+    currency       VARCHAR(32) NOT NULL,
+    balance        DECIMAL(32, 16) NOT NULL DEFAULT 0,
+    frozen_balance DECIMAL(32, 16) NOT NULL DEFAULT 0,
+    version        BIGINT NOT NULL DEFAULT 1,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);`
+	if _, err := db.Exec(schemaSQL); err != nil {
+		t.Fatalf("Failed to create auth integration tables: %v", err)
+	}
 }
 
 func TestRegisterAndLogin(t *testing.T) {
 	db := getTestDB(t)
-	defer db.Close()
+	prepareAuthIntegrationSchema(t, db)
 	utils.SetActivationCodeKey([]byte("0123456789abcdef0123456789abcdef"))
 	t.Cleanup(func() { utils.SetActivationCodeKey(nil) })
 
-	// Clean up test user
 	testEmail := fmt.Sprintf("test_%d@example.com", time.Now().UnixNano())
-	defer db.Exec("DELETE FROM users WHERE email = $1", testEmail)
 
 	jwtSecret := "test-jwt-secret-for-integration-tests"
 	authService := services.NewAuthService(db, jwtSecret, &config.Config{CoreAPIURL: "http://127.0.0.1:1"})

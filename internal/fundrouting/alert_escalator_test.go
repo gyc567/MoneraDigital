@@ -78,7 +78,7 @@ func TestAlertEscalatorReturnsIdleWhenNoThresholdIsDue(t *testing.T) {
 	}
 }
 
-func TestAlertEscalatorSLAThresholdsDifferentiatePendingProviderStatus(t *testing.T) {
+func TestAlertEscalatorSLAThresholdsDifferentiateOnChainProviderStatus(t *testing.T) {
 	sqlText := openCaseSLAEscalationSQL()
 	for _, fragment := range []string{
 		"('STATUS_NOT_TERMINAL'::varchar,1,interval '1 hour','WARN'::varchar)",
@@ -113,10 +113,13 @@ func TestAlertEscalatorStartsOpenReasonSLAFromProviderRecovery(t *testing.T) {
 func TestAlertEscalatorRequiresFreshStatusCheckAndBuildsActionablePayload(t *testing.T) {
 	sqlText := openCaseSLAEscalationSQL()
 	for _, fragment := range []string{
-		"status_check.last_checked_at >= routing.created_at + threshold.minimum_age",
+		"status_check.last_checked_at >= chain_progress.started_at + threshold.minimum_age",
 		"status_check.last_check_outcome='ERROR'",
 		"linked_webhook.event_id=status_check.last_provider_event_id",
-		"status_check.last_observed_status NOT IN ('COMPLETED','FAILED','CANCELLED','REJECTED')",
+		"status_check.last_observed_status IN ('BROADCASTING','CONFIRMING')",
+		"upper(linked.provider_status) IN ('BROADCASTING','CONFIRMING')",
+		"webhook.received_at AT TIME ZONE 'UTC' AS last_source_received_at",
+		"'sla:onchain:level:'",
 		"'environment',environment",
 		"'case_id',case_id",
 		"'safeheron_tx_key',safeheron_tx_key",
@@ -129,6 +132,7 @@ func TestAlertEscalatorRequiresFreshStatusCheckAndBuildsActionablePayload(t *tes
 		"'transaction_sub_status',transaction_sub_status",
 		"'tx_hash',tx_hash",
 		"'effective_event_time',effective_event_time",
+		"'sla_started_at',sla_started_at",
 		"'stuck_seconds',stuck_seconds",
 		"'last_source_event_type',last_source_event_type",
 		"'last_source_received_at',last_source_received_at",
@@ -145,5 +149,8 @@ func TestAlertEscalatorRequiresFreshStatusCheckAndBuildsActionablePayload(t *tes
 	}
 	if strings.Contains(openCaseSLANextDueSQL(), "status_check.safeheron_tx_key IS NULL") {
 		t.Fatal("STATUS_NOT_TERMINAL scheduling must wait for a durable provider check")
+	}
+	if strings.Contains(sqlText, "sla:pending:level:") || strings.Contains(openCaseSLANextDueSQL(), "sla:pending:level:") {
+		t.Fatal("approval-stage SLA transition keys must not remain active")
 	}
 }
