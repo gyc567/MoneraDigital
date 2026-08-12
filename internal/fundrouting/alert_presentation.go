@@ -36,6 +36,13 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		}
 		return severity, "Safeheron routing " + deliveries[0].AlertType, fields
 	}
+	allOnChainSLA := allSLA
+	for _, payload := range payloads {
+		if !strings.EqualFold(strings.TrimSpace(routingAlertString(payload, "sla_scope")), "ONCHAIN") {
+			allOnChainSLA = false
+			break
+		}
+	}
 	recoveryStillOpen := false
 	if allRecovery {
 		for _, payload := range payloads {
@@ -56,6 +63,9 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		fields["恢复说明"] = "此前超时的 Safeheron 交易链上状态已收敛，但路由仍待处理；请按交易明细中的处理原因继续跟进。"
 	} else if allRecovery {
 		fields["恢复说明"] = "此前超时的 Safeheron 交易已进入终态，系统已按最终状态进入后续幂等处理流程。"
+	} else if allOnChainSLA {
+		fields["告警原因"] = "Safeheron 交易进入链上阶段后超过约定时限仍未进入终态，系统已执行单笔 API 状态核验，结果见交易明细。"
+		fields["处理建议"] = "请核对链上广播、节点接收和区块确认状态；API 核验失败时先检查 API 凭据和网络。"
 	} else {
 		fields["告警原因"] = "Safeheron 交易超过约定时限后仍尚未进入终态，系统已执行单笔 API 状态核验，结果见交易明细。"
 		fields["处理建议"] = "请在 Safeheron 控制台核对待审批、待签名或链上广播状态；API 核验失败时先检查 API 凭据和网络。"
@@ -71,7 +81,9 @@ func routingAlertPresentation(deliveries []claimedDelivery) (string, string, map
 		fields[fmt.Sprintf("交易%02d", index+1)] = detail
 	}
 	titleState := "停留超时"
-	if recoveryStillOpen {
+	if allOnChainSLA {
+		titleState = "链上处理超时"
+	} else if recoveryStillOpen {
 		titleState = "链上状态已收敛，路由仍待处理"
 	} else if allRecovery {
 		titleState = "状态已收敛"
@@ -134,7 +146,12 @@ func routingSLAAlertDetail(payload map[string]any) string {
 	appendLine("来源地址", routingAlertString(payload, "source_address"))
 	appendLine("目标地址", routingAlertString(payload, "destination_address"))
 	appendLine("发生时间", routingAlertSGTTime(routingAlertString(payload, "effective_event_time")))
-	appendLine("停留时长", routingAlertDuration(routingAlertString(payload, "stuck_seconds")))
+	if strings.EqualFold(strings.TrimSpace(routingAlertString(payload, "sla_scope")), "ONCHAIN") {
+		appendLine("链上开始时间", routingAlertSGTTime(routingAlertString(payload, "sla_started_at")))
+		appendLine("链上停留时长", routingAlertDuration(routingAlertString(payload, "stuck_seconds")))
+	} else {
+		appendLine("停留时长", routingAlertDuration(routingAlertString(payload, "stuck_seconds")))
+	}
 	appendLine("最后事件", routingAlertString(payload, "last_source_event_type"))
 	appendLine("最后事件时间", routingAlertSGTTime(routingAlertString(payload, "last_source_received_at")))
 	appendLine("最后 API 核验", routingAlertSGTTime(routingAlertString(payload, "last_api_checked_at")))
@@ -237,8 +254,8 @@ func routingAlertSGTTime(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
+	parsed, ok := parseRoutingAlertTime(value)
+	if !ok {
 		return value
 	}
 	location, err := time.LoadLocation("Asia/Singapore")
@@ -246,6 +263,19 @@ func routingAlertSGTTime(value string) string {
 		location = time.FixedZone("UTC+8", 8*60*60)
 	}
 	return parsed.In(location).Format("2006-01-02 15:04:05 UTC+8")
+}
+
+func parseRoutingAlertTime(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+		return parsed, true
+	}
+	for _, layout := range []string{"2006-01-02T15:04:05", time.DateTime} {
+		if parsed, err := time.ParseInLocation(layout, trimmed, time.UTC); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func routingAlertDuration(value string) string {

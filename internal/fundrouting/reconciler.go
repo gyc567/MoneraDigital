@@ -270,9 +270,11 @@ SELECT $1,'RECOVERY_SUMMARY','sla:recovered:version:' || $2::integer::text,'INFO
            SELECT prior.payload->>'environment'
            FROM safeheron_transaction_routing_alerts prior
            WHERE prior.case_id=$1 AND prior.alert_type='SLA_ESCALATION'
+             AND prior.transition_key LIKE 'sla:onchain:level:%'
            ORDER BY prior.created_at DESC,prior.id DESC LIMIT 1
          ),'unknown'),
          'case_id',$1::bigint,
+         'sla_scope','ONCHAIN',
          'resolved_decision',$3::text,
          'resolved_reason_code',$4::text,
          'safeheron_tx_key',$5::text,
@@ -287,9 +289,10 @@ SELECT $1,'RECOVERY_SUMMARY','sla:recovered:version:' || $2::integer::text,'INFO
          'movement_kind',$14::text,
          'transaction_sub_status',NULLIF($15::text,''),
          'effective_event_time',routing.effective_event_time,
-         'stuck_seconds',floor(extract(epoch FROM now()-routing.created_at))::bigint,
+         'sla_started_at',chain_progress.started_at,
+         'stuck_seconds',floor(extract(epoch FROM now()-chain_progress.started_at))::bigint,
          'last_source_event_type',webhook.event_type,
-         'last_source_received_at',webhook.received_at,
+         'last_source_received_at',webhook.received_at AT TIME ZONE 'UTC',
          'last_api_checked_at',status_check.last_checked_at,
          'last_api_check_outcome',status_check.last_check_outcome,
          'last_api_error_code',status_check.last_error_code,
@@ -305,10 +308,17 @@ JOIN LATERAL (
 JOIN safeheron_webhook_events webhook ON webhook.id=source.safeheron_webhook_event_id
 LEFT JOIN safeheron_transaction_routing_status_checks status_check
   ON status_check.safeheron_tx_key=routing.safeheron_tx_key
+JOIN LATERAL (
+  SELECT min(linked.linked_at) AS started_at
+  FROM safeheron_transaction_routing_case_sources linked
+  WHERE linked.case_id=routing.id
+    AND upper(linked.provider_status) IN ('BROADCASTING','CONFIRMING')
+) chain_progress ON chain_progress.started_at IS NOT NULL
 WHERE routing.id=$1 AND EXISTS (
   SELECT 1 FROM safeheron_transaction_routing_alerts prior
   WHERE prior.case_id=$1 AND prior.alert_type='SLA_ESCALATION'
     AND prior.payload->>'reason_code'='STATUS_NOT_TERMINAL'
+    AND prior.transition_key LIKE 'sla:onchain:level:%'
 )
 ON CONFLICT (case_id,alert_type,transition_key) DO NOTHING`
 }
