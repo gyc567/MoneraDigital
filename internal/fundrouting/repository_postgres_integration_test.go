@@ -408,7 +408,16 @@ VALUES ($1,'TRANSACTION_STATUS_CHANGED',$2,$3::jsonb,$4,'PENDING') RETURNING id`
 	}
 }
 
-func TestReconcilerPostgresReportsProviderRecoveryWhenRoutingRemainsOpen(t *testing.T) {
+func TestReconcilerPostgresReportsProviderRecoveryForOnChainSLA(t *testing.T) {
+	testReconcilerPostgresRecovery(t, "sla:onchain:level:1", true)
+}
+
+func TestReconcilerPostgresIgnoresLegacyPreChainSLARecovery(t *testing.T) {
+	testReconcilerPostgresRecovery(t, "sla:pending:level:1", false)
+}
+
+func testReconcilerPostgresRecovery(t *testing.T, transitionKey string, wantRecovery bool) {
+	t.Helper()
 	if os.Getenv("RUN_FUND_ROUTING_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set RUN_FUND_ROUTING_POSTGRES_INTEGRATION=1 to run PostgreSQL routing coverage")
 	}
@@ -487,12 +496,26 @@ VALUES ($1,$2,$3,$4::jsonb,$5,'PENDING') RETURNING id`, eventID, eventType, txKe
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO safeheron_transaction_routing_alerts
   (case_id,alert_type,transition_key,severity,payload)
-VALUES ($1,'SLA_ESCALATION','sla:pending:level:1','WARN',
-        jsonb_build_object('level',1,'reason_code','STATUS_NOT_TERMINAL'))`, caseID); err != nil {
+VALUES ($1,'SLA_ESCALATION',$2,'WARN',
+        jsonb_build_object('level',1,'reason_code','STATUS_NOT_TERMINAL'))`, caseID, transitionKey); err != nil {
 		t.Fatal(err)
 	}
 
-	terminal := initial
+	broadcast := initial
+	broadcast.TxHash = "0x" + suffix
+	broadcast.TransactionStatus = "BROADCASTING"
+	broadcast.TransactionSubStatus = "SUBMITTED_TO_NETWORK"
+	broadcastResult := insertAndRoute(
+		"routing-provider-recovery-broadcast-"+suffix,
+		"TRANSACTION_STATUS_CHANGED",
+		fmt.Sprintf("%064x", time.Now().UnixNano()+1),
+		broadcast,
+	)
+	if broadcastResult.CaseID != caseID || broadcastResult.Decision.Reason != ReasonStatusNotTerminal {
+		t.Fatalf("broadcast route=%#v, want existing STATUS_NOT_TERMINAL OPEN", broadcastResult)
+	}
+
+	terminal := broadcast
 	terminal.TxHash = "0x" + suffix
 	terminal.TransactionStatus = "COMPLETED"
 	terminal.TransactionSubStatus = "CONFIRMED"
@@ -500,7 +523,7 @@ VALUES ($1,'SLA_ESCALATION','sla:pending:level:1','WARN',
 	terminalResult := insertAndRoute(
 		terminalEventID,
 		"TRANSACTION_STATUS_CHANGED",
-		fmt.Sprintf("%064x", time.Now().UnixNano()+1),
+		fmt.Sprintf("%064x", time.Now().UnixNano()+2),
 		terminal,
 	)
 	if terminalResult.CaseID != caseID || terminalResult.Decision.Decision != DecisionOpen || terminalResult.Decision.Reason != ReasonOwnershipUnknown {
@@ -524,19 +547,37 @@ VALUES ($1,now()-interval '2 hours',4,NULL,now(),'OBSERVED','COMPLETED',$2,now()
 		t.Fatalf("ProcessOne() = %v, %v", worked, err)
 	}
 
-	var decision, reason, resolvedDecision, resolvedReason string
+	var decision, reason string
 	if err := db.QueryRowContext(ctx, `SELECT decision,reason_code FROM safeheron_transaction_routing_cases WHERE id=$1`, caseID).
 		Scan(&decision, &reason); err != nil {
 		t.Fatal(err)
 	}
+	if decision != "OPEN" || reason != "OWNERSHIP_UNKNOWN" {
+		t.Fatalf("case=%s/%s, want OPEN/OWNERSHIP_UNKNOWN", decision, reason)
+	}
+	var recoveryCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM safeheron_transaction_routing_alerts
+WHERE case_id=$1 AND alert_type='RECOVERY_SUMMARY'`, caseID).Scan(&recoveryCount); err != nil {
+		t.Fatal(err)
+	}
+	if !wantRecovery {
+		if recoveryCount != 0 {
+			t.Fatalf("legacy pre-chain recovery alerts=%d, want 0", recoveryCount)
+		}
+		return
+	}
+	if recoveryCount != 1 {
+		t.Fatalf("on-chain recovery alerts=%d, want 1", recoveryCount)
+	}
+	var resolvedDecision, resolvedReason string
 	if err := db.QueryRowContext(ctx, `SELECT payload->>'resolved_decision',payload->>'resolved_reason_code'
 FROM safeheron_transaction_routing_alerts
 WHERE case_id=$1 AND alert_type='RECOVERY_SUMMARY'`, caseID).
 		Scan(&resolvedDecision, &resolvedReason); err != nil {
 		t.Fatal(err)
 	}
-	if decision != "OPEN" || reason != "OWNERSHIP_UNKNOWN" || resolvedDecision != "OPEN" || resolvedReason != "OWNERSHIP_UNKNOWN" {
-		t.Fatalf("case=%s/%s recovery=%s/%s", decision, reason, resolvedDecision, resolvedReason)
+	if resolvedDecision != "OPEN" || resolvedReason != "OWNERSHIP_UNKNOWN" {
+		t.Fatalf("recovery=%s/%s, want OPEN/OWNERSHIP_UNKNOWN", resolvedDecision, resolvedReason)
 	}
 }
 

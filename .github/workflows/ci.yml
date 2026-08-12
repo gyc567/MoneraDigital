@@ -55,13 +55,24 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
           RUN_FUND_ROUTING_QUEUE_POSTGRES_INTEGRATION: "1"
         run: go test -race -count=1 ./internal/fundrouting -run '^TestRoutingAlertQueuePostgres'
+      - name: routing SLA PostgreSQL behavior
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
+          RUN_FUND_ROUTING_POSTGRES_INTEGRATION: "1"
+        run: >-
+          go test -race -count=1 ./internal/fundrouting
+          -run '^Test(AlertEscalatorSQLPostgres|StatusRecoverySQLPostgres)'
+      - name: auth PostgreSQL integration behavior
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
+          RUN_AUTH_POSTGRES_INTEGRATION: "1"
+        run: go test -race -count=1 ./tests
       - name: go test (green gate; baseline tech-debt excluded)
         run: |
           # Packages excluded from the green gate until their pre-existing
           # baseline failures are resolved (independent of this change):
           #   internal/scheduler — stale testify mock signature (CreateWithDate drift)
-          #   tests              — auth integration suite requires a live Postgres
           # Remove an exclusion line the moment that package goes green, so CI
           # widens its coverage automatically.
-          mapfile -t pkgs < <(go list ./... | grep -vE 'internal/scheduler$|/tests$')
+          mapfile -t pkgs < <(go list ./... | grep -vE 'internal/scheduler$')
           go test -race -count=1 "${pkgs[@]}"

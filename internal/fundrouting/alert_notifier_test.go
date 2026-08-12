@@ -70,6 +70,70 @@ func TestRoutingAlertPresentationExplainsPendingTransactionsWithCompleteIdentifi
 	}
 }
 
+func TestRoutingAlertPresentationTreatsProviderTimestampsWithoutOffsetsAsUTC(t *testing.T) {
+	raw, err := json.Marshal(map[string]any{
+		"case_id":                 879,
+		"direction":               "OUTFLOW",
+		"safeheron_tx_key":        "tx-key-timezone",
+		"transaction_status":      "BROADCASTING",
+		"effective_event_time":    "2026-08-12T09:51:06.401",
+		"last_source_received_at": "2026-08-12T10:51:07.758845",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, fields := routingAlertPresentation([]claimedDelivery{{
+		Severity: "WARN", AlertType: "SLA_ESCALATION", Payload: raw,
+	}})
+	detail := fields["交易01"]
+	for _, expected := range []string{
+		"发生时间：2026-08-12 17:51:06 UTC+8",
+		"最后事件时间：2026-08-12 18:51:07 UTC+8",
+	} {
+		if !strings.Contains(detail, expected) {
+			t.Fatalf("timezone-less provider timestamp was not rendered as UTC+8:\n%s", detail)
+		}
+	}
+}
+
+func TestRoutingAlertPresentationExplainsOnChainTimeoutWithoutApprovalLanguage(t *testing.T) {
+	payload := map[string]any{
+		"environment": "production", "case_id": 881, "reason_code": "STATUS_NOT_TERMINAL",
+		"sla_scope": "ONCHAIN", "safeheron_tx_key": "tx-key-onchain",
+		"raw_coin_key": "USDT_ERC20", "network_family": "EVM", "direction": "OUTFLOW",
+		"movement_kind": "PRINCIPAL", "amount": "220", "transaction_status": "CONFIRMING",
+		"tx_hash": "0xfull-hash", "sla_started_at": "2026-08-12T10:00:00Z",
+		"stuck_seconds": 3600, "last_api_check_outcome": "OBSERVED",
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	severity, title, fields := routingAlertPresentation([]claimedDelivery{{
+		Severity: "WARN", AlertType: "SLA_ESCALATION", Payload: raw,
+	}})
+	if severity != "WARN" || title != "Safeheron 出账链上处理超时（1笔）" {
+		t.Fatalf("on-chain alert header = %s / %s", severity, title)
+	}
+	if reason := fields["告警原因"]; !strings.Contains(reason, "进入链上阶段") {
+		t.Fatalf("on-chain alert reason = %q", reason)
+	}
+	if suggestion := fields["处理建议"]; strings.Contains(suggestion, "审批") || strings.Contains(suggestion, "签名") {
+		t.Fatalf("on-chain alert suggests pre-chain actions: %q", suggestion)
+	}
+	detail := fields["交易01"]
+	for _, fragment := range []string{
+		"链上开始时间：2026-08-12 18:00:00 UTC+8",
+		"链上停留时长：1小时",
+	} {
+		if !strings.Contains(detail, fragment) {
+			t.Errorf("on-chain detail is missing %q:\n%s", fragment, detail)
+		}
+	}
+}
+
 func TestRoutingAlertPresentationExplainsWhenLatestStatusCannotBeConfirmed(t *testing.T) {
 	payload := map[string]any{
 		"case_id": 879, "reason_code": "STATUS_NOT_TERMINAL", "direction": "OUTFLOW",
