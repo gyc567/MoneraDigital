@@ -684,7 +684,7 @@ func (s *Service) processKYTAlert(ctx context.Context, tx Tx, evt *Event, alert 
 			log.Printf("IncrementEventAttempts failed for orphan alert: %v", incErr)
 			return true, fmt.Errorf("%w: orphan increment failed: %v", ErrKYTAPIBackoff, incErr)
 		}
-		return true, nil
+		return false, nil
 	}
 
 	if err := s.writeAMLFields(ctx, tx, dep.ID, effectiveState, amlReports); err != nil {

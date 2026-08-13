@@ -192,8 +192,9 @@ func TestProcessKYTAlert_LowRisk_Credits(t *testing.T) {
 	}
 }
 
-// processKYTAlert: deposit not found (out-of-order) → event stays PENDING
-func TestProcessKYTAlert_OutOfOrder_StaysPending(t *testing.T) {
+// processKYTAlert: deposit not found (out-of-order) → event stays PENDING and
+// yields the current drain so the retry ceiling cannot be exhausted immediately.
+func TestProcessKYTAlert_OutOfOrder_StaysPendingAndYieldsDrain(t *testing.T) {
 	repo := newMockRepo()
 	// No deposit for tx-orphan
 	svc := newKYTSvc(t, repo, nil, true)
@@ -211,8 +212,8 @@ func TestProcessKYTAlert_OutOfOrder_StaysPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !processed {
-		t.Fatal("expected processed=true")
+	if processed {
+		t.Fatal("expected processed=false so retry waits for the next worker cycle")
 	}
 	// Event should NOT be marked done (stays PENDING)
 	if len(repo.doneIDs) != 0 {

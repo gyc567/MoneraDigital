@@ -15,7 +15,7 @@ func TestSafeheronAMLAlertHandler_UpdatesAllProjectedCompanyMovements(t *testing
 
 	mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 		WithArgs("safeheron-tx").
-		WillReturnRows(sqlmock.NewRows([]string{"company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(2, 0, 0))
+		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(2, 0, 2, 0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(updateSafeheronCompanyFundTransactionAMLAlertSQL)).
 		WithArgs("safeheron-tx", string(AMLScreeningStateScreened), string(AMLRiskLevelLow)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -49,7 +49,7 @@ func TestSafeheronAMLAlertHandler_DefersUntilEveryRequiredProjectionExists(t *te
 
 			mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 				WithArgs("safeheron-tx").
-				WillReturnRows(sqlmock.NewRows([]string{"company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, testCase.pendingCompanyProjection, testCase.pendingCustomerProjection))
+				WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, testCase.pendingCompanyProjection, testCase.pendingCompanyProjection, testCase.pendingCustomerProjection))
 
 			result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
 				TransactionKey: "safeheron-tx",
@@ -72,7 +72,7 @@ func TestSafeheronAMLAlertHandler_LeavesCustomerAlertToDepositPipeline(t *testin
 
 	mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 		WithArgs("customer-tx").
-		WillReturnRows(sqlmock.NewRows([]string{"company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(0, 0, 0))
+		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, 0, 0, 0))
 
 	result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
 		TransactionKey: "customer-tx",

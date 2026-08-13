@@ -10,12 +10,15 @@ import (
 )
 
 const selectSafeheronCompanyFundTransactionForAMLAlertSQL = `
-SELECT COUNT(*) AS company_case_count,
-       COUNT(*) FILTER (WHERE company_fund_transaction_id IS NULL) AS pending_company_projection_count,
+SELECT COUNT(*) AS routing_case_count,
+       COUNT(*) FILTER (WHERE decision = 'OPEN') AS open_case_count,
+       COUNT(*) FILTER (WHERE requires_company_projection) AS company_case_count,
+       COUNT(*) FILTER (
+         WHERE requires_company_projection AND company_fund_transaction_id IS NULL
+       ) AS pending_company_projection_count,
        COUNT(*) FILTER (WHERE requires_customer_projection AND deposit_id IS NULL) AS pending_customer_projection_count
 FROM safeheron_transaction_routing_cases
-WHERE safeheron_tx_key = $1
-  AND requires_company_projection`
+WHERE safeheron_tx_key = $1`
 
 const updateSafeheronCompanyFundTransactionAMLAlertSQL = `
 UPDATE company_fund_transactions AS transaction
@@ -68,8 +71,11 @@ func (h *SafeheronAMLAlertHandler) HandleCompanyFundAMLAlert(ctx context.Context
 		return SafeheronAMLAlertNotCompany, nil
 	}
 
-	var companyCaseCount, pendingCompanyProjectionCount, pendingCustomerProjectionCount int64
+	var routingCaseCount, openCaseCount, companyCaseCount int64
+	var pendingCompanyProjectionCount, pendingCustomerProjectionCount int64
 	err := h.db.QueryRowContext(ctx, selectSafeheronCompanyFundTransactionForAMLAlertSQL, transactionKey).Scan(
+		&routingCaseCount,
+		&openCaseCount,
 		&companyCaseCount,
 		&pendingCompanyProjectionCount,
 		&pendingCustomerProjectionCount,
@@ -77,11 +83,14 @@ func (h *SafeheronAMLAlertHandler) HandleCompanyFundAMLAlert(ctx context.Context
 	if err != nil {
 		return SafeheronAMLAlertNotCompany, fmt.Errorf("find company transaction for Safeheron AML alert: %w", err)
 	}
-	if companyCaseCount == 0 {
-		return SafeheronAMLAlertNotCompany, nil
+	if routingCaseCount > 0 && openCaseCount > 0 {
+		return SafeheronAMLAlertDeferred, nil
 	}
 	if pendingCompanyProjectionCount > 0 || pendingCustomerProjectionCount > 0 {
 		return SafeheronAMLAlertDeferred, nil
+	}
+	if companyCaseCount == 0 {
+		return SafeheronAMLAlertNotCompany, nil
 	}
 
 	screeningState, riskLevel, err := normalizeSafeheronAMLAlertState(input.RiskLevel)
