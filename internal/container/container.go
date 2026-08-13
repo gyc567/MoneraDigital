@@ -170,6 +170,10 @@ func WithSafeheronPool(ctx context.Context) ContainerOption {
 		if kytScanInterval <= 0 {
 			kytScanInterval = time.Minute
 		}
+		kytEventRetryInterval := viper.GetDuration("KYT_EVENT_RETRY_INTERVAL")
+		if kytEventRetryInterval <= 0 {
+			kytEventRetryInterval = time.Minute
+		}
 
 		// Deposit pipeline: webhook handler (sync) + worker (async).
 		depRepo := deposit.NewRepository(c.DB)
@@ -179,6 +183,7 @@ func WithSafeheronPool(ctx context.Context) ContainerOption {
 		c.DepositPipeline = deposit.NewService(depRepo, registry, c.AlertService.Send)
 		wireDepositCompanyFundRouting(c)
 		c.DepositPipeline.SetKYTDeps(client, kytEnabled, kytOrphanMaxRetry, kytTimeout)
+		c.DepositPipeline.SetEventRetryInterval(kytEventRetryInterval)
 		amlFirstPollDelay := viper.GetDuration("AML_FIRST_POLL_DELAY")
 		if amlFirstPollDelay <= 0 || amlFirstPollDelay >= kytTimeout {
 			amlFirstPollDelay = 5 * time.Minute
@@ -213,8 +218,8 @@ func WithSafeheronPool(ctx context.Context) ContainerOption {
 		wireSafeheronWebhookWorkerWakes(c)
 
 		log.Printf("Safeheron deposit pipeline enabled: worker interval=%s maxIdle=10m", workerInterval)
-		log.Printf("[KYT] enabled=%v scan_interval=%s timeout=%s orphan_max_retry=%d",
-			kytEnabled, kytScanInterval, kytTimeout, kytOrphanMaxRetry)
+		log.Printf("[KYT] enabled=%v scan_interval=%s timeout=%s orphan_max_retry=%d event_retry_interval=%s",
+			kytEnabled, kytScanInterval, kytTimeout, kytOrphanMaxRetry, kytEventRetryInterval)
 	}
 }
 

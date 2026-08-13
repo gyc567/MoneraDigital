@@ -140,6 +140,134 @@ func TestDepositPoisonEventPostgresIntegration(t *testing.T) {
 			t.Fatal("conditional ERROR finalization overwrote concurrent DONE")
 		}
 	})
+
+	t.Run("deferred head event yields to later eligible work and becomes claimable when due", func(t *testing.T) {
+		repo.SetTransactionClaimsEnabled(false)
+		repo.SetRoutingProjectionClaimsEnabled(false)
+		firstID := insertDepositIntegrationEvent(t, db, PayloadEnvelope{
+			EventType:   "AML_KYT_ALERT",
+			EventDetail: PayloadEventDetail{TxKey: "tx-pg-deferred-head"},
+		})
+		secondID := insertDepositIntegrationEvent(t, db, PayloadEnvelope{
+			EventType:   "AML_KYT_ALERT",
+			EventDetail: PayloadEventDetail{TxKey: "tx-pg-later-eligible"},
+		})
+
+		firstTx, err := repo.BeginTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, err := repo.LockNextPendingEvent(context.Background(), firstTx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.ID != firstID {
+			t.Fatalf("first claim id = %d, want %d", first.ID, firstID)
+		}
+		if err := repo.DeferEvent(context.Background(), firstTx, firstID, 100*time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+
+		// While the defer update is still uncommitted, another worker must skip
+		// the locked head row rather than reclaim it in the decision/update gap.
+		secondTx, err := repo.BeginTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := repo.LockNextPendingEvent(context.Background(), secondTx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if second.ID != secondID {
+			t.Fatalf("claim while head deferred = %d, want later event %d", second.ID, secondID)
+		}
+		if err := secondTx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		if err := firstTx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+
+		due, err := repo.EarliestPendingEventRetryAt(context.Background())
+		if err != nil || due.IsZero() {
+			t.Fatalf("durable event retry due = %s, %v", due, err)
+		}
+		time.Sleep(125 * time.Millisecond)
+		dueTx, err := repo.BeginTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		deferred, err := repo.LockNextPendingEvent(context.Background(), dueTx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if deferred.ID != firstID {
+			t.Fatalf("claim after retry due = %d, want deferred event %d", deferred.ID, firstID)
+		}
+		if err := dueTx.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("orphan defer increments attempts and terminal completion clears retry", func(t *testing.T) {
+		if _, err := db.ExecContext(context.Background(), `UPDATE safeheron_webhook_events
+			SET process_status='DONE', next_attempt_at=NULL WHERE process_status='PENDING'`); err != nil {
+			t.Fatal(err)
+		}
+		eventID := insertDepositIntegrationEvent(t, db, PayloadEnvelope{
+			EventType:   "AML_KYT_ALERT",
+			EventDetail: PayloadEventDetail{TxKey: "tx-pg-orphan-retry"},
+		})
+		deferTx, err := repo.BeginTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed, err := repo.LockNextPendingEvent(context.Background(), deferTx)
+		if err != nil || claimed.ID != eventID {
+			t.Fatalf("claim orphan for defer = %#v, %v", claimed, err)
+		}
+		if err := repo.DeferOrphanEvent(context.Background(), deferTx, eventID, 25*time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		if err := deferTx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		var attempts int
+		var retryAt sql.NullTime
+		if err := db.QueryRowContext(context.Background(), `SELECT process_attempts,next_attempt_at
+			FROM safeheron_webhook_events WHERE id=$1`, eventID).Scan(&attempts, &retryAt); err != nil {
+			t.Fatal(err)
+		}
+		if attempts != 1 || !retryAt.Valid {
+			t.Fatalf("orphan retry state = attempts %d, next_attempt_at %v", attempts, retryAt.Valid)
+		}
+
+		time.Sleep(40 * time.Millisecond)
+		tx, err := repo.BeginTx(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed, err = repo.LockNextPendingEvent(context.Background(), tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claimed.ID != eventID {
+			t.Fatalf("claimed id = %d, want %d", claimed.ID, eventID)
+		}
+		if err := repo.MarkEventDone(context.Background(), tx, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(context.Background(), `SELECT next_attempt_at
+			FROM safeheron_webhook_events WHERE id=$1`, eventID).Scan(&retryAt); err != nil {
+			t.Fatal(err)
+		}
+		if retryAt.Valid {
+			t.Fatal("DONE event retained next_attempt_at")
+		}
+	})
 }
 
 func newDepositPostgresFixture(t *testing.T, databaseURL string) *sql.DB {
@@ -149,7 +277,11 @@ func newDepositPostgresFixture(t *testing.T, databaseURL string) *sql.DB {
 		t.Fatalf("parse DATABASE_URL: %v", err)
 	}
 	adminDB := stdlib.OpenDB(*adminConfig)
-	t.Cleanup(func() { _ = adminDB.Close() })
+	t.Cleanup(func() {
+		if err := adminDB.Close(); err != nil {
+			t.Errorf("close PostgreSQL admin connection: %v", err)
+		}
+	})
 
 	schema := fmt.Sprintf("deposit_poison_%d", time.Now().UnixNano())
 	if _, err := adminDB.ExecContext(context.Background(), `CREATE SCHEMA `+schema); err != nil {
@@ -169,7 +301,11 @@ func newDepositPostgresFixture(t *testing.T, databaseURL string) *sql.DB {
 	db := stdlib.OpenDB(*fixtureConfig)
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close PostgreSQL fixture connection: %v", err)
+		}
+	})
 	if _, err := db.ExecContext(context.Background(), depositPostgresFixtureDDL); err != nil {
 		t.Fatalf("create deposit fixture: %v", err)
 	}
@@ -254,8 +390,12 @@ CREATE TABLE safeheron_webhook_events (
     process_status VARCHAR(16) NOT NULL,
     process_attempts INT NOT NULL DEFAULT 0,
     error_message TEXT,
+    authorizing_routing_action_id BIGINT,
+    next_attempt_at TIMESTAMPTZ,
     received_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    processed_at TIMESTAMP
+    processed_at TIMESTAMP,
+    CONSTRAINT safeheron_webhook_events_next_attempt_state_check
+        CHECK (process_status = 'PENDING' OR next_attempt_at IS NULL)
 );
 CREATE TABLE address_pool (
     address VARCHAR(255) NOT NULL,

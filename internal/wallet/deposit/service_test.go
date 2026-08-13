@@ -56,8 +56,13 @@ type mockRepo struct {
 	commitCalls           int
 	rollbackCalls         int
 	beginTxCalls          int     // tracks how many tx were begun (T7-I-5 hot-loop check)
-	noTxIncrements        []int64 // recorded eventIDs of IncrementEventAttemptsNoTx calls (T10 C-1/I-2)
-	rollbackBeforeNoTxInc bool    // true means each noTx increment is observed AFTER at least one rollback
+	noTxIncrements        []int64 // recorded eventIDs whose orphan retry increment was persisted (T10 C-1/I-2)
+	deferredEventIDs      []int64
+	deferredOrphanIDs     []int64
+	eventRetryInterval    time.Duration
+	pendingEventRetryAt   time.Time
+	pendingEventRetryErr  error
+	deferEventErr         error
 	rollbackBeforeNoTxErr bool
 
 	commitErr   error // injected commit failure for fakeTx
@@ -356,16 +361,30 @@ func (m *mockRepo) FindDepositByTxKey(_ context.Context, _ Tx, txKey string) (*D
 	return nil, false, nil
 }
 
-func (m *mockRepo) IncrementEventAttemptsNoTx(_ context.Context, id int64) error {
+func (m *mockRepo) DeferEvent(_ context.Context, _ Tx, id int64, retryAfter time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.noTxIncrements = append(m.noTxIncrements, id)
-	// Record whether at least one rollback was observed before this call.
-	// Used to assert C-1: NoTx update must come after the tx lock is released.
-	if m.rollbackCalls > 0 {
-		m.rollbackBeforeNoTxInc = true
+	if m.deferEventErr != nil {
+		return m.deferEventErr
 	}
+	m.deferredEventIDs = append(m.deferredEventIDs, id)
+	m.eventRetryInterval = retryAfter
 	return nil
+}
+
+func (m *mockRepo) DeferOrphanEvent(_ context.Context, _ Tx, id int64, retryAfter time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deferredOrphanIDs = append(m.deferredOrphanIDs, id)
+	m.eventRetryInterval = retryAfter
+	m.noTxIncrements = append(m.noTxIncrements, id)
+	return nil
+}
+
+func (m *mockRepo) EarliestPendingEventRetryAt(_ context.Context) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pendingEventRetryAt, m.pendingEventRetryErr
 }
 
 func (m *mockRepo) LookupAddressOwner(_ context.Context, addr, networkFamily string) (int, bool, error) {
@@ -1299,6 +1318,21 @@ func TestSetKYTDeps_CustomValues(t *testing.T) {
 	}
 	if svc.kytTimeout != 10*time.Minute {
 		t.Errorf("expected timeout=10m, got %s", svc.kytTimeout)
+	}
+}
+
+func TestSetEventRetryInterval_DefaultAndCustom(t *testing.T) {
+	svc := NewService(newMockRepo(), nil, nil)
+	if got := svc.EventRetryInterval(); got != time.Minute {
+		t.Fatalf("default event retry interval = %s, want 1m", got)
+	}
+	svc.SetEventRetryInterval(15 * time.Second)
+	if got := svc.EventRetryInterval(); got != 15*time.Second {
+		t.Fatalf("custom event retry interval = %s, want 15s", got)
+	}
+	svc.SetEventRetryInterval(0)
+	if got := svc.EventRetryInterval(); got != time.Minute {
+		t.Fatalf("invalid event retry interval fallback = %s, want 1m", got)
 	}
 }
 

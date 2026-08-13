@@ -146,7 +146,8 @@ LIMIT 1`).Scan(&event.ID, &event.EventType, &event.PayloadDigest, &event.RawPayl
 
 func (r *Repository) RejectPendingTransactionEvent(ctx context.Context, eventID int64, code string) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE safeheron_webhook_events
-SET process_status='ERROR', process_attempts=process_attempts+1, error_message=$2, processed_at=now()
+SET process_status='ERROR', process_attempts=process_attempts+1, error_message=$2,
+    processed_at=now(), next_attempt_at=NULL
 WHERE id=$1 AND process_status='PENDING'`, eventID, code)
 	if err != nil {
 		return fmt.Errorf("mark invalid Safeheron routing event: %w", err)
@@ -517,7 +518,7 @@ WHERE id = $2 AND pending_command_id IS NULL`, commandID, caseID)
 func markRawEventDone(ctx context.Context, tx *sql.Tx, eventID int64) error {
 	result, err := tx.ExecContext(ctx, `
 UPDATE safeheron_webhook_events
-SET process_status = 'DONE', processed_at = now(), error_message = NULL
+SET process_status = 'DONE', processed_at = now(), error_message = NULL, next_attempt_at = NULL
 WHERE id = $1`, eventID)
 	if err != nil {
 		return fmt.Errorf("mark routed Safeheron raw event DONE: %w", err)

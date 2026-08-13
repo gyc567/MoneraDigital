@@ -59,6 +59,35 @@ func TestWorker_DrainsUntilEmpty(t *testing.T) {
 	<-done
 }
 
+func TestWorker_DeferredOrphanDoesNotBlockLaterEvent(t *testing.T) {
+	repo := newMockRepo()
+	svc := newKYTSvc(t, repo, nil, true)
+	repo.pending = []*Event{
+		{
+			ID: 801, EventID: "orphan-first", EventType: "AML_KYT_ALERT",
+			RawPayload: []byte(`{"eventType":"AML_KYT_ALERT","eventDetail":{"txKey":"orphan-first","amlList":[{"provider":"MistTrack","riskLevel":"LOW"}]}}`),
+		},
+		{
+			ID: 802, EventID: "later-event", EventType: "ACCOUNT_CREATED",
+			RawPayload: []byte(`{"eventType":"ACCOUNT_CREATED","eventDetail":{"txKey":"later-event"}}`),
+		},
+	}
+
+	outcome, err := NewWorker(svc, WorkerConfig{Interval: time.Second}).drainOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.Worked || outcome.MoreWork {
+		t.Fatalf("drain outcome = %+v", outcome)
+	}
+	if len(repo.deferredOrphanIDs) != 1 || repo.deferredOrphanIDs[0] != 801 {
+		t.Fatalf("deferred orphan ids = %v", repo.deferredOrphanIDs)
+	}
+	if len(repo.doneIDs) != 1 || repo.doneIDs[0] != 802 {
+		t.Fatalf("later processed event ids = %v, want [802]", repo.doneIDs)
+	}
+}
+
 // TestWorker_BacksOffWhenMarkErrorFails simulates the pathological branch:
 // processEvent fails AND MarkEventError fails. The event stays PENDING.
 // Without back-off the worker would relock the same row in a tight loop,

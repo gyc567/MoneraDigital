@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -266,6 +267,89 @@ func TestMarkEventErrorNoTx_OnlyFinalizesPendingEvent(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDeferEventNormalizesRetryIntervals(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		interval     time.Duration
+		wantInterval string
+	}{
+		{name: "non-positive uses one minute", interval: 0, wantInterval: "60000 milliseconds"},
+		{name: "sub-millisecond uses one millisecond", interval: 500 * time.Microsecond, wantInterval: "1 milliseconds"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectBegin()
+			mock.ExpectExec("UPDATE safeheron_webhook_events").
+				WithArgs(int64(9), testCase.wantInterval, 0).
+				WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectRollback()
+
+			tx, err := db.BeginTx(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := NewRepository(db).DeferEvent(context.Background(), tx, 9, testCase.interval); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestDeferEventRejectsDatabaseAndOwnershipFailures(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		result      sql.Result
+		execErr     error
+		wantMessage string
+	}{
+		{name: "exec", execErr: errors.New("database unavailable"), wantMessage: "defer pending event"},
+		{name: "rows affected", result: sqlmock.NewErrorResult(errors.New("driver result unavailable")), wantMessage: "rows affected"},
+		{name: "lost ownership", result: sqlmock.NewResult(0, 0), wantMessage: "affected 0 rows"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectBegin()
+			expectation := mock.ExpectExec("UPDATE safeheron_webhook_events").
+				WithArgs(int64(10), "1000 milliseconds", 1)
+			if testCase.execErr != nil {
+				expectation.WillReturnError(testCase.execErr)
+			} else {
+				expectation.WillReturnResult(testCase.result)
+			}
+			mock.ExpectRollback()
+
+			tx, err := db.BeginTx(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = NewRepository(db).DeferOrphanEvent(context.Background(), tx, 10, time.Second)
+			if err == nil || !strings.Contains(err.Error(), testCase.wantMessage) {
+				t.Fatalf("DeferOrphanEvent() = %v, want %q", err, testCase.wantMessage)
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

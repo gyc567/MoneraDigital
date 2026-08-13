@@ -34,7 +34,7 @@ import (
 
 var version = "dev"
 
-var artifactMigrationReleaseSequence = []string{"065", "066"}
+var artifactMigrationReleaseSequence = []string{"067"}
 
 type migrationDescriptor struct {
 	version          string
@@ -90,6 +90,9 @@ var migrationRegistry = []migrationDescriptor{
 	}},
 	{version: "066", predecessor: "065", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
 		return &migrations.AddCompanyFundExternalReferenceIndexOnline{}
+	}},
+	{version: "067", predecessor: "066", exactDeploy: true, artifactCeiling: true, newMigrationFunc: func() migration.Migration {
+		return &migrations.AddSafeheronWebhookEventRetrySchedule{}
 	}},
 }
 
