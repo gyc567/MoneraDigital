@@ -58,6 +58,7 @@ const (
 	CompanyFundAMLAlertNotCompany CompanyFundAMLAlertResult = "NOT_COMPANY"
 	CompanyFundAMLAlertDeferred   CompanyFundAMLAlertResult = "DEFERRED"
 	CompanyFundAMLAlertApplied    CompanyFundAMLAlertResult = "APPLIED"
+	CompanyFundAMLAlertIgnored    CompanyFundAMLAlertResult = "IGNORED"
 )
 
 // CompanyFundAMLAlertHandler keeps company-owned AML processing out of the
@@ -76,23 +77,48 @@ type Service struct {
 	alertFn                       AlertFunc
 	serialFn                      SerialNoFunc
 	// KYT fields (v1.5 T10)
-	kytEnabled        bool
-	safeheronClient   KYTClient
-	kytOrphanMaxRetry int
-	kytTimeout        time.Duration
-	amlFirstPollDelay time.Duration // min age before safety-net poll fires (default 5m)
+	kytEnabled         bool
+	safeheronClient    KYTClient
+	kytOrphanMaxRetry  int
+	kytTimeout         time.Duration
+	amlFirstPollDelay  time.Duration // min age before safety-net poll fires (default 5m)
+	eventRetryInterval time.Duration
 }
 
 // NewService wires the deposit state machine. registry/alertFn may be nil — the
 // Service still routes events but degrades gracefully.
 func NewService(repo Repository, reg ChainsRegistry, alertFn AlertFunc) *Service {
 	return &Service{
-		repo:              repo,
-		registry:          reg,
-		alertFn:           alertFn,
-		serialFn:          defaultSerialNo,
-		amlFirstPollDelay: 5 * time.Minute,
+		repo:               repo,
+		registry:           reg,
+		alertFn:            alertFn,
+		serialFn:           defaultSerialNo,
+		amlFirstPollDelay:  5 * time.Minute,
+		eventRetryInterval: time.Minute,
 	}
+}
+
+// SetEventRetryInterval configures durable retry spacing for unresolved AML
+// ownership and genuine orphan events. Default: 1m.
+func (s *Service) SetEventRetryInterval(interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	s.eventRetryInterval = interval
+}
+
+func (s *Service) EventRetryInterval() time.Duration {
+	if s == nil || s.eventRetryInterval <= 0 {
+		return time.Minute
+	}
+	return s.eventRetryInterval
+}
+
+func (s *Service) EarliestPendingEventRetryAt(ctx context.Context) (time.Time, error) {
+	if s == nil || s.repo == nil {
+		return time.Time{}, nil
+	}
+	return s.repo.EarliestPendingEventRetryAt(ctx)
 }
 
 // SetSerialFunc overrides the journal serial generator (tests only).
@@ -600,9 +626,9 @@ func (s *Service) creditDepositFromRow(ctx context.Context, tx Tx, dep *DepositR
 
 // processKYTAlert handles AML_KYT_ALERT webhook events (T10.6).
 // The caller's tx holds a FOR UPDATE lock on the event row from LockNextPendingEvent;
-// any IncrementEventAttemptsNoTx call must run AFTER that tx is closed (commit or
-// rollback) — otherwise a fresh-connection UPDATE on the same event row will
-// self-deadlock waiting for the lock-holder (this goroutine) to release it.
+// Durable retry scheduling is written and committed through that same lock-
+// holding transaction, so another worker can never reclaim the event between
+// deciding to defer it and publishing next_attempt_at.
 func (s *Service) processKYTAlert(ctx context.Context, tx Tx, evt *Event, alert *AMLKYTAlertDetail) (bool, error) {
 	txClosed := false
 	defer func() {
@@ -623,16 +649,6 @@ func (s *Service) processKYTAlert(ctx context.Context, tx Tx, evt *Event, alert 
 
 	dep, found, err := s.repo.FindDepositByTxKey(ctx, tx, alert.TxKey)
 	if err != nil {
-		// Release the event-row lock before NoTx increment (C-1 deadlock guard).
-		_ = tx.Rollback()
-		txClosed = true
-		if incErr := s.repo.IncrementEventAttemptsNoTx(ctx, evt.ID); incErr != nil {
-			// Wrap as ErrKYTAPIBackoff so worker.drainSafely yields to the next
-			// ticker — otherwise an unwritable counter would let processed=true
-			// re-enter immediately and burn CPU on the same event (S-1).
-			log.Printf("IncrementEventAttempts failed on DB error: %v", incErr)
-			return true, fmt.Errorf("%w: find-deposit=%v increment=%v", ErrKYTAPIBackoff, err, incErr)
-		}
 		return true, fmt.Errorf("find deposit for KYT alert: %w", err)
 	}
 
@@ -645,12 +661,24 @@ func (s *Service) processKYTAlert(ctx context.Context, tx Tx, evt *Event, alert 
 		return true, fmt.Errorf("handle company-fund AML alert: %w", companyErr)
 	}
 	if companyResult == CompanyFundAMLAlertDeferred {
-		if err := tx.Rollback(); err != nil {
-			txClosed = true
-			return true, fmt.Errorf("rollback deferred company-fund AML event: %w", err)
+		if err := s.repo.DeferEvent(ctx, tx, evt.ID, s.EventRetryInterval()); err != nil {
+			return true, fmt.Errorf("schedule deferred company-fund AML event: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return true, fmt.Errorf("commit deferred company-fund AML event: %w", err)
 		}
 		txClosed = true
-		return false, nil
+		return true, nil
+	}
+	if companyResult == CompanyFundAMLAlertIgnored {
+		if err := s.repo.MarkEventDone(ctx, tx, evt.ID); err != nil {
+			return true, fmt.Errorf("mark ignored routing AML event done: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return true, fmt.Errorf("commit ignored routing AML event: %w", err)
+		}
+		txClosed = true
+		return true, nil
 	}
 
 	if !found {
@@ -673,18 +701,16 @@ func (s *Service) processKYTAlert(ctx context.Context, tx Tx, evt *Event, alert 
 			}
 			return processed, err
 		}
-		// Below retry threshold: release row lock first (C-1), then NoTx increment.
-		// Leaving the event PENDING is intentional — next worker cycle re-locks it.
-		_ = tx.Rollback()
-		txClosed = true
-		if incErr := s.repo.IncrementEventAttemptsNoTx(ctx, evt.ID); incErr != nil {
-			// S-1: counter unwritable means attempts will never reach the orphan
-			// retry ceiling. Wrap as ErrKYTAPIBackoff so worker yields and we
-			// don't tight-loop on the same event.
-			log.Printf("IncrementEventAttempts failed for orphan alert: %v", incErr)
-			return true, fmt.Errorf("%w: orphan increment failed: %v", ErrKYTAPIBackoff, incErr)
+		// Below retry threshold: atomically retain PENDING while publishing the
+		// next eligible-at instant and consuming one true-orphan retry.
+		if err := s.repo.DeferOrphanEvent(ctx, tx, evt.ID, s.EventRetryInterval()); err != nil {
+			return true, fmt.Errorf("schedule orphan KYT alert retry: %w", err)
 		}
-		return false, nil
+		if err := tx.Commit(); err != nil {
+			return true, fmt.Errorf("commit orphan KYT alert retry: %w", err)
+		}
+		txClosed = true
+		return true, nil
 	}
 
 	if err := s.writeAMLFields(ctx, tx, dep.ID, effectiveState, amlReports); err != nil {

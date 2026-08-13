@@ -13,6 +13,8 @@ const selectSafeheronCompanyFundTransactionForAMLAlertSQL = `
 SELECT COUNT(*) AS routing_case_count,
        COUNT(*) FILTER (WHERE decision = 'OPEN') AS open_case_count,
        COUNT(*) FILTER (WHERE requires_company_projection) AS company_case_count,
+       COUNT(*) FILTER (WHERE requires_customer_projection) AS customer_case_count,
+       COUNT(*) FILTER (WHERE decision IN ('NOT_RELEVANT', 'DISMISSED')) AS ignored_case_count,
        COUNT(*) FILTER (
          WHERE requires_company_projection AND company_fund_transaction_id IS NULL
        ) AS pending_company_projection_count,
@@ -48,6 +50,7 @@ const (
 	SafeheronAMLAlertNotCompany = deposit.CompanyFundAMLAlertNotCompany
 	SafeheronAMLAlertDeferred   = deposit.CompanyFundAMLAlertDeferred
 	SafeheronAMLAlertApplied    = deposit.CompanyFundAMLAlertApplied
+	SafeheronAMLAlertIgnored    = deposit.CompanyFundAMLAlertIgnored
 )
 
 type SafeheronAMLAlertResult = deposit.CompanyFundAMLAlertResult
@@ -72,11 +75,14 @@ func (h *SafeheronAMLAlertHandler) HandleCompanyFundAMLAlert(ctx context.Context
 	}
 
 	var routingCaseCount, openCaseCount, companyCaseCount int64
+	var customerCaseCount, ignoredCaseCount int64
 	var pendingCompanyProjectionCount, pendingCustomerProjectionCount int64
 	err := h.db.QueryRowContext(ctx, selectSafeheronCompanyFundTransactionForAMLAlertSQL, transactionKey).Scan(
 		&routingCaseCount,
 		&openCaseCount,
 		&companyCaseCount,
+		&customerCaseCount,
+		&ignoredCaseCount,
 		&pendingCompanyProjectionCount,
 		&pendingCustomerProjectionCount,
 	)
@@ -89,8 +95,17 @@ func (h *SafeheronAMLAlertHandler) HandleCompanyFundAMLAlert(ctx context.Context
 	if pendingCompanyProjectionCount > 0 || pendingCustomerProjectionCount > 0 {
 		return SafeheronAMLAlertDeferred, nil
 	}
-	if companyCaseCount == 0 {
+	if companyCaseCount == 0 && customerCaseCount > 0 {
 		return SafeheronAMLAlertNotCompany, nil
+	}
+	if companyCaseCount == 0 && routingCaseCount > 0 && ignoredCaseCount == routingCaseCount {
+		return SafeheronAMLAlertIgnored, nil
+	}
+	if companyCaseCount == 0 && routingCaseCount == 0 {
+		return SafeheronAMLAlertNotCompany, nil
+	}
+	if companyCaseCount == 0 {
+		return SafeheronAMLAlertNotCompany, fmt.Errorf("unsupported terminal routing ownership for Safeheron AML alert")
 	}
 
 	screeningState, riskLevel, err := normalizeSafeheronAMLAlertState(input.RiskLevel)

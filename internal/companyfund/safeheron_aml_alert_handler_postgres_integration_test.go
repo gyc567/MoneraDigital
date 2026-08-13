@@ -94,6 +94,25 @@ WHERE safeheron_tx_key = 'tx-open'`); err != nil {
 			t.Fatalf("HandleCompanyFundAMLAlert() = %q, %v; want NOT_COMPANY", result, err)
 		}
 	})
+
+	for _, testCase := range []struct {
+		name  string
+		txKey string
+	}{
+		{name: "not relevant routing is terminally ignored", txKey: "tx-not-relevant"},
+		{name: "dismissed routing is terminally ignored", txKey: "tx-dismissed"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			result, err := handler.HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
+				TransactionKey: testCase.txKey,
+				ScreeningState: "TRIGGERED",
+				RiskLevel:      "LOW",
+			})
+			if err != nil || result != SafeheronAMLAlertIgnored {
+				t.Fatalf("HandleCompanyFundAMLAlert() = %q, %v; want IGNORED", result, err)
+			}
+		})
+	}
 }
 
 func newSafeheronAMLAlertPostgresFixture(t *testing.T, databaseURL string) *sql.DB {
@@ -168,7 +187,9 @@ INSERT INTO safeheron_transaction_routing_cases (
   ('tx-open', 'OPEN', false, false, NULL, NULL),
   ('tx-company', 'COMPANY', false, true, NULL, 101),
   ('tx-customer-pending', 'CUSTOMER', true, false, NULL, NULL),
-  ('tx-customer', 'CUSTOMER', true, false, 201, NULL);
+  ('tx-customer', 'CUSTOMER', true, false, 201, NULL),
+  ('tx-not-relevant', 'NOT_RELEVANT', false, false, NULL, NULL),
+  ('tx-dismissed', 'DISMISSED', false, false, NULL, NULL);
 INSERT INTO company_fund_transactions (
   id, channel, provider_transaction_id, aml_screening_state, aml_risk_level
 ) VALUES (101, 'SAFEHERON', 'tx-company', 'NOT_SCREENED', 'UNKNOWN');`); err != nil {

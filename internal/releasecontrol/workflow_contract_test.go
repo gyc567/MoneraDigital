@@ -34,9 +34,9 @@ func TestStageWorkflowStructure(t *testing.T) {
 
 	env := mappingValue(t, deploy, "env")
 	// Stage workflow ceiling must equal the latest registered migration
-	// version (currently 066). Bumping the ceiling in the workflow without
+	// version (currently 067). Bumping the ceiling in the workflow without
 	// registering the migration (or vice versa) fails here; CI runs this gate.
-	assertScalar(t, mappingValue(t, env, "EXPECTED_MIGRATION_CEILING"), "066")
+	assertScalar(t, mappingValue(t, env, "EXPECTED_MIGRATION_CEILING"), "067")
 
 	steps := mappingValue(t, deploy, "steps")
 	_, execute := namedStep(t, steps, "Execute standard stage deploy")

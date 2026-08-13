@@ -69,6 +69,20 @@ jobs:
         run: >-
           go test -race -count=1 ./internal/companyfund
           -run '^TestSafeheronAMLAlertHandlerPostgresRoutingOwnership$'
+      - name: deposit deferred event PostgreSQL behavior
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
+          RUN_DEPOSIT_POSTGRES_INTEGRATION: "1"
+        run: >-
+          go test -race -count=1 ./internal/wallet/deposit
+          -run '^TestDepositPoisonEventPostgresIntegration$'
+      - name: webhook event retry migration PostgreSQL behavior
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable
+          RUN_MIGRATION_067_POSTGRES_INTEGRATION: "1"
+        run: >-
+          go test -race -count=1 ./internal/migration/migrations
+          -run '^TestMigration067PostgresInstallsWebhookEventRetrySchedule$'
       - name: auth PostgreSQL integration behavior
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/monera_digital_ci?sslmode=disable

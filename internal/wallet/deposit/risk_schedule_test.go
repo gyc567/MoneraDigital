@@ -297,6 +297,58 @@ func TestService_EarliestDueHelpers(t *testing.T) {
 	}
 }
 
+func TestWorker_CyclePublishesDurableDeferredEventDue(t *testing.T) {
+	repo := newMockRepo()
+	repo.pendingEventRetryAt = time.Now().Add(45 * time.Second)
+	svc := NewService(repo, nil, nil)
+	w := NewWorker(svc, WorkerConfig{Interval: time.Second, MaxIdle: 10 * time.Minute})
+
+	outcome, err := w.cycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.NextDue.IsZero() {
+		t.Fatal("durable deferred event due was omitted from adaptive schedule")
+	}
+	if delta := outcome.NextDue.Sub(repo.pendingEventRetryAt); delta < -time.Millisecond || delta > time.Millisecond {
+		t.Fatalf("next due = %s, want event retry %s", outcome.NextDue, repo.pendingEventRetryAt)
+	}
+}
+
+func TestWorker_EventRetryDueQueryErrorRetainsLastDue(t *testing.T) {
+	repo := newMockRepo()
+	repo.pendingEventRetryAt = time.Now().Add(3 * time.Minute)
+	w := NewWorker(NewService(repo, nil, nil), WorkerConfig{Interval: time.Second, MaxIdle: 10 * time.Minute})
+
+	first, err := w.cycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.pendingEventRetryErr = errors.New("event retry due unavailable")
+	second, err := w.cycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.NextDue.IsZero() || !second.NextDue.Equal(first.NextDue) {
+		t.Fatalf("query failure next due = %s, want retained %s", second.NextDue, first.NextDue)
+	}
+}
+
+func TestWorker_EventRetryDueQueryErrorWithoutHistoryRearmsShortFloor(t *testing.T) {
+	repo := newMockRepo()
+	repo.pendingEventRetryErr = errors.New("event retry due unavailable")
+	w := NewWorker(NewService(repo, nil, nil), WorkerConfig{Interval: 30 * time.Second, MaxIdle: 10 * time.Minute})
+
+	outcome, err := w.cycle(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	until := time.Until(outcome.NextDue)
+	if outcome.NextDue.IsZero() || until < 20*time.Second || until > 40*time.Second {
+		t.Fatalf("query failure without history must rearm near 30s, got due=%s until=%s", outcome.NextDue, until)
+	}
+}
+
 // countingKYTRepo counts timeout scan lock attempts.
 type countingKYTRepo struct {
 	*mockRepo

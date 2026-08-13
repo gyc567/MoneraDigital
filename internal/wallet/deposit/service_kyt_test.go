@@ -192,9 +192,9 @@ func TestProcessKYTAlert_LowRisk_Credits(t *testing.T) {
 	}
 }
 
-// processKYTAlert: deposit not found (out-of-order) → event stays PENDING and
-// yields the current drain so the retry ceiling cannot be exhausted immediately.
-func TestProcessKYTAlert_OutOfOrder_StaysPendingAndYieldsDrain(t *testing.T) {
+// processKYTAlert: deposit not found (out-of-order) → event stays PENDING on a
+// durable retry schedule while the current drain continues to later work.
+func TestProcessKYTAlert_OutOfOrder_StaysPendingAndContinuesDrain(t *testing.T) {
 	repo := newMockRepo()
 	// No deposit for tx-orphan
 	svc := newKYTSvc(t, repo, nil, true)
@@ -212,12 +212,33 @@ func TestProcessKYTAlert_OutOfOrder_StaysPendingAndYieldsDrain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if processed {
-		t.Fatal("expected processed=false so retry waits for the next worker cycle")
+	if !processed {
+		t.Fatal("expected processed=true after durable defer so later events can drain")
 	}
 	// Event should NOT be marked done (stays PENDING)
 	if len(repo.doneIDs) != 0 {
 		t.Errorf("orphan alert should not be marked done, got %v", repo.doneIDs)
+	}
+	if len(repo.deferredOrphanIDs) != 1 || repo.deferredOrphanIDs[0] != 88 {
+		t.Errorf("orphan alert durable retry = %v, want [88]", repo.deferredOrphanIDs)
+	}
+}
+
+func TestProcessKYTAlert_OrphanRetryCommitError(t *testing.T) {
+	repo := newMockRepo()
+	repo.commitErr = errors.New("commit failed")
+	svc := newKYTSvc(t, repo, nil, true)
+	repo.pending = []*Event{{
+		ID: 89, EventID: "orphan-rollback-error", EventType: "AML_KYT_ALERT",
+		RawPayload: []byte(`{"eventType":"AML_KYT_ALERT","eventDetail":{"txKey":"orphan-rollback-error","amlList":[{"provider":"MistTrack","riskLevel":"LOW"}]}}`),
+	}}
+
+	_, err := svc.ProcessOne(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "commit orphan KYT alert retry") {
+		t.Fatalf("ProcessOne() error = %v", err)
+	}
+	if len(repo.deferredOrphanIDs) != 1 {
+		t.Fatalf("retry update must precede the failed atomic commit: %v", repo.deferredOrphanIDs)
 	}
 }
 
@@ -582,7 +603,7 @@ type incrementErrMockRepo struct {
 	*mockRepo
 }
 
-func (r *incrementErrMockRepo) IncrementEventAttemptsNoTx(_ context.Context, _ int64) error {
+func (r *incrementErrMockRepo) DeferOrphanEvent(_ context.Context, _ Tx, _ int64, _ time.Duration) error {
 	return errors.New("increment failed")
 }
 
@@ -709,8 +730,9 @@ func (r *beginTxFailAfterNKYTRepo) LockOneKYTPendingTimeout(_ context.Context, _
 	return nil, ErrNoPending
 }
 
-// C-1 regression: processKYTAlert DB error path releases tx (rollback) BEFORE NoTx increment
-func TestProcessKYTAlert_DBError_RollbackBeforeIncrement(t *testing.T) {
+// Database lookup failures are infrastructure retries, not confirmed orphan
+// events, and therefore must not consume the orphan alert budget.
+func TestProcessKYTAlert_DBErrorDoesNotConsumeOrphanRetry(t *testing.T) {
 	repo := newMockRepo()
 	errRepo := &findByTxKeyErrRepo{mockRepo: repo, findErr: errors.New("db connection lost")}
 	svc := NewService(errRepo, newTestRegistry("ETH", "ETHEREUM", "ETH_KEY", "0.0001", 1), nil)
@@ -722,15 +744,15 @@ func TestProcessKYTAlert_DBError_RollbackBeforeIncrement(t *testing.T) {
 		ID: 200, EventID: "evt-c1", EventType: "AML_KYT_ALERT", RawPayload: []byte(alertJSON),
 	}}
 
-	svc.ProcessOne(context.Background())
+	_, err := svc.ProcessOne(context.Background())
+	if err == nil {
+		t.Fatal("expected database lookup error")
+	}
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
-	if len(repo.noTxIncrements) != 1 || repo.noTxIncrements[0] != 200 {
-		t.Errorf("C-1: expected IncrementEventAttemptsNoTx(200), got %v", repo.noTxIncrements)
-	}
-	if !repo.rollbackBeforeNoTxInc {
-		t.Error("C-1: expected rollback BEFORE NoTx increment (deadlock guard)")
+	if len(repo.noTxIncrements) != 0 || len(repo.deferredOrphanIDs) != 0 {
+		t.Errorf("database error consumed orphan retry: increments=%v deferred=%v", repo.noTxIncrements, repo.deferredOrphanIDs)
 	}
 }
 
@@ -769,8 +791,7 @@ func TestScanOneKYTTimeout_ConcurrentPeerCredited_Skips(t *testing.T) {
 	}
 }
 
-// I-2 regression: processKYTAlert FindDepositByTxKey DB error increments attempts
-func TestProcessKYTAlert_FindByTxKeyError_IncrementsAttempts(t *testing.T) {
+func TestProcessKYTAlert_FindByTxKeyErrorLeavesAttemptsUnchanged(t *testing.T) {
 	repo := newMockRepo()
 	errRepo := &findByTxKeyErrRepo{mockRepo: repo, findErr: errors.New("db flaky")}
 	svc := NewService(errRepo, newTestRegistry("ETH", "ETHEREUM", "ETH_KEY", "0.0001", 1), nil)
@@ -782,12 +803,15 @@ func TestProcessKYTAlert_FindByTxKeyError_IncrementsAttempts(t *testing.T) {
 		ID: 201, EventID: "evt-i2", EventType: "AML_KYT_ALERT", RawPayload: []byte(alertJSON),
 	}}
 
-	svc.ProcessOne(context.Background())
+	_, err := svc.ProcessOne(context.Background())
+	if err == nil {
+		t.Fatal("expected database lookup error")
+	}
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
-	if len(repo.noTxIncrements) != 1 || repo.noTxIncrements[0] != 201 {
-		t.Errorf("I-2: expected IncrementEventAttemptsNoTx(201) on DB error, got %v", repo.noTxIncrements)
+	if len(repo.noTxIncrements) != 0 {
+		t.Errorf("database error incremented orphan attempts: %v", repo.noTxIncrements)
 	}
 }
 
@@ -884,8 +908,9 @@ func TestScanOneKYTTimeout_DepositVanished_Skips(t *testing.T) {
 	}
 }
 
-// processKYTAlert: orphan below threshold + rollback before NoTx increment (C-1 variant)
-func TestProcessKYTAlert_OrphanBelowThreshold_RollbackBeforeIncrement(t *testing.T) {
+// A confirmed orphan increments and schedules retry in the lock-holding
+// transaction, then publishes both atomically with commit.
+func TestProcessKYTAlert_OrphanBelowThresholdCommitsRetryAtomically(t *testing.T) {
 	repo := newMockRepo()
 	svc := newKYTSvc(t, repo, nil, true)
 
@@ -900,10 +925,10 @@ func TestProcessKYTAlert_OrphanBelowThreshold_RollbackBeforeIncrement(t *testing
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 	if len(repo.noTxIncrements) != 1 || repo.noTxIncrements[0] != 210 {
-		t.Errorf("expected IncrementEventAttemptsNoTx(210), got %v", repo.noTxIncrements)
+		t.Errorf("expected orphan retry increment for 210, got %v", repo.noTxIncrements)
 	}
-	if !repo.rollbackBeforeNoTxInc {
-		t.Error("C-1: orphan path must rollback before NoTx increment")
+	if repo.commitCalls != 1 || repo.rollbackCalls != 0 {
+		t.Errorf("orphan retry transaction commits=%d rollbacks=%d, want 1/0", repo.commitCalls, repo.rollbackCalls)
 	}
 }
 
@@ -2097,13 +2122,11 @@ func TestScanOneKYTTimeout_Phase3MarkMRError(t *testing.T) {
 	// Error is logged, loop continues
 }
 
-// S-1: orphan AML alert below retry threshold + IncrementEventAttemptsNoTx fails.
-// Without ErrKYTAPIBackoff wrap the worker would tight-loop on the same event.
-func TestProcessKYTAlert_OrphanIncrementFailureYieldsBackoff(t *testing.T) {
+func TestProcessKYTAlert_OrphanRetryWriteFailureStopsDrain(t *testing.T) {
 	repo := newMockRepo()
 	incRepo := &incrementErrMockRepo{mockRepo: repo}
 	svc := newKYTSvc(t, repo, nil, true)
-	svc.repo = incRepo // swap repo so IncrementEventAttemptsNoTx returns error
+	svc.repo = incRepo
 
 	payload := `{"eventType":"AML_KYT_ALERT","eventDetail":{"txKey":"tx-orphan-incfail","amlScreeningTriggeredState":"TRIGGERED","amlList":[{"provider":"MistTrack","status":"COMPLETED","riskLevel":"LOW"}]}}`
 	repo.pending = []*Event{{
@@ -2118,14 +2141,12 @@ func TestProcessKYTAlert_OrphanIncrementFailureYieldsBackoff(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error so worker yields to next tick")
 	}
-	if !errors.Is(err, ErrKYTAPIBackoff) {
-		t.Errorf("expected ErrKYTAPIBackoff sentinel for worker yield, got: %v", err)
+	if !strings.Contains(err.Error(), "schedule orphan KYT alert retry") {
+		t.Errorf("unexpected retry write error: %v", err)
 	}
 }
 
-// S-1 variant: FindDepositByTxKey errors AND IncrementEventAttemptsNoTx errors —
-// both failures combined must still surface as ErrKYTAPIBackoff so worker yields.
-func TestProcessKYTAlert_FindErrorPlusIncrementFailureYieldsBackoff(t *testing.T) {
+func TestProcessKYTAlert_FindErrorDoesNotAttemptOrphanRetryWrite(t *testing.T) {
 	repo := newMockRepo()
 	combined := &findAndIncrementErrRepo{mockRepo: repo, findErr: errors.New("db read failed")}
 	svc := newKYTSvc(t, repo, nil, true)
@@ -2143,8 +2164,11 @@ func TestProcessKYTAlert_FindErrorPlusIncrementFailureYieldsBackoff(t *testing.T
 	if err == nil {
 		t.Fatal("expected error from combined find+increment failure")
 	}
-	if !errors.Is(err, ErrKYTAPIBackoff) {
-		t.Errorf("expected ErrKYTAPIBackoff (S-1), got: %v", err)
+	if !strings.Contains(err.Error(), "find deposit for KYT alert") {
+		t.Errorf("unexpected find error: %v", err)
+	}
+	if len(repo.deferredOrphanIDs) != 0 {
+		t.Fatalf("find error attempted orphan retry: %v", repo.deferredOrphanIDs)
 	}
 }
 
@@ -2157,7 +2181,7 @@ func (r *findAndIncrementErrRepo) FindDepositByTxKey(_ context.Context, _ Tx, _ 
 	return nil, false, r.findErr
 }
 
-func (r *findAndIncrementErrRepo) IncrementEventAttemptsNoTx(_ context.Context, _ int64) error {
+func (r *findAndIncrementErrRepo) DeferOrphanEvent(_ context.Context, _ Tx, _ int64, _ time.Duration) error {
 	return errors.New("increment also failed")
 }
 
