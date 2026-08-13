@@ -7,7 +7,7 @@ on:
         description: Controlled migration ceiling for this release (must match the artifact)
         required: true
         type: string
-        default: "066"
+        default: "067"
 
 permissions:
   contents: read

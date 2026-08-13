@@ -42,8 +42,9 @@ type Worker struct {
 	// lastKYTDue / lastAMLDue retain the most recent successful durable due so a
 	// transient earliest-due query failure does not silently drop NextDue and
 	// fall through to MaxIdle-only discovery.
-	lastKYTDue time.Time
-	lastAMLDue time.Time
+	lastKYTDue        time.Time
+	lastAMLDue        time.Time
+	lastEventRetryDue time.Time
 }
 
 func NewWorker(svc *Service, cfg WorkerConfig) *Worker {
@@ -101,9 +102,9 @@ func (w *Worker) Run(ctx context.Context) {
 	if w == nil || w.svc == nil {
 		return
 	}
-	log.Printf("deposit worker started: minIdle=%s maxIdle=%s amlPoll=%s kytTimeout=%s amlFirst=%s",
+	log.Printf("deposit worker started: minIdle=%s maxIdle=%s amlPoll=%s kytTimeout=%s amlFirst=%s eventRetry=%s",
 		w.config.Interval, w.config.MaxIdle, w.config.AMLPollInterval,
-		w.svc.KYTTimeout(), w.svc.AMLFirstPollDelay())
+		w.svc.KYTTimeout(), w.svc.AMLFirstPollDelay(), w.svc.EventRetryInterval())
 	defer log.Println("deposit worker stopped")
 
 	w.mu.Lock()
@@ -137,6 +138,7 @@ func (w *Worker) cycle(ctx context.Context) (outcome adaptiveschedule.CycleOutco
 
 	now := time.Now()
 	kytDue, amlDue := w.loadRiskDues(ctx)
+	eventRetryDue := w.loadEventRetryDue(ctx)
 
 	// Run overdue risk work this cycle (immediate for already-due rows).
 	if riskDueNow(kytDue, now) {
@@ -173,8 +175,22 @@ func (w *Worker) cycle(ctx context.Context) (outcome adaptiveschedule.CycleOutco
 		nextAML = FloorOverdueDue(amlDue, now, w.config.AMLPollInterval)
 	}
 
-	outcome.NextDue = adaptiveschedule.EarliestDue(nextKYT, nextAML)
+	nextEventRetry := FloorOverdueDue(eventRetryDue, now, w.config.Interval)
+	outcome.NextDue = adaptiveschedule.EarliestDue(nextKYT, nextAML, nextEventRetry)
 	return outcome, drainErr
+}
+
+func (w *Worker) loadEventRetryDue(ctx context.Context) time.Time {
+	if w == nil || w.svc == nil {
+		return time.Time{}
+	}
+	due, err := w.svc.EarliestPendingEventRetryAt(ctx)
+	if err != nil {
+		log.Printf("deposit worker earliest event retry deferred: kind=database_query")
+		return retainDueOnQueryError(w.lastEventRetryDue, time.Now(), w.config.Interval)
+	}
+	w.lastEventRetryDue = due
+	return due
 }
 
 func (w *Worker) loadRiskDues(ctx context.Context) (kytDue, amlDue time.Time) {

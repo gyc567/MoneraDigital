@@ -54,8 +54,12 @@ type Repository interface {
 	// EarliestAmlPendingUpdatedAt returns MIN(updated_at) for KYT_PENDING rows
 	// with aml_risk_level='PENDING'. Zero time means no safety-net candidate.
 	EarliestAmlPendingUpdatedAt(ctx context.Context) (time.Time, error)
+	// EarliestPendingEventRetryAt returns the durable wake time for a deferred
+	// raw event. Zero means no deferred event is waiting.
+	EarliestPendingEventRetryAt(ctx context.Context) (time.Time, error)
 	FindDepositByTxKey(ctx context.Context, tx Tx, txKey string) (*DepositRow, bool, error)
-	IncrementEventAttemptsNoTx(ctx context.Context, eventID int64) error
+	DeferEvent(ctx context.Context, tx Tx, eventID int64, retryAfter time.Duration) error
+	DeferOrphanEvent(ctx context.Context, tx Tx, eventID int64, retryAfter time.Duration) error
 
 	MarkEventDone(ctx context.Context, tx Tx, eventID int64) error
 	MarkEventError(ctx context.Context, tx Tx, eventID int64, errMsg string) error
@@ -176,27 +180,10 @@ func (r *DBRepository) LockNextPendingEvent(ctx context.Context, tx Tx) (*Event,
 			        raw_payload, process_status, process_attempts,
 			        COALESCE(error_message, ''), COALESCE(authorizing_routing_action_id, 0)
 			 FROM safeheron_webhook_events
-			 WHERE process_status = 'PENDING'`
-	orderBy := `ORDER BY received_at`
-	if !r.transactionClaimsEnabled {
-		query += ` AND event_type = 'AML_KYT_ALERT'`
-		if r.routingProjectionClaimsEnabled {
-			query += ` OR (process_status = 'PENDING' AND event_id LIKE 'routing-customer:%'
-			  AND EXISTS (
-			    SELECT 1 FROM safeheron_transaction_routing_case_actions action
-			    JOIN safeheron_transaction_routing_case_commands command ON command.id=action.command_id
-			    JOIN safeheron_transaction_routing_cases routing
-			      ON routing.id=command.case_id AND routing.pending_command_id=command.id
-			    WHERE action.id=safeheron_webhook_events.authorizing_routing_action_id
-			      AND action.status IN ('PENDING','RETRYABLE') AND command.status='PENDING'
-			  ))`
-			// A deferred AML event must never block the synthetic customer event
-			// that creates the deposit required by a DUAL routing case. The
-			// authorization predicates above keep this priority scoped to the
-			// current routing command only.
-			orderBy = `ORDER BY CASE WHEN event_id LIKE 'routing-customer:%' THEN 0 ELSE 1 END, received_at`
-		}
-	}
+			 WHERE process_status = 'PENDING'
+			   AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())`
+	typePredicate, orderBy := r.pendingEventClaimScopeSQL()
+	query += typePredicate
 	query += `
 			 ` + orderBy + `
 			 FOR UPDATE SKIP LOCKED
@@ -214,6 +201,31 @@ func (r *DBRepository) LockNextPendingEvent(ctx context.Context, tx Tx) (*Event,
 		return nil, fmt.Errorf("lock pending event: %w", err)
 	}
 	return &e, nil
+}
+
+// pendingEventClaimScopeSQL is shared by claim and durable due reads so their
+// view of which raw-event types this worker owns cannot drift.
+func (r *DBRepository) pendingEventClaimScopeSQL() (predicate, orderBy string) {
+	orderBy = `ORDER BY received_at`
+	if r.transactionClaimsEnabled {
+		return "", orderBy
+	}
+	predicate = ` AND (event_type = 'AML_KYT_ALERT'`
+	if r.routingProjectionClaimsEnabled {
+		predicate += ` OR (event_id LIKE 'routing-customer:%'
+		  AND EXISTS (
+		    SELECT 1 FROM safeheron_transaction_routing_case_actions action
+		    JOIN safeheron_transaction_routing_case_commands command ON command.id=action.command_id
+		    JOIN safeheron_transaction_routing_cases routing
+		      ON routing.id=command.case_id AND routing.pending_command_id=command.id
+		    WHERE action.id=safeheron_webhook_events.authorizing_routing_action_id
+		      AND action.status IN ('PENDING','RETRYABLE') AND command.status='PENDING'
+		  ))`
+		// A deferred AML event must never block the synthetic customer event
+		// that creates the deposit required by a DUAL routing case.
+		orderBy = `ORDER BY CASE WHEN event_id LIKE 'routing-customer:%' THEN 0 ELSE 1 END, received_at`
+	}
+	return predicate + `)`, orderBy
 }
 
 func (r *DBRepository) UpsertDeposit(ctx context.Context, tx Tx, d *DepositRow) (*DepositRow, error) {
@@ -448,7 +460,7 @@ func (r *DBRepository) MarkEventDone(ctx context.Context, tx Tx, eventID int64) 
 	_, err := asSQLTx(tx).ExecContext(ctx,
 		`UPDATE safeheron_webhook_events
 		 SET process_status = 'DONE', processed_at = NOW(),
-		     process_attempts = process_attempts + 1
+		     process_attempts = process_attempts + 1, next_attempt_at = NULL
 		 WHERE id = $1`,
 		eventID,
 	)
@@ -463,7 +475,7 @@ func (r *DBRepository) MarkEventError(ctx context.Context, tx Tx, eventID int64,
 		`UPDATE safeheron_webhook_events
 		 SET process_status = 'ERROR', error_message = $2,
 		     processed_at = NOW(),
-		     process_attempts = process_attempts + 1
+		     process_attempts = process_attempts + 1, next_attempt_at = NULL
 		 WHERE id = $1`,
 		eventID, errMsg,
 	)
@@ -481,7 +493,7 @@ func (r *DBRepository) MarkEventErrorNoTx(ctx context.Context, eventID int64, er
 		`UPDATE safeheron_webhook_events
 		 SET process_status = 'ERROR', error_message = $2,
 		     processed_at = NOW(),
-		     process_attempts = process_attempts + 1
+		     process_attempts = process_attempts + 1, next_attempt_at = NULL
 		 WHERE id = $1 AND process_status = 'PENDING'`,
 		eventID, errMsg,
 	)
@@ -611,6 +623,22 @@ func (r *DBRepository) EarliestAmlPendingUpdatedAt(ctx context.Context) (time.Ti
 	return ts.Time, nil
 }
 
+func (r *DBRepository) EarliestPendingEventRetryAt(ctx context.Context) (time.Time, error) {
+	query := `SELECT MIN(next_attempt_at)
+		FROM safeheron_webhook_events
+		WHERE process_status = 'PENDING' AND next_attempt_at IS NOT NULL`
+	typePredicate, _ := r.pendingEventClaimScopeSQL()
+	query += typePredicate
+	var due sql.NullTime
+	if err := r.db.QueryRowContext(ctx, query).Scan(&due); err != nil {
+		return time.Time{}, fmt.Errorf("earliest pending event retry: %w", err)
+	}
+	if !due.Valid {
+		return time.Time{}, nil
+	}
+	return due.Time, nil
+}
+
 func (r *DBRepository) LockOneAmlPending(ctx context.Context, tx Tx, minAge time.Duration) (*DepositRow, error) {
 	// Intentionally does NOT update updated_at: callers that skip (KYT still IN_PROGRESS)
 	// must not reset the 20-min clock used by LockOneKYTPendingTimeout.
@@ -681,15 +709,42 @@ func (r *DBRepository) FindDepositByTxKey(ctx context.Context, tx Tx, txKey stri
 	return out, true, nil
 }
 
-// IncrementEventAttemptsNoTx 独立非事务 UPDATE — 用 r.db 不挂 tx。
-// 调用时机：主事务 ROLLBACK 之后，必须脱离外层事务才能持久化。
-func (r *DBRepository) IncrementEventAttemptsNoTx(ctx context.Context, eventID int64) error {
-	_, err := r.db.ExecContext(ctx,
-		`UPDATE safeheron_webhook_events SET process_attempts = process_attempts + 1 WHERE id = $1`,
-		eventID,
+func (r *DBRepository) DeferEvent(ctx context.Context, tx Tx, eventID int64, retryAfter time.Duration) error {
+	return deferEvent(ctx, tx, eventID, retryAfter, false)
+}
+
+func (r *DBRepository) DeferOrphanEvent(ctx context.Context, tx Tx, eventID int64, retryAfter time.Duration) error {
+	return deferEvent(ctx, tx, eventID, retryAfter, true)
+}
+
+func deferEvent(ctx context.Context, tx Tx, eventID int64, retryAfter time.Duration, incrementAttempts bool) error {
+	if retryAfter <= 0 {
+		retryAfter = time.Minute
+	}
+	retryMilliseconds := retryAfter.Milliseconds()
+	if retryMilliseconds < 1 {
+		retryMilliseconds = 1
+	}
+	attemptIncrement := 0
+	if incrementAttempts {
+		attemptIncrement = 1
+	}
+	result, err := asSQLTx(tx).ExecContext(ctx,
+		`UPDATE safeheron_webhook_events
+		 SET next_attempt_at = NOW() + $2::interval,
+		     process_attempts = process_attempts + $3
+		 WHERE id = $1 AND process_status = 'PENDING'`,
+		eventID, fmt.Sprintf("%d milliseconds", retryMilliseconds), attemptIncrement,
 	)
 	if err != nil {
-		return fmt.Errorf("increment event attempts: %w", err)
+		return fmt.Errorf("defer pending event: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("defer pending event rows affected: %w", err)
+	}
+	if rows != 1 {
+		return fmt.Errorf("defer pending event affected %d rows", rows)
 	}
 	return nil
 }

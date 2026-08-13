@@ -247,7 +247,7 @@ func completeRecoveryRun(ctx context.Context, db *sql.DB, options recoveryOption
 	}()
 	for _, eventID := range eventIDs {
 		result, updateErr := tx.ExecContext(ctx, `UPDATE safeheron_webhook_events
-SET process_status='DONE',processed_at=now(),error_message=NULL
+SET process_status='DONE',processed_at=now(),error_message=NULL,next_attempt_at=NULL
 WHERE id=$1 AND process_status='ERROR'`, eventID)
 		if updateErr != nil {
 			return updateErr

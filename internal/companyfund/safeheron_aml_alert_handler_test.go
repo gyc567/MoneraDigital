@@ -15,7 +15,7 @@ func TestSafeheronAMLAlertHandler_UpdatesAllProjectedCompanyMovements(t *testing
 
 	mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 		WithArgs("safeheron-tx").
-		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(2, 0, 2, 0, 0))
+		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "customer_case_count", "ignored_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(2, 0, 2, 0, 0, 0, 0))
 	mock.ExpectExec(regexp.QuoteMeta(updateSafeheronCompanyFundTransactionAMLAlertSQL)).
 		WithArgs("safeheron-tx", string(AMLScreeningStateScreened), string(AMLRiskLevelLow)).
 		WillReturnResult(sqlmock.NewResult(0, 2))
@@ -49,7 +49,7 @@ func TestSafeheronAMLAlertHandler_DefersUntilEveryRequiredProjectionExists(t *te
 
 			mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 				WithArgs("safeheron-tx").
-				WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, testCase.pendingCompanyProjection, testCase.pendingCompanyProjection, testCase.pendingCustomerProjection))
+				WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "customer_case_count", "ignored_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, testCase.pendingCompanyProjection, testCase.pendingCustomerProjection, 0, testCase.pendingCompanyProjection, testCase.pendingCustomerProjection))
 
 			result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
 				TransactionKey: "safeheron-tx",
@@ -72,7 +72,7 @@ func TestSafeheronAMLAlertHandler_LeavesCustomerAlertToDepositPipeline(t *testin
 
 	mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
 		WithArgs("customer-tx").
-		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, 0, 0, 0))
+		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "customer_case_count", "ignored_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, 0, 1, 0, 0, 0))
 
 	result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
 		TransactionKey: "customer-tx",
@@ -84,6 +84,48 @@ func TestSafeheronAMLAlertHandler_LeavesCustomerAlertToDepositPipeline(t *testin
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSafeheronAMLAlertHandler_IgnoresTerminalNonOwnedRouting(t *testing.T) {
+	for _, decision := range []string{"NOT_RELEVANT", "DISMISSED"} {
+		t.Run(decision, func(t *testing.T) {
+			db, mock := newCompanyFundMockDB(t)
+			defer db.Close()
+
+			mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
+				WithArgs("ignored-tx").
+				WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "customer_case_count", "ignored_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, 0, 0, 1, 0, 0))
+
+			result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
+				TransactionKey: "ignored-tx",
+				ScreeningState: "TRIGGERED",
+				RiskLevel:      "LOW",
+			})
+			if err != nil || result != SafeheronAMLAlertIgnored {
+				t.Fatalf("HandleCompanyFundAMLAlert() = %q, %v; want IGNORED", result, err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestSafeheronAMLAlertHandler_RejectsUnsupportedTerminalRoutingOwnership(t *testing.T) {
+	db, mock := newCompanyFundMockDB(t)
+	defer db.Close()
+
+	mock.ExpectQuery(regexp.QuoteMeta(selectSafeheronCompanyFundTransactionForAMLAlertSQL)).
+		WithArgs("unsupported-routing-tx").
+		WillReturnRows(sqlmock.NewRows([]string{"routing_case_count", "open_case_count", "company_case_count", "customer_case_count", "ignored_case_count", "pending_company_projection_count", "pending_customer_projection_count"}).AddRow(1, 0, 0, 0, 0, 0, 0))
+
+	result, err := NewSafeheronAMLAlertHandler(db).HandleCompanyFundAMLAlert(context.Background(), SafeheronAMLAlertInput{
+		TransactionKey: "unsupported-routing-tx",
+		RiskLevel:      "LOW",
+	})
+	if err == nil || result != SafeheronAMLAlertNotCompany {
+		t.Fatalf("HandleCompanyFundAMLAlert() = %q, %v; want fail-closed error", result, err)
 	}
 }
 
