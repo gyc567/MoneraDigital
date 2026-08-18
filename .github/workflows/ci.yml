@@ -38,6 +38,15 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: frontend build and deterministic tests
+        run: |
+          npm ci
+          npm test
+          npm run build
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Pin 1.25 rather than go-version-file: go.mod (1.24.0). The
