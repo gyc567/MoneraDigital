@@ -352,7 +352,8 @@ deploy_frontend() {
     temp_dir=$(mktemp -d)
     trap 'rm -rf "$temp_dir"' RETURN
     cd "$project_dir"
-    cp package.json package-lock.json vite.config.ts tsconfig.json tsconfig.node.json "$temp_dir/"
+    # Vite's root config can reference additional tsconfig variants; keep the set together.
+    cp package.json package-lock.json vite.config.ts tsconfig*.json "$temp_dir/"
     cp tailwind.config.ts postcss.config.js index.html vercel.json "$temp_dir/"
     cp -r src public "$temp_dir/"
     [[ -f components.json ]] && cp components.json "$temp_dir/"
