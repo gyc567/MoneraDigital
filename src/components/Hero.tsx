@@ -44,12 +44,14 @@ const Hero = () => {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 animate-fade-in-delay-2">
-            <Button variant="hero" size="xl" asChild>
-              <Link to={isLoggedIn ? "/dashboard" : "/register"}>
-                {isLoggedIn ? (t("hero.buttons.dashboard") || "Go to Dashboard") : t("hero.buttons.startEarning")}
-                <ArrowRight className="ml-2" />
-              </Link>
-            </Button>
+            {isLoggedIn ? (
+              <Button variant="hero" size="xl" asChild>
+                <Link to="/dashboard">
+                  {t("hero.buttons.dashboard") || "Go to Dashboard"}
+                  <ArrowRight className="ml-2" />
+                </Link>
+              </Button>
+            ) : null}
             <Button variant="heroOutline" size="xl" asChild>
               <a href="#products">
                 {t("hero.buttons.exploreProducts")}

@@ -2,12 +2,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import i18n from "@/i18n";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 import Links from "./pages/Links";
 import NotFound from "./pages/NotFound";
 import DashboardLayout from "./components/DashboardLayout";
@@ -36,7 +35,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            {/* Public self-service registration is intentionally disabled. */}
+            <Route path="/register" element={<Navigate to="/login" replace />} />
             <Route path="/link" element={<Links />} />
             <Route path="/activation" element={<Activation />} />
             <Route path="/contact-info" element={<ContactInfo />} />

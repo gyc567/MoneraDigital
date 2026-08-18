@@ -80,14 +80,9 @@ const Header = () => {
                 </Button>
               </div>
             ) : (
-              <>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/login">{t("header.auth.signIn")}</Link>
-                </Button>
-                <Button variant="default" size="sm" asChild>
-                  <Link to="/register">{t("header.auth.getStarted")}</Link>
-                </Button>
-              </>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/login">{t("header.auth.signIn")}</Link>
+              </Button>
             )}
           </div>
 
@@ -141,14 +136,9 @@ const Header = () => {
                     </Button>
                   </>
                 ) : (
-                  <>
-                    <Button variant="ghost" size="sm" className="justify-start" asChild onClick={() => setIsMenuOpen(false)}>
-                      <Link to="/login">{t("header.auth.signIn")}</Link>
-                    </Button>
-                    <Button variant="default" size="sm" asChild onClick={() => setIsMenuOpen(false)}>
-                      <Link to="/register">{t("header.auth.getStarted")}</Link>
-                    </Button>
-                  </>
+                  <Button variant="ghost" size="sm" className="justify-start" asChild onClick={() => setIsMenuOpen(false)}>
+                    <Link to="/login">{t("header.auth.signIn")}</Link>
+                  </Button>
                 )}
               </div>
             </nav>

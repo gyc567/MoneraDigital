@@ -67,19 +67,34 @@ func newTestHandler() *Handler {
 
 // ==================== Auth Handler Tests ====================
 
-func TestRegister_InvalidJSON(t *testing.T) {
+func TestRegister_Disabled(t *testing.T) {
 	h := newTestHandler()
 	router := setupTestRouter(h)
 
-	req, _ := http.NewRequest("POST", "/api/auth/register", bytes.NewBufferString("invalid json"))
+	req, _ := http.NewRequest(
+		"POST",
+		"/api/auth/register",
+		bytes.NewBufferString(`{"email":"new@example.com","password":"Password1"}`),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 
 	router.ServeHTTP(resp, req)
 
-	// Should fail due to invalid JSON binding
-	if resp.Code != http.StatusBadRequest {
-		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, resp.Code)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.Code)
+	}
+
+	var body struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+		Error   string `json:"error"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Success || body.Code != "REGISTRATION_DISABLED" || body.Error != "Registration is disabled" {
+		t.Fatalf("unexpected response body: %+v", body)
 	}
 }
 
