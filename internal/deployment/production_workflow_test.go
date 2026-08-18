@@ -85,3 +85,21 @@ func TestProductionWorkflowDefaultsToCurrentArtifactMigrationCeiling(t *testing.
 		t.Fatal("production workflow must default to the current artifact migration ceiling 067")
 	}
 }
+
+func TestCIIncludesFrontendTestGate(t *testing.T) {
+	content, err := os.ReadFile("../../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	workflow := string(content)
+	for _, required := range []string{
+		"actions/setup-node@",
+		"npm ci",
+		"npm test",
+		"npm run build",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Fatalf("CI workflow missing frontend gate %q", required)
+		}
+	}
+}
