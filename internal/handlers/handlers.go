@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"monera-digital/internal/binance"
 	"monera-digital/internal/dto"
@@ -148,49 +146,12 @@ func (h *Handler) Login(c *gin.Context) {
 }
 
 func (h *Handler) Register(c *gin.Context) {
-	var req dto.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.Validator.ValidateEmail(req.Email); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.Validator.ValidatePassword(req.Password); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	user, err := h.AuthService.Register(models.RegisterRequest{
-		Email:    req.Email,
-		Password: req.Password,
-	})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Note: Activation email is NOT sent automatically after registration
-	// User must manually request activation code from the activation page
-
-	// Generate token for the new user
-	token, _ := utils.GenerateJWT(user.ID, user.Email, os.Getenv("JWT_SECRET"))
-	expiresAt := time.Now().Add(24 * time.Hour)
-
-	// Return login response with token
-	c.JSON(http.StatusCreated, gin.H{
-		"success":            true,
-		"email":              user.Email,
-		"status":             string(user.Status),
-		"requiresActivation": true,
-		"token":              token,
-		"accessToken":        token,
-		"tokenType":          "Bearer",
-		"expiresIn":          86400,
-		"expiresAt":          expiresAt.Format(time.RFC3339),
-		"userId":             user.ID,
+	// Public self-service registration is intentionally disabled. Reject before
+	// parsing input or invoking AuthService so the request has no side effects.
+	c.JSON(http.StatusForbidden, gin.H{
+		"success": false,
+		"code":    "REGISTRATION_DISABLED",
+		"error":   "Registration is disabled",
 	})
 }
 

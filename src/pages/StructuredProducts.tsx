@@ -219,7 +219,7 @@ const StructuredProducts = () => {
                 <Globe size={16} />
                 <span className="font-medium">{i18n.language === "en" ? "中" : "EN"}</span>
               </Button>
-              
+
               {/* Auth - Logged In */}
               {user ? (
                 <div className="flex items-center gap-4">
@@ -237,9 +237,6 @@ const StructuredProducts = () => {
                 <div className="flex items-center gap-4">
                   <Button variant="ghost" size="sm" onClick={() => navigate("/login")}>
                     {t("header.auth.signIn")}
-                  </Button>
-                  <Button variant="default" size="sm" onClick={() => navigate("/register")}>
-                    {t("header.auth.getStarted")}
                   </Button>
                 </div>
               )}
@@ -482,16 +479,15 @@ const StructuredProducts = () => {
               <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">
                 {isZh ? "准备好开始赚取收益了吗？" : "Ready to Start Earning?"}
               </h2>
-              <p className="text-gray-400 mb-10 max-w-xl mx-auto">
-                {user 
-                  ? (isZh ? "开始您的数字资产投资之旅。" : "Start your digital asset investment journey.")
-                  : (isZh ? "立即注册 Monera Digital，体验机构级的数字资产借贷服务。" : "Register now at Monera Digital and experience institutional-grade digital asset lending services.")
-                }
-              </p>
-              
+              {user ? (
+                <p className="text-gray-400 mb-10 max-w-xl mx-auto">
+                  {isZh ? "开始您的数字资产投资之旅。" : "Start your digital asset investment journey."}
+                </p>
+              ) : null}
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 {user ? (
-                  <Button 
+                  <Button
                     className="bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-black font-semibold px-10 py-4 rounded-xl shadow-[0_0_30px_rgba(46,230,214,0.4)] transition-all duration-300"
                     onClick={() => navigate("/dashboard")}
                   >
@@ -499,22 +495,13 @@ const StructuredProducts = () => {
                     <ChevronRight className="ml-2 w-5 h-5" />
                   </Button>
                 ) : (
-                  <>
-                    <Button 
-                      className="bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-black font-semibold px-10 py-4 rounded-xl shadow-[0_0_30px_rgba(46,230,214,0.4)] transition-all duration-300"
-                      onClick={() => navigate("/register")}
-                    >
-                      {isZh ? "立即注册" : "Register Now"}
-                      <ChevronRight className="ml-2 w-5 h-5" />
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      className="border-teal-400/40 text-teal-400 hover:bg-teal-400/10 backdrop-blur-sm px-10 py-4 rounded-xl transition-all duration-300"
-                      onClick={() => navigate("/login")}
-                    >
-                      {isZh ? "登录账户" : "Login"}
-                    </Button>
-                  </>
+                  <Button
+                    variant="outline"
+                    className="border-teal-400/40 text-teal-400 hover:bg-teal-400/10 backdrop-blur-sm px-10 py-4 rounded-xl transition-all duration-300"
+                    onClick={() => navigate("/login")}
+                  >
+                    {isZh ? "登录账户" : "Login"}
+                  </Button>
                 )}
               </div>
             </div>
