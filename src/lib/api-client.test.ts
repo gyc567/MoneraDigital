@@ -5,228 +5,221 @@
  * token management, and request/response handling.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiRequest, getApiUrl, getApiBaseUrl } from './api-client';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { apiRequest, getApiUrl, getApiBaseUrl } from "./api-client";
+import { tokenManager } from "./token-manager";
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
-};
+const TEST_API_BASE_URL = "http://127.0.0.1:8081";
 
-describe('api-client', () => {
+describe("api-client", () => {
   beforeEach(() => {
-    vi.spyOn(global, 'fetch').mockReset();
-    Object.defineProperty(global, 'localStorage', {
-      value: localStorageMock,
-      writable: true,
-    });
+    vi.spyOn(global, "fetch").mockReset();
+    tokenManager.clearTokens();
   });
 
   afterEach(() => {
+    tokenManager.clearTokens();
     vi.restoreAllMocks();
   });
 
-  describe('getApiUrl', () => {
-    it('should return relative path when no base URL configured', () => {
-      const result = getApiUrl('/api/wallet/info');
-      expect(result).toBe('/api/wallet/info');
+  describe("getApiUrl", () => {
+    it("should prefix paths with the configured backend URL", () => {
+      const result = getApiUrl("api/wallet/info");
+      expect(result).toBe(`${TEST_API_BASE_URL}/api/wallet/info`);
     });
 
-  it('should return full URL when base URL configured', () => {
-    // This test requires Vite environment variables - skip in unit test
+    it("should handle path with leading slash", () => {
+      const result = getApiUrl("/api/wallet/info");
+      expect(result).toBe(`${TEST_API_BASE_URL}/api/wallet/info`);
+    });
   });
 
-    it('should handle path with leading slash', () => {
-    const result = getApiUrl('/api/wallet/info');
-    expect(result).toBe('/api/wallet/info');
+  describe("getApiBaseUrl", () => {
+    it("should return the configured backend URL", () => {
+      const result = getApiBaseUrl();
+      expect(result).toBe(TEST_API_BASE_URL);
+    });
   });
 
-  it('should handle path without leading slash', () => {
-    const result = getApiUrl('api/wallet/info');
-    expect(result).toBe('api/wallet/info');
-  });
-});
-
-describe('getApiBaseUrl', () => {
-  it('should return proxy message when no base URL', () => {
-    const result = getApiBaseUrl();
-    expect(result).toBe('(Vite Proxy - /api)');
-  });
-});
-
-describe('apiRequest', () => {
-  const createMockResponse = (options: {
-    ok: boolean;
-    status: number;
-    statusText?: string;
-    jsonData?: Record<string, unknown>;
-    contentType?: string;
-  }) => {
-    const headers = new Map<string, string>();
-    if (options.contentType) {
-      headers.set('content-type', options.contentType);
-    }
-    return {
-      ok: options.ok,
-      status: options.status,
-      statusText: options.statusText || (options.ok ? 'OK' : 'Error'),
-      headers: {
-        get: (key: string) => headers.get(key) || null,
-      },
-      json: options.jsonData ? vi.fn().mockResolvedValue(options.jsonData) : vi.fn(),
+  describe("apiRequest", () => {
+    const createMockResponse = (options: {
+      ok: boolean;
+      status: number;
+      statusText?: string;
+      jsonData?: Record<string, unknown>;
+      contentType?: string;
+    }) => {
+      const headers = new Map<string, string>();
+      if (options.contentType) {
+        headers.set("content-type", options.contentType);
+      }
+      return {
+        ok: options.ok,
+        status: options.status,
+        statusText: options.statusText || (options.ok ? "OK" : "Error"),
+        headers: {
+          get: (key: string) => headers.get(key) || null,
+        },
+        json: options.jsonData ? vi.fn().mockResolvedValue(options.jsonData) : vi.fn(),
+      };
     };
-  };
 
-  it('should make request with Authorization header when token exists', async () => {
+    it("should make request with Authorization header when token exists", async () => {
       const mockResponse = createMockResponse({
         ok: true,
         status: 200,
-        jsonData: { status: 'SUCCESS' },
-        contentType: 'application/json',
+        jsonData: { status: "SUCCESS" },
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token-123');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      tokenManager.setTokens({
+        accessToken: "test-token-123",
+        refreshToken: "refresh-token-123",
+        tokenType: "Bearer",
+        expiresIn: 3600,
+      });
 
-      const result = await apiRequest('/api/wallet/info');
+      const result = await apiRequest("/api/wallet/info");
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/wallet/info',
+        `${TEST_API_BASE_URL}/api/wallet/info`,
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-token-123',
+            "Content-Type": "application/json",
+            "Authorization": "Bearer test-token-123",
           }),
         })
       );
-      expect(result).toEqual({ status: 'SUCCESS' });
+      expect(result).toEqual({ status: "SUCCESS" });
     });
 
-    it('should make request without Authorization header when no token', async () => {
+    it("should make request without Authorization header when no token", async () => {
       const mockResponse = createMockResponse({
         ok: true,
         status: 200,
-        jsonData: { status: 'NONE' },
-        contentType: 'application/json',
+        jsonData: { status: "NONE" },
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue(null);
-
-      const result = await apiRequest('/api/wallet/info');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      const result = await apiRequest("/api/wallet/info");
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/wallet/info',
+        `${TEST_API_BASE_URL}/api/wallet/info`,
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           }),
         })
       );
-      expect(result).toEqual({ status: 'NONE' });
+      expect(result).toEqual({ status: "NONE" });
     });
 
-    it('should throw error with message on 401 Unauthorized', async () => {
+    it("should throw error with message on 401 Unauthorized", async () => {
       const mockResponse = createMockResponse({
         ok: false,
         status: 401,
-        statusText: 'Unauthorized',
+        statusText: "Unauthorized",
         jsonData: {
-          code: 'MISSING_TOKEN',
-          message: 'Authentication required',
-          error: 'Unauthorized',
+          code: "MISSING_TOKEN",
+          message: "Authentication required",
+          error: "Unauthorized",
         },
-        contentType: 'application/json',
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      tokenManager.setTokens({
+        accessToken: "test-token",
+        refreshToken: "",
+        tokenType: "Bearer",
+        expiresIn: 3600,
+      });
 
-      await expect(apiRequest('/api/wallet/info')).rejects.toThrow('Authentication required');
+      await expect(apiRequest("/api/wallet/info")).rejects.toThrow(
+        "Session expired. Please log in again."
+      );
     });
 
-    it('should throw error with message on other HTTP errors', async () => {
+    it("should throw error with message on other HTTP errors", async () => {
       const mockResponse = createMockResponse({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error',
+        statusText: "Internal Server Error",
         jsonData: {
-          code: 'INTERNAL_ERROR',
-          message: 'Something went wrong',
+          code: "INTERNAL_ERROR",
+          message: "Something went wrong",
         },
-        contentType: 'application/json',
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token');
-
-      await expect(apiRequest('/api/wallet/info')).rejects.toThrow('Something went wrong');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      await expect(apiRequest("/api/wallet/info")).rejects.toThrow("Something went wrong");
     });
 
-    it('should throw generic error on non-JSON error response', async () => {
+    it("should throw generic error on non-JSON error response", async () => {
       const mockResponse = createMockResponse({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error',
-        contentType: 'text/plain',
+        statusText: "Internal Server Error",
+        contentType: "text/plain",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token');
-
-      await expect(apiRequest('/api/wallet/info')).rejects.toThrow('Internal Server Error');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      await expect(apiRequest("/api/wallet/info")).rejects.toThrow("Internal Server Error");
     });
 
-    it('should merge custom headers with default headers', async () => {
+    it("should merge custom headers with default headers", async () => {
       const mockResponse = createMockResponse({
         ok: true,
         status: 200,
-        jsonData: { status: 'SUCCESS' },
-        contentType: 'application/json',
+        jsonData: { status: "SUCCESS" },
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token');
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
+      tokenManager.setTokens({
+        accessToken: "test-token",
+        refreshToken: "refresh-token",
+        tokenType: "Bearer",
+        expiresIn: 3600,
+      });
 
-      await apiRequest('/api/wallet/info', {
+      await apiRequest("/api/wallet/info", {
         headers: {
-          'X-Custom-Header': 'custom-value',
+          "X-Custom-Header": "custom-value",
         },
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/wallet/info',
+        `${TEST_API_BASE_URL}/api/wallet/info`,
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-token',
-            'X-Custom-Header': 'custom-value',
+            "Content-Type": "application/json",
+            "Authorization": "Bearer test-token",
+            "X-Custom-Header": "custom-value",
           }),
         })
       );
     });
 
-    it('should pass through request body for POST requests', async () => {
+    it("should pass through request body for POST requests", async () => {
       const mockResponse = createMockResponse({
         ok: true,
         status: 200,
-        jsonData: { status: 'SUCCESS' },
-        contentType: 'application/json',
+        jsonData: { status: "SUCCESS" },
+        contentType: "application/json",
       });
-      vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse as unknown as Response);
-      localStorageMock.getItem.mockReturnValue('test-token');
-
+      vi.spyOn(global, "fetch").mockResolvedValue(mockResponse as unknown as Response);
       const requestBody = {
-        productCode: 'X_FINANCE',
-        currency: 'TRON',
+        productCode: "X_FINANCE",
+        currency: "TRON",
       };
 
-      await apiRequest('/api/wallet/create', {
-        method: 'POST',
+      await apiRequest("/api/wallet/create", {
+        method: "POST",
         body: JSON.stringify(requestBody),
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/wallet/create',
+        `${TEST_API_BASE_URL}/api/wallet/create`,
         expect.objectContaining({
-          method: 'POST',
+          method: "POST",
           body: JSON.stringify(requestBody),
         })
       );
