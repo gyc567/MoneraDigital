@@ -342,6 +342,38 @@ func TestDeployRemoteStandardMigrationFailureRollsBackMigrateBinary(t *testing.T
 	}
 }
 
+func TestDeployRemoteFrontendIncludesViteApplicationConfig(t *testing.T) {
+	t.Parallel()
+	root := deployScriptRepositoryRoot(t)
+	script := filepath.Join(root, "scripts", "deploy-remote.sh")
+	tmp := t.TempDir()
+	binDir := filepath.Join(tmp, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeVercel := filepath.Join(binDir, "vercel")
+	if err := os.WriteFile(fakeVercel, []byte(`#!/bin/sh
+set -eu
+test -f tsconfig.app.json || {
+  echo "frontend deploy context is missing tsconfig.app.json" >&2
+  exit 42
+}
+test "$1" = "--prod"
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", script, "--frontend")
+	cmd.Env = append(os.Environ(),
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"VERCEL_PROJECT=test-project",
+		"VERCEL_ORG=test-org",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("frontend deploy failed: %v\n%s", err, output)
+	}
+}
+
 // TestDeployRemoteLoadsEnvFileBeforeMigration asserts the deploy runner loads
 // /opt/monera-digital/.env into the migrate process environment, so ADR 0003
 // variables (MIGRATION_DATABASE_URL, APP_ENV) reach monera-migrate. Without
