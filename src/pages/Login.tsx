@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -192,12 +192,6 @@ export default function Login() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? t("auth.login.loggingIn") : t("auth.login.button")}
             </Button>
-            <div className="text-sm text-center">
-              {t("auth.login.noAccount")}{" "}
-              <Link to="/register" className="text-blue-600 hover:underline">
-                {t("auth.login.register")}
-              </Link>
-            </div>
           </CardFooter>
         </form>
       </Card>
